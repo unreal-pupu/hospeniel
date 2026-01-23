@@ -277,12 +277,13 @@ export async function POST(req: Request) {
       },
       { status: 200 }
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error creating subaccount:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to create subaccount";
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Failed to create subaccount",
+        error: errorMessage,
       },
       { status: 500 }
     );

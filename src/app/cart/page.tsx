@@ -37,8 +37,19 @@ export default function CartPage() {
   const groupedByVendor = cartItems.reduce((acc, item) => {
     const vendorId = item.vendor_id;
     if (!acc[vendorId]) {
+      // Safely transform vendors to match expected type, handling undefined
+      const vendor = item.vendors
+        ? {
+            id: item.vendors.id,
+            name: item.vendors.name,
+            business_name: undefined, // Not available in CartItem vendors
+            image_url: item.vendors.image_url || null,
+            location: item.vendors.location,
+          }
+        : null;
+      
       acc[vendorId] = {
-        vendor: item.vendors,
+        vendor,
         items: [],
         subtotal: 0,
       };
@@ -46,7 +57,7 @@ export default function CartPage() {
     acc[vendorId].items.push(item);
     acc[vendorId].subtotal += item.price * item.quantity;
     return acc;
-  }, {} as Record<string, { vendor: any; items: typeof cartItems; subtotal: number }>);
+  }, {} as Record<string, { vendor: { id: string; name?: string; business_name?: string; image_url?: string | null; location?: string } | null; items: typeof cartItems; subtotal: number }>);
 
   // Calculate overall total
   const total = Object.values(groupedByVendor).reduce(
@@ -130,7 +141,7 @@ export default function CartPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-blue-900">
-                      💡 You're shopping as a guest
+                      💡 You&apos;re shopping as a guest
                     </p>
                     <p className="text-xs text-blue-700 mt-1">
                       Sign in or create an account to save your cart and checkout securely
@@ -162,9 +173,10 @@ export default function CartPage() {
                     <div className="relative w-10 h-10 rounded-full overflow-hidden">
                       <Image
                         src={group.vendor.image_url}
-                        alt={group.vendor.name}
+                        alt={group.vendor.name || "Vendor"}
                         fill
                         className="object-cover"
+                        unoptimized
                       />
                     </div>
                   )}
@@ -203,6 +215,7 @@ export default function CartPage() {
                               alt={item.menu_items.title || "Product"}
                               fill
                               className="object-cover"
+                              unoptimized
                             />
                           </div>
                         )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 export type CartItem = {
@@ -27,12 +27,6 @@ export type CartItem = {
   };
 };
 
-type Order = {
-  id: string;
-  items: CartItem[];
-  total: number;
-  date: string;
-};
 
 type CartContextType = {
   cartItems: CartItem[];
@@ -49,6 +43,11 @@ type CartContextType = {
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_CART_KEY = "hospineil_cart";
+const LOCAL_STORAGE_CART_ACTIVITY_KEY = "hospineil_cart_last_activity";
+const LOCAL_STORAGE_CART_REMINDER_KEY = "hospineil_cart_reminder_shown";
+const CART_CLEAR_MS = 4 * 60 * 60 * 1000;
+const CART_REMINDER_OFFSET_MS = 15 * 60 * 1000;
+const CART_REMINDER_MS = CART_CLEAR_MS - CART_REMINDER_OFFSET_MS;
 
 // Helper functions for localStorage cart
 const getLocalStorageCart = (): CartItem[] => {
@@ -66,6 +65,8 @@ const setLocalStorageCart = (items: CartItem[]) => {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(LOCAL_STORAGE_CART_KEY, JSON.stringify(items));
+    localStorage.setItem(LOCAL_STORAGE_CART_ACTIVITY_KEY, Date.now().toString());
+    localStorage.removeItem(LOCAL_STORAGE_CART_REMINDER_KEY);
   } catch (error) {
     console.error("Error saving localStorage cart:", error);
   }
@@ -75,22 +76,54 @@ const clearLocalStorageCart = () => {
   if (typeof window === "undefined") return;
   try {
     localStorage.removeItem(LOCAL_STORAGE_CART_KEY);
+    localStorage.removeItem(LOCAL_STORAGE_CART_ACTIVITY_KEY);
+    localStorage.removeItem(LOCAL_STORAGE_CART_REMINDER_KEY);
   } catch (error) {
     console.error("Error clearing localStorage cart:", error);
   }
 };
 
+const getLocalCartLastActivity = () => {
+  if (typeof window === "undefined") return null;
+  const stored = localStorage.getItem(LOCAL_STORAGE_CART_ACTIVITY_KEY);
+  const parsed = stored ? Number(stored) : null;
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const markReminderShown = () => {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(LOCAL_STORAGE_CART_REMINDER_KEY, "true");
+};
+
+const hasReminderShown = () => {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(LOCAL_STORAGE_CART_REMINDER_KEY) === "true";
+};
+
+const showCartToast = (message: string) => {
+  if (typeof window === "undefined") return;
+  const toast = document.createElement("div");
+  toast.className = "fixed top-4 right-4 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 animate-in slide-in-from-right";
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    if (document.body.contains(toast)) {
+      document.body.removeChild(toast);
+    }
+  }, 3500);
+};
+
 export function CartProvider({ children }: { children: ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const channelRef = useRef<any>(null);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   // Calculate cart count (total quantity of all items)
   const cartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
   // Fetch cart items from Supabase or localStorage
-  const fetchCartItems = async () => {
+  const fetchCartItems = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -106,6 +139,21 @@ export function CartProvider({ children }: { children: ReactNode }) {
       if (!isAuth) {
         // Load from localStorage for unauthenticated users
         const localCart = getLocalStorageCart();
+        const lastActivity = getLocalCartLastActivity();
+        const now = Date.now();
+        if (localCart.length > 0 && lastActivity) {
+          const inactiveMs = now - lastActivity;
+          if (inactiveMs >= CART_CLEAR_MS) {
+            clearLocalStorageCart();
+            setCartItems([]);
+            setLoading(false);
+            return;
+          }
+          if (inactiveMs >= CART_REMINDER_MS && !hasReminderShown()) {
+            showCartToast("You have items in your cart. Complete checkout soon or your cart may be cleared.");
+            markReminderShown();
+          }
+        }
         setCartItems(localCart);
         setLoading(false);
         return;
@@ -139,8 +187,68 @@ export function CartProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      const lastUpdatedIso = cartData
+        .map((item: { updated_at?: string; created_at?: string }) => item.updated_at || item.created_at)
+        .filter(Boolean)
+        .sort()
+        .pop();
+      const lastUpdatedMs = lastUpdatedIso ? Date.parse(lastUpdatedIso) : null;
+
+      if (lastUpdatedMs) {
+        const inactiveMs = Date.now() - lastUpdatedMs;
+        if (inactiveMs >= CART_CLEAR_MS) {
+          const { error: clearError } = await supabase
+            .from("cart_items")
+            .delete()
+            .eq("user_id", user.id);
+
+          if (clearError) {
+            console.error("Error clearing stale cart items:", clearError);
+          }
+
+          clearLocalStorageCart();
+          setCartItems([]);
+          setLoading(false);
+          return;
+        }
+
+        if (inactiveMs >= CART_REMINDER_MS && !hasReminderShown()) {
+          showCartToast("You have items in your cart. Complete checkout soon or your cart may be cleared.");
+          markReminderShown();
+        }
+
+        if (typeof window !== "undefined") {
+          localStorage.setItem(LOCAL_STORAGE_CART_ACTIVITY_KEY, lastUpdatedMs.toString());
+        }
+      }
+
       // Get unique vendor IDs
-      const vendorIds = [...new Set(cartData.map((item: any) => item.vendor_id))];
+      interface CartDataItem {
+        id: string;
+        user_id?: string;
+        vendor_id: string;
+        product_id: string;
+        quantity: number;
+        price: number;
+        created_at?: string;
+        updated_at?: string;
+        menu_items?: {
+          id: string;
+          title: string;
+          image_url: string;
+          price: number;
+        };
+        [key: string]: unknown;
+      }
+      interface VendorData {
+        id: string;
+        name: string;
+        image_url: string | null;
+        location: string | null;
+        profile_id: string;
+      }
+      
+      const vendorIds = [...new Set(cartData.map((item: CartDataItem) => item.vendor_id))];
 
       // Fetch vendor information
       const { data: vendorsData, error: vendorsError } = await supabase
@@ -153,24 +261,32 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }
 
       // Create a map of vendor_id (auth.users id) to vendor data
-      const vendorsMap = new Map();
+      const vendorsMap = new Map<string, VendorData>();
       if (vendorsData) {
-        vendorsData.forEach((vendor: any) => {
+        vendorsData.forEach((vendor: VendorData) => {
           vendorsMap.set(vendor.profile_id, vendor);
         });
       }
 
       // Combine cart items with vendor information
-      const cartItemsWithVendors = cartData.map((item: any) => {
+      const cartItemsWithVendors: CartItem[] = cartData.map((item: CartDataItem) => {
         const vendor = vendorsMap.get(item.vendor_id);
         return {
-          ...item,
+          id: item.id,
+          user_id: item.user_id,
+          vendor_id: item.vendor_id,
+          product_id: item.product_id,
+          quantity: item.quantity,
+          price: item.price,
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+          menu_items: item.menu_items,
           vendors: vendor
             ? {
                 id: vendor.id,
                 name: vendor.name,
-                image_url: vendor.image_url,
-                location: vendor.location,
+                image_url: vendor.image_url || "",
+                location: vendor.location || undefined,
               }
             : undefined,
         };
@@ -196,7 +312,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isAuthenticated]);
 
   // Sync localStorage cart to database when user logs in
   const syncLocalCartToDatabase = async (localItems: CartItem[], userId: string) => {
@@ -288,7 +404,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
             table: "cart_items",
             filter: `user_id=eq.${user.id}`,
           },
-          (payload: any) => {
+          (payload: { eventType: string; new?: unknown; old?: unknown }) => {
             console.log("Cart change detected:", payload);
             // Refetch cart items when changes occur
             if (mounted) {
@@ -318,7 +434,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         supabase.removeChannel(channelRef.current);
       }
     };
-  }, []);
+  }, [fetchCartItems]);
 
   // Add item to cart (works for both authenticated and unauthenticated users)
   const addToCart = async (
@@ -382,7 +498,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
       // User is authenticated - proceed with database cart
       // Check if item already exists in cart
-      const { data: existingItem, error: checkError } = await supabase
+      const { data: existingItem } = await supabase
         .from("cart_items")
         .select("*")
         .eq("user_id", user.id)
@@ -423,7 +539,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       // Real-time subscription will automatically update the cart
       // But we can also refetch to ensure consistency
       await fetchCartItems();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error adding to cart:", error);
       throw error;
     }
@@ -456,7 +572,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
       // Real-time subscription will automatically update the cart
       await fetchCartItems();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error removing from cart:", error);
       throw error;
     }
@@ -498,7 +614,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
       // Real-time subscription will automatically update the cart
       await fetchCartItems();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error updating quantity:", error);
       throw error;
     }
@@ -529,7 +645,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
       // Real-time subscription will automatically update the cart
       await fetchCartItems();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error clearing cart:", error);
       throw error;
     }

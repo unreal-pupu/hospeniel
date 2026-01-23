@@ -27,14 +27,7 @@ export async function POST(req: Request) {
   try {
     const body: CalculateDeliveryRequest = await req.json();
     const {
-      delivery_address,
-      delivery_city,
       delivery_state,
-      delivery_postal_code,
-      vendor_location,
-      vendor_city,
-      vendor_state,
-      order_total = 0,
       item_count = 1,
     } = body;
 
@@ -81,12 +74,13 @@ export async function POST(req: Request) {
       },
       { status: 200 }
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error calculating delivery charge:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to calculate delivery charge";
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Failed to calculate delivery charge",
+        error: errorMessage,
       },
       { status: 500 }
     );

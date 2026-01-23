@@ -12,10 +12,13 @@ import { Loader2, Send } from "lucide-react";
 interface Notification {
   id: string;
   vendor_id: string | null;
+  user_id?: string | null;
   message: string;
   type: string;
   read: boolean;
   created_at: string;
+  user_profile?: { name?: string; email?: string };
+  vendor_profile?: { name?: string; email?: string };
 }
 
 export default function AdminNotificationsPage() {
@@ -30,42 +33,35 @@ export default function AdminNotificationsPage() {
 
   useEffect(() => {
     fetchNotifications();
-    
-    // Set up real-time subscription for notifications
-    const channel = supabase
-      .channel("admin-notifications-changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "notifications",
-        },
-        (payload) => {
-          console.log("🔔 Admin Notifications: Change detected:", payload);
-          // Small delay to ensure database is ready
-          setTimeout(() => {
-            fetchNotifications();
-          }, 500);
-        }
-      )
-      .subscribe();
-    
+    const intervalId = setInterval(fetchNotifications, 15000);
+
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(intervalId);
     };
   }, []);
 
   const fetchNotifications = async () => {
     try {
-      const { data, error } = await supabase
-        .from("notifications")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(50);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setNotifications([]);
+        return;
+      }
 
-      if (error) throw error;
-      setNotifications(data || []);
+      const response = await fetch("/api/admin/notifications", {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (!response.ok) {
+        console.error("Error fetching notifications:", await response.text());
+        setNotifications([]);
+        return;
+      }
+
+      const data = await response.json();
+      setNotifications(data.notifications || []);
     } catch (error) {
       console.error("Error fetching notifications:", error);
     } finally {
@@ -82,36 +78,21 @@ export default function AdminNotificationsPage() {
 
     setSending(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not authenticated");
 
-      if (notificationForm.target === "all" || notificationForm.target === "vendors") {
-        // Get all vendor IDs
-        const { data: vendors } = await supabase
-          .from("profiles")
-          .select("id")
-          .eq("role", "vendor");
+      const response = await fetch("/api/admin/notifications", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(notificationForm),
+      });
 
-        if (vendors && vendors.length > 0) {
-          const notificationsToInsert = vendors.map((vendor) => ({
-            vendor_id: vendor.id,
-            message: notificationForm.message,
-            type: notificationForm.type,
-            read: false,
-          }));
-
-          const { error } = await supabase
-            .from("notifications")
-            .insert(notificationsToInsert);
-
-          if (error) throw error;
-        }
-      }
-
-      if (notificationForm.target === "all" || notificationForm.target === "users") {
-        // For users, you might need a different approach
-        // This is a placeholder - adjust based on your notification system
-        alert("User notifications sent (implementation depends on your system)");
+      if (!response.ok) {
+        console.error("Send notifications error:", await response.text());
+        throw new Error("Failed to send notifications");
       }
 
       alert("Notifications sent successfully!");
@@ -235,6 +216,9 @@ export default function AdminNotificationsPage() {
                       <p className="text-gray-900">{notification.message}</p>
                       <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
                         <span>Type: {notification.type}</span>
+                        <span>
+                          To: {notification.vendor_profile?.name || notification.user_profile?.name || "Unknown"}
+                        </span>
                         <span>
                           {new Date(notification.created_at).toLocaleString()}
                         </span>

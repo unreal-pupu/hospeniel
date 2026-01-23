@@ -60,7 +60,7 @@ export default function CakesPage() {
       </div>
 
       <p className="text-center text-gray-600 dark:text-gray-300 max-w-2xl mx-auto mb-12 text-base sm:text-lg">
-        Explore top cake vendors in your city. Whether it's birthdays, weddings, or events — find the perfect cake for your celebration.
+        Explore top cake vendors in your city. Whether it&apos;s birthdays, weddings, or events — find the perfect cake for your celebration.
       </p>
 
       {/* Cards */}

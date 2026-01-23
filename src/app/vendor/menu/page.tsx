@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { Plus, Edit2, Trash2, Upload, X, Loader2, ImageIcon } from "lucide-react";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -55,6 +56,7 @@ export default function MenuPage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [subscriptionPlan, setSubscriptionPlan] = useState<string>("free_trial");
+  const [vendorCategory, setVendorCategory] = useState<string | null>(null);
   
   // Form state
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
@@ -80,22 +82,24 @@ export default function MenuPage() {
       // Fetch subscription_plan from profiles table (primary source)
       const { data: profile } = await supabase
         .from("profiles")
-        .select("subscription_plan")
+        .select("subscription_plan, category")
         .eq("id", user.id)
         .single();
 
       if (profile) {
         setSubscriptionPlan(profile.subscription_plan || "free_trial");
+        setVendorCategory(profile.category || null);
       } else {
         // Fallback to vendors table if profile not found
         const { data: vendor } = await supabase
           .from("vendors")
-          .select("subscription_plan")
+          .select("subscription_plan, category")
           .eq("profile_id", user.id)
           .single();
 
         if (vendor) {
           setSubscriptionPlan(vendor.subscription_plan || "free_trial");
+          setVendorCategory(vendor.category || null);
         }
       }
     } catch (error) {
@@ -215,9 +219,12 @@ export default function MenuPage() {
         return 10;
       case "free_trial":
       default:
-        return 5; // Free trial: 5 items
+        return 3; // Free trial: 3 items
     }
   };
+
+  const isCookOrChef = vendorCategory === "chef" || vendorCategory === "home_cook";
+  const canAccessMenu = !isCookOrChef || subscriptionPlan === "professional";
 
   const canAddMoreItems = () => {
     const limit = getMenuLimit();
@@ -344,7 +351,7 @@ export default function MenuPage() {
         .getPublicUrl(fileName);
 
       return urlData.publicUrl;
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error uploading image:", error);
       // Error message is already set in the catch block above
       throw error;
@@ -437,9 +444,10 @@ export default function MenuPage() {
             setSaving(false);
             return;
           }
-        } catch (uploadError: any) {
+        } catch (uploadError) {
           // uploadImage already throws with a descriptive error message
-          alert(uploadError.message || "Failed to upload image. Please try again.");
+          const errorMessage = uploadError instanceof Error ? uploadError.message : "Failed to upload image. Please try again.";
+          alert(errorMessage);
           setSaving(false);
           return;
         }
@@ -521,11 +529,12 @@ export default function MenuPage() {
           await fetchMenuItems();
         }
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error saving item:", error);
       // If error is already handled above, don't show generic message
-      if (!error.message || error.message.includes("upload")) {
-        alert(error.message || "An error occurred. Please try again.");
+      const errorMessage = error instanceof Error ? error.message : "An error occurred. Please try again.";
+      if (!errorMessage || errorMessage.includes("upload")) {
+        alert(errorMessage);
       }
     } finally {
       setSaving(false);
@@ -597,6 +606,26 @@ export default function MenuPage() {
     );
   }
 
+  if (!canAccessMenu) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] bg-hospineil-base-bg px-6 text-center">
+        <h2 className="text-2xl font-semibold text-hospineil-primary font-header mb-2">
+          Menu Access Requires Professional Plan
+        </h2>
+        <p className="text-gray-600 font-body mb-6 max-w-lg">
+          Home cooks and chefs can manage menu items only on the Professional plan.
+          Upgrade your subscription to add menu items and appear in the menu listings.
+        </p>
+        <Button
+          onClick={() => (window.location.href = "/vendor/subscription")}
+          className="bg-hospineil-primary text-white rounded-lg hover:bg-hospineil-primary/90 hover:scale-105 transition-all font-button"
+        >
+          Upgrade Plan
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full">
       {/* Header */}
@@ -653,14 +682,17 @@ export default function MenuPage() {
               {/* Image */}
               <div className="relative w-full h-48 bg-gray-100">
                 {item.image_url ? (
-                  <img
+                  <Image
                     src={item.image_url}
                     alt={item.title}
-                    className="w-full h-full object-cover"
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
                       target.style.display = "none";
                     }}
+                    unoptimized
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">
@@ -689,15 +721,20 @@ export default function MenuPage() {
                   <div className="mb-3 pb-3 -mx-4 px-4 bg-hospineil-accent rounded-t-2xl">
                     <div className="flex items-center gap-2">
                       {item.vendors.image_url ? (
-                        <img
-                          src={item.vendors.image_url}
-                          alt={item.vendors.name}
-                          className="w-6 h-6 rounded-full object-cover border-2 border-white/30"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = "none";
-                          }}
-                        />
+                        <div className="relative w-6 h-6">
+                          <Image
+                            src={item.vendors.image_url}
+                            alt={item.vendors.name}
+                            fill
+                            className="rounded-full object-cover border-2 border-white/30"
+                            sizes="24px"
+                            unoptimized
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = "none";
+                            }}
+                          />
+                        </div>
                       ) : (
                         <div className="w-6 h-6 rounded-full bg-white/20 border-2 border-white/30 flex items-center justify-center">
                           <span className="text-xs text-white font-semibold">
@@ -790,11 +827,14 @@ export default function MenuPage() {
               <Label htmlFor="image">Product Image</Label>
               <div className="mt-2">
                 {imagePreview ? (
-                  <div className="relative inline-block">
-                    <img
+                  <div className="relative inline-block h-32 w-32">
+                    <Image
                       src={imagePreview}
                       alt="Preview"
-                      className="h-32 w-32 object-cover rounded-lg border-2 border-gray-300"
+                      fill
+                      className="object-cover rounded-lg border-2 border-gray-300"
+                      sizes="128px"
+                      unoptimized
                     />
                     <button
                       onClick={() => {

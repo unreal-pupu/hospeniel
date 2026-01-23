@@ -53,10 +53,10 @@ const HowItWorks: React.FC = () => {
         features: ["Multiple vendors", "Premium ingredients", "Delivery available"],
     },
     {
-      title: "Event Reservations",
+      title: "Hire Home Cook",
       icon: <FaCalendarCheck className="text-5xl" />,
-      description: "Book private dining, hotel events, and bar parties.",
-      features: ["Customizable packages", "Exclusive VIP areas", "24/7 availability"],
+      description: "Enjoy fresh, homemade meals prepared by home cooks.",
+      features: ["Authentic home-styled food", "Skilled, verified cooks", "Cook at your home or meal prep"],
     },
    
    

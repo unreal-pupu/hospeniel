@@ -10,10 +10,10 @@ import EGAI from '../../public/EGAI.jpg'
 import REIYA from '../../public/REIYA.jpg'
 
 const reviews = [
-  { id: 1, name: "Reiya", profession: "Entrepreneur", text: "Finding reliable chefs, bakers, and food vendors used to be a stressful process. With Hospineil, I can browse vendors, see their menus, and even contact them directly for outdoor services. It’s like having a marketplace and management tool in one platform!", image: REIYA },
-  { id: 2, name: "Starboy Ebix", profession: "Digital Creator", text: "Hospineil has completely transformed how I manage my orders. I used to spend hours coordinating with different vendors and tracking payments manually. Now, everything is in one place, real-time, and so easy to monitor. My workflow has never been smoother!", image: EGAI },
-  { id: 3, name: "Edubamoere Alaboh", profession: "Food Vendor", text: "I love how Hospineil lets me showcase my products to customers while keeping my orders organized. The notifications and payment system make it so easy to know exactly what’s coming in. It’s saving me time and helping me grow my business.", image: EDUBA },
-  { id: 4, name: "Confidence Columbus", profession: "Freelance Writer", text: "As someone who orders catering and baked goods regularly, Hospineil makes the process incredibly convenient. I can filter vendors by location, see menus, and place orders in seconds. It has simplified my life!", image: CONFI },
+  { id: 1, name: "Reiya", profession: "Entrepreneur", text: "Finding reliable chefs, bakers, and food vendors used to be a stressful process. With Hospeniel, I can browse vendors, see their menus, and even contact them directly for outdoor services. It's like having a marketplace and management tool in one platform!", image: REIYA },
+  { id: 2, name: "Starboy Ebix", profession: "Digital Creator", text: "Hospeniel has completely transformed how I manage my orders. I used to spend hours coordinating with different vendors and tracking payments manually. Now, everything is in one place, real-time, and so easy to monitor. My workflow has never been smoother!", image: EGAI },
+  { id: 3, name: "Edubamoere Alaboh", profession: "Food Vendor", text: "I love how Hospeniel lets me showcase my products to customers while keeping my orders organized. The notifications and payment system make it so easy to know exactly what's coming in. It's saving me time and helping me grow my business.", image: EDUBA },
+  { id: 4, name: "Confidence Columbus", profession: "Freelance Writer", text: "As someone who orders catering and baked goods regularly, Hospeniel makes the process incredibly convenient. I can filter vendors by location, see menus, and place orders in seconds. It has simplified my life!", image: CONFI },
 ];
 
 export default function CustomerReviews() {

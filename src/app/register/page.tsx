@@ -22,43 +22,30 @@ import {
 import { Eye, EyeOff, Mail, Lock } from "lucide-react";
 import Link from "next/link";
 import { validatePassword, getPasswordRequirements } from "@/lib/passwordValidation";
+import { VENDOR_CATEGORIES } from "@/lib/vendorCategories";
 
-const LOCATIONS = [
-  "Bayelsa",
-  "Port Harcourt",
-  "Lagos",
-  "Abuja",
-];
-
-const NIGERIAN_STATES = [
-  "Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa", "Benue", "Borno",
-  "Cross River", "Delta", "Ebonyi", "Edo", "Ekiti", "Enugu", "FCT", "Gombe",
-  "Imo", "Jigawa", "Kaduna", "Kano", "Katsina", "Kebbi", "Kogi", "Kwara",
-  "Lagos", "Nasarawa", "Niger", "Ogun", "Ondo", "Osun", "Oyo", "Plateau",
-  "Rivers", "Sokoto", "Taraba", "Yobe", "Zamfara"
-];
-
-const VENDOR_CATEGORIES = [
-  { label: "Food Vendor", value: "food_vendor" },
-  { label: "Chef", value: "chef" },
-  { label: "Baker", value: "baker" },
-  { label: "Finger Chop", value: "finger_chop" },
-];
-
-interface Bank {
-  id: number;
-  name: string;
-  code: string;
-  longcode?: string;
-  gateway?: string;
-  pay_with_bank?: boolean;
-  active?: boolean;
-  is_deleted?: boolean;
-  country?: string;
-  currency?: string;
-  type?: string;
-  slug?: string;
-}
+// Delivery landmarks for registration (place names only, no zone numbers)
+// These are the actual locations within each delivery zone
+const DELIVERY_LANDMARKS = [
+  "Azikoro",
+  "Swali",
+  "Prosco",
+  "Kpansia",
+  "Yenezuegene",
+  "Ekeki",
+  "Amarata",
+  "Ovom",
+  "Biogbolo",
+  "Opolo",
+  "Etegwe",
+  "Tombia",
+  "Edepie",
+  "Agudama",
+  "Akenfa",
+  "Yenegwe",
+  "Okaki",
+  "Igbogene",
+].sort(); // Sort alphabetically for easier selection
 
 export default function RegisterPage() {
   const [role, setRole] = useState("user");
@@ -74,67 +61,28 @@ export default function RegisterPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
-  const [banks, setBanks] = useState<Bank[]>([]);
-  const [bankCode, setBankCode] = useState("");
-  const [accountNumber, setAccountNumber] = useState("");
-  const [loadingBanks, setLoadingBanks] = useState(false);
   // Phone field (for users)
   const [phoneNumber, setPhoneNumber] = useState("");
   const router = useRouter();
 
-  // Reset location and category when role changes from vendor to user
+  // Reset location and category when role changes
   useEffect(() => {
-    if (role !== "vendor") {
+    if (role === "user") {
       setLocation("");
       setCategory("");
-      setBankCode("");
-      setAccountNumber("");
       setBusinessAddress("");
     }
-    // Reset user address and phone fields when switching to vendor
+    // Don't reset phone number when switching to vendor - vendors also need phone
     if (role === "vendor") {
       setUserAddress("");
-      setPhoneNumber("");
+      // Keep phone number - vendors also need phone
+    }
+    // Reset vendor-specific fields when switching to rider
+    if (role === "rider") {
+      setCategory("");
+      setBusinessAddress("");
     }
   }, [role]);
-
-  // Fetch banks when role is vendor
-  useEffect(() => {
-    if (role === "vendor" && banks.length === 0) {
-      fetchBanks();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role]);
-
-  const fetchBanks = async () => {
-    try {
-      setLoadingBanks(true);
-      const res = await fetch("/api/banks");
-      const data = await res.json();
-      
-      if (data.success && data.banks && Array.isArray(data.banks)) {
-        // Filter only active banks that support pay_with_bank
-        // Also include banks that don't have pay_with_bank set (some banks might not have this field)
-        const activeBanks = data.banks.filter(
-          (bank: Bank) => bank.active !== false && (bank.pay_with_bank !== false)
-        );
-        
-        // Sort banks alphabetically by name
-        activeBanks.sort((a: Bank, b: Bank) => a.name.localeCompare(b.name));
-        
-        setBanks(activeBanks);
-        console.log(`✅ Loaded ${activeBanks.length} banks from ${data.source || 'Paystack'}`);
-      } else {
-        console.error("Failed to fetch banks:", data.error || "Unknown error");
-        // Don't show alert, just log the error - the dropdown will show empty state
-      }
-    } catch (error) {
-      console.error("Error fetching banks:", error);
-      // Don't show alert, just log the error - the dropdown will show empty state
-    } finally {
-      setLoadingBanks(false);
-    }
-  };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,7 +118,7 @@ export default function RegisterPage() {
         }
       }
 
-      // Validate location and category for vendors
+      // Validate location, category, address, and phone for vendors
       if (role === "vendor") {
         if (!location) {
           alert("Please select a location");
@@ -187,20 +135,34 @@ export default function RegisterPage() {
           setLoading(false);
           return;
         }
-        if (!bankCode) {
-          alert("Please select a bank");
+        if (!phoneNumber || phoneNumber.trim() === "") {
+          alert("Please enter your phone number");
           setLoading(false);
           return;
         }
-        if (!accountNumber || accountNumber.length < 10) {
-          alert("Please enter a valid account number (at least 10 digits)");
+      }
+
+      // Validate address, phone, and location for riders
+      if (role === "rider") {
+        if (!location) {
+          alert("Please select a location");
+          setLoading(false);
+          return;
+        }
+        if (!userAddress || userAddress.trim() === "") {
+          alert("Please enter your address");
+          setLoading(false);
+          return;
+        }
+        if (!phoneNumber || phoneNumber.trim() === "") {
+          alert("Please enter your phone number");
           setLoading(false);
           return;
         }
       }
 
       // Build request body object - ensure all fields are properly defined
-      const requestBody: Record<string, any> = {
+      const requestBody: Record<string, string | null> = {
         email: email || "",
         password: password || "",
         name: name || "",
@@ -212,12 +174,16 @@ export default function RegisterPage() {
         requestBody.address = businessAddress || "";
         requestBody.location = location || null;
         requestBody.category = category || null;
-        requestBody.bank_code = bankCode || null;
-        requestBody.account_number = accountNumber || null;
         requestBody.business_name = name || null;
+        requestBody.phone_number = phoneNumber || null; // Add phone number for vendors
+        // Bank details are now optional - vendors can add them later in settings
       } else if (role === "user") {
         requestBody.address = userAddress || "";
         requestBody.phone_number = phoneNumber || null;
+      } else if (role === "rider") {
+        requestBody.address = userAddress || "";
+        requestBody.phone_number = phoneNumber || null;
+        requestBody.location = location || null; // Add location/zone for riders
       } else {
         // Fallback: always include address field (empty string)
         requestBody.address = "";
@@ -272,12 +238,12 @@ export default function RegisterPage() {
         return;
       }
 
-      // Show different success messages based on user role
-      if (role === "vendor") {
-        // Vendor registration: subaccount creation is handled in the API
-        alert("✅ Registration successful! Your Paystack subaccount has been created. Please verify your email before logging in.");
+      // Show success message based on role
+      if (role === "rider") {
+        alert("✅ Registration successful! Your rider account is pending approval. You will be notified once an admin reviews your application.");
+      } else if (role === "vendor") {
+        alert("✅ Registration successful! Your vendor account is pending approval. You will be notified once an admin reviews your application.");
       } else {
-        // Regular user registration: no subaccount message
         alert("✅ Registration successful! Please verify your email before logging in.");
       }
       
@@ -291,17 +257,20 @@ export default function RegisterPage() {
       }
       
       router.push(redirectPath);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Registration failed:", err);
+      let errorMessage = err instanceof Error ? err.message : "Unknown error";
+      const errorStack = err instanceof Error ? err.stack : undefined;
+      const errorName = err instanceof Error ? err.name : "Error";
       console.error("Error details:", {
-        message: err.message,
-        stack: err.stack,
-        name: err.name,
+        message: errorMessage,
+        stack: errorStack,
+        name: errorName,
       });
       
       // Provide more helpful error messages
-      let errorMessage = "Registration failed. ";
-      if (err.message) {
+      errorMessage = "Registration failed. ";
+      if (err instanceof Error && err.message) {
         if (err.message.includes("address is not defined")) {
           errorMessage += "There was an issue with the address field. Please ensure all required fields are filled.";
         } else if (err.message.includes("fetch")) {
@@ -370,71 +339,80 @@ export default function RegisterPage() {
               </div>
             )}
 
-            {/* Address and Phone Fields (only for users) */}
-            {role === "user" && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="userAddress" className="text-sm font-medium text-gray-700">
-                    Address <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="userAddress"
-                    type="text"
-                    value={userAddress}
-                    onChange={(e) => setUserAddress(e.target.value)}
-                    placeholder="Enter your full address (street, city, state)"
-                    required
-                    className="bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Include street address, city, and state for accurate delivery
-                  </p>
-                </div>
+            {/* Phone Number Field (for all roles) */}
+            <div className="space-y-2">
+              <Label htmlFor="phoneNumber" className="text-sm font-medium text-gray-700">
+                Phone Number <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="phoneNumber"
+                type="tel"
+                value={phoneNumber}
+                onChange={(e) => {
+                  // Only allow digits and + for phone numbers
+                  const value = e.target.value.replace(/[^\d+]/g, "");
+                  setPhoneNumber(value);
+                }}
+                placeholder="e.g., +2348012345678 or 08012345678"
+                required
+                className="bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {role === "vendor" 
+                  ? "We'll use this for riders to contact you about deliveries"
+                  : "We'll use this to contact you about your orders"
+                }
+              </p>
+            </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="phoneNumber" className="text-sm font-medium text-gray-700">
-                    Phone Number <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="phoneNumber"
-                    type="tel"
-                    value={phoneNumber}
-                    onChange={(e) => {
-                      // Only allow digits and + for phone numbers
-                      const value = e.target.value.replace(/[^\d+]/g, "");
-                      setPhoneNumber(value);
-                    }}
-                    placeholder="e.g., +2348012345678 or 08012345678"
-                    required
-                    className="bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    We'll use this to contact you about your orders
-                  </p>
-                </div>
-              </>
+            {/* Address Fields (for users and riders) */}
+            {(role === "user" || role === "rider") && (
+              <div className="space-y-2">
+                <Label htmlFor="userAddress" className="text-sm font-medium text-gray-700">
+                  Address <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="userAddress"
+                  type="text"
+                  value={userAddress}
+                  onChange={(e) => setUserAddress(e.target.value)}
+                  placeholder="Enter your full address (street, city, state)"
+                  required
+                  className="bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Include street address, city, and state for accurate delivery
+                </p>
+              </div>
             )}
 
-            {/* Location (only for vendor) */}
-            {role === "vendor" && (
+            {/* Delivery Location (for vendor and rider) */}
+            {(role === "vendor" || role === "rider") && (
               <div className="space-y-2">
-                <Label htmlFor="location">Location</Label>
+                <Label htmlFor="location" className="text-sm font-medium text-gray-700">
+                  Location <span className="text-red-500">*</span>
+                </Label>
                 <Select
                   onValueChange={(value) => setLocation(value)}
                   value={location}
                   required
                 >
-                  <SelectTrigger id="location" className="w-full">
+                  <SelectTrigger id="location" className="w-full bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11">
                     <SelectValue placeholder="Select your location" />
                   </SelectTrigger>
                   <SelectContent>
-                    {LOCATIONS.map((loc) => (
-                      <SelectItem key={loc} value={loc}>
-                        {loc}
+                    {DELIVERY_LANDMARKS.map((landmark) => (
+                      <SelectItem key={landmark} value={landmark}>
+                        {landmark}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {role === "vendor" 
+                    ? "Select the location where your business is located"
+                    : "Select the location where you operate for better task assignment"}
+                </p>
               </div>
             )}
 
@@ -459,70 +437,6 @@ export default function RegisterPage() {
                   </SelectContent>
                 </Select>
               </div>
-            )}
-
-            {/* Bank Details (only for vendor) */}
-            {role === "vendor" && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="bank" className="text-sm font-medium text-gray-700">
-                    Bank Name <span className="text-red-500">*</span>
-                  </Label>
-                  <Select
-                    onValueChange={(value) => {
-                      setBankCode(value);
-                      console.log("Selected bank code:", value);
-                    }}
-                    value={bankCode}
-                    required
-                    disabled={loadingBanks}
-                  >
-                    <SelectTrigger id="bank" className="w-full bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11">
-                      <SelectValue placeholder={loadingBanks ? "Loading banks..." : banks.length > 0 ? "Select your bank" : "No banks available"} />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white rounded-lg shadow-lg border border-gray-200 max-h-[300px] overflow-y-auto">
-                      {banks.length > 0 ? (
-                        banks.map((bank) => (
-                          <SelectItem key={bank.code} value={bank.code} className="hover:bg-gray-100 cursor-pointer">
-                            {bank.name}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="no-banks" disabled className="text-gray-400">
-                          {loadingBanks ? "Loading banks..." : "No banks available"}
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {loadingBanks && (
-                    <p className="text-xs text-gray-500">Loading banks...</p>
-                  )}
-                  {!loadingBanks && banks.length > 0 && (
-                    <p className="text-xs text-gray-500">{banks.length} banks available</p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="accountNumber" className="text-sm font-medium text-gray-700">
-                    Account Number <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="accountNumber"
-                    type="text"
-                    value={accountNumber}
-                    onChange={(e) => {
-                      // Only allow digits
-                      const value = e.target.value.replace(/\D/g, "");
-                      setAccountNumber(value);
-                    }}
-                    placeholder="Enter your account number"
-                    required
-                    minLength={10}
-                    className="bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Enter your account number (minimum 10 digits)</p>
-                </div>
-              </>
             )}
 
             {/* Email */}
@@ -632,6 +546,7 @@ export default function RegisterPage() {
                 <SelectContent>
                   <SelectItem value="user">User</SelectItem>
                   <SelectItem value="vendor">Vendor</SelectItem>
+                  <SelectItem value="rider">Rider</SelectItem>
                 </SelectContent>
               </Select>
             </div>

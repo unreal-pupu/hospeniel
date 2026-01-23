@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabaseClient";
+import { MapPin } from "lucide-react";
 
 interface Vendor {
   id: string;
@@ -12,11 +12,13 @@ interface Vendor {
   image: string | null;
   description: string | null;
   status: string;
+  category?: string | null;
+  location?: string | null;
+  specialties?: string[];
 }
 
 export default function VendorShowcase() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [vendorsLoading, setVendorsLoading] = useState(true);
 
@@ -30,8 +32,6 @@ export default function VendorShowcase() {
       } catch (error) {
         console.error("Error checking auth:", error);
         setIsLoggedIn(false);
-      } finally {
-        setLoading(false);
       }
     };
 
@@ -53,7 +53,8 @@ export default function VendorShowcase() {
         setVendorsLoading(true);
         
         // Fetch featured vendors from API route (works for authenticated and unauthenticated users)
-        const response = await fetch("/api/featured-vendors");
+        // Add cache-busting query param to ensure fresh data
+        const response = await fetch(`/api/featured-vendors?t=${Date.now()}`);
         
         if (!response.ok) {
           throw new Error("Failed to fetch featured vendors");
@@ -62,12 +63,25 @@ export default function VendorShowcase() {
         const { vendors: data } = await response.json();
 
         // Transform data to match Vendor interface
-        const featuredVendors: Vendor[] = (data || []).map((vendor: any) => ({
+        interface VendorData {
+          id: string;
+          name?: string | null;
+          featured_image?: string | null;
+          featured_description?: string | null;
+          category?: string | null;
+          location?: string | null;
+          specialties?: string[];
+          [key: string]: unknown;
+        }
+        const featuredVendors: Vendor[] = (data || []).map((vendor: VendorData) => ({
           id: vendor.id,
           name: vendor.name || "Unknown Vendor",
           image: vendor.featured_image || null,
           description: vendor.featured_description || null,
           status: "Available", // Default status
+          category: vendor.category || null,
+          location: vendor.location || null,
+          specialties: vendor.specialties || [],
         }));
 
         setVendors(featuredVendors);
@@ -80,9 +94,55 @@ export default function VendorShowcase() {
     };
 
     fetchFeaturedVendors();
+
+    // Listen for service profile updates
+    const handleServiceProfileUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      console.log('Service profile updated event received in VendorShowcase:', customEvent.detail);
+      // Immediately refetch without delay for user-initiated updates
+      fetchFeaturedVendors();
+    };
+    
+    window.addEventListener('vendor-service-profile-updated', handleServiceProfileUpdate);
+
+    const serviceProfilesChannel = supabase
+      .channel("vendor_service_profiles_showcase_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "vendor_service_profiles",
+        },
+        () => {
+          fetchFeaturedVendors();
+        }
+      )
+      .subscribe();
+
+    const featuredProfilesChannel = supabase
+      .channel("featured_vendor_profiles_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+        },
+        () => {
+          fetchFeaturedVendors();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      window.removeEventListener('vendor-service-profile-updated', handleServiceProfileUpdate);
+      serviceProfilesChannel.unsubscribe();
+      featuredProfilesChannel.unsubscribe();
+    };
   }, []);
 
-  const handleContact = (vendorId: string) => {
+  const handleContact = () => {
     if (!isLoggedIn) {
       // Redirect to registration if not logged in
       window.location.href = "/register";
@@ -137,6 +197,7 @@ export default function VendorShowcase() {
                       sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                       placeholder="blur"
                       blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAIAAoDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAhEAACAQMDBQAAAAAAAAAAAAABAgMABAUGIWGRkqGx0f/EABUBAQEAAAAAAAAAAAAAAAAAAAMF/8QAGhEAAgIDAAAAAAAAAAAAAAAAAAECEgMRkf/aAAwDAQACEQMRAD8AltJagyeH0AthI5xdrLcNM91BF5pX2HaH9bcfaSXWGaRmknyJckliyjqTzSlT54b6bk+h0R//2Q=="
+                      unoptimized
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
@@ -149,14 +210,33 @@ export default function VendorShowcase() {
 
                 {/* Vendor Info */}
                 <div className="p-6">
-                  <h3 className="text-xl font-bold text-gray-800 font-header mb-2">
-                    {vendor.name}
-                  </h3>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <h3 className="text-xl font-bold text-gray-800 font-header">
+                      {vendor.name}
+                    </h3>
+                    {vendor.category && (
+                      <span className="px-2 py-1 bg-hospineil-primary/10 text-hospineil-primary text-xs font-semibold rounded-full">
+                        {vendor.category.replace("_", " ")}
+                      </span>
+                    )}
+                  </div>
                   {vendor.description && (
                     <p className="text-sm text-gray-600 font-body mb-3 line-clamp-2">
                       {vendor.description}
                     </p>
                   )}
+                  {(vendor.category === "chef" || vendor.category === "home_cook") && vendor.location && (
+                    <p className="text-sm text-gray-500 font-body mb-2 flex items-center gap-1">
+                      <MapPin className="h-4 w-4 text-gray-500" />
+                      <span>{vendor.location}</span>
+                    </p>
+                  )}
+                  {(vendor.category === "chef" || vendor.category === "home_cook") &&
+                    (vendor.specialties?.length || 0) > 0 && (
+                      <p className="text-sm text-gray-500 font-body mb-3">
+                        {vendor.specialties?.join(", ")}
+                      </p>
+                    )}
                   <div className="flex items-center gap-2 mb-4">
                     <span className="w-2 h-2 bg-hospineil-primary rounded-full"></span>
                     <span className="text-sm text-gray-800 font-body">
@@ -166,25 +246,16 @@ export default function VendorShowcase() {
 
                   {/* Contact Button */}
                   <Button
-                    onClick={() => handleContact(vendor.id)}
+                    onClick={handleContact}
                     className="w-full bg-hospineil-accent text-hospineil-light-bg hover:bg-hospineil-accent-hover focus:ring-2 focus:ring-hospineil-primary focus:ring-offset-2 transition-all duration-300 hover:scale-105 hover:shadow-lg font-button font-medium"
                   >
-                    {isLoggedIn ? "Contact" : "Register to Contact"}
+                    Contact
                   </Button>
                 </div>
               </div>
             ))}
           </div>
         )}
-
-        {/* View All Vendors Button */}
-        <div className="text-center">
-          <Link href="/vendor-listing">
-            <Button className="bg-hospineil-accent text-hospineil-light-bg hover:bg-hospineil-accent-hover focus:ring-2 focus:ring-hospineil-primary focus:ring-offset-2 transition-all duration-300 hover:scale-105 hover:shadow-lg font-button font-medium px-8 py-3 rounded-full">
-              View All Vendors
-            </Button>
-          </Link>
-        </div>
       </div>
     </section>
   );

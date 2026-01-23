@@ -55,7 +55,7 @@ export default function VendorContactPage() {
 
       <div className="bg-white p-6 rounded-lg shadow-md mb-8">
         <h3 className="text-lg font-semibold text-gray-800 mb-3">Get in Touch</h3>
-         <p className="text-gray-600 mb-3"> We're glad to have you here! contact us for the best experiences</p>
+         <p className="text-gray-600 mb-3"> We&apos;re glad to have you here! contact us for the best experiences</p>
 
         <div className="space-y-3 text-gray-700">
           <div className="flex items-center gap-3">

@@ -77,7 +77,7 @@ export async function GET(req: Request) {
     // Check if user is admin
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
-      .select("is_admin")
+      .select("is_admin, role")
       .eq("id", user.id)
       .single();
 
@@ -88,7 +88,8 @@ export async function GET(req: Request) {
       );
     }
 
-    if (!profile.is_admin) {
+    const isAdmin = profile?.is_admin === true || profile?.role?.toLowerCase().trim() === "admin";
+    if (!isAdmin) {
       return NextResponse.json(
         { error: "Forbidden. Admin access required." },
         { status: 403 }
@@ -144,8 +145,8 @@ export async function GET(req: Request) {
     }
 
     // Get unique user IDs and vendor IDs
-    const userIds = [...new Set(orders.map((o: any) => o.user_id).filter(Boolean))];
-    const vendorIds = [...new Set(orders.map((o: any) => o.vendor_id).filter(Boolean))];
+    const userIds = [...new Set(orders.map((o: OrderWithDetails) => o.user_id).filter(Boolean))];
+    const vendorIds = [...new Set(orders.map((o: OrderWithDetails) => o.vendor_id).filter(Boolean))];
 
     // Fetch user profiles
     const { data: userProfiles } = await supabaseAdmin
@@ -185,7 +186,7 @@ export async function GET(req: Request) {
     });
 
     // Combine orders with user and vendor information
-    const ordersWithDetails: OrderWithDetails[] = orders.map((order: any) => {
+    const ordersWithDetails: OrderWithDetails[] = orders.map((order: OrderWithDetails) => {
       const userProfile = userProfileMap.get(order.user_id);
       const vendorProfile = vendorProfileMap.get(order.vendor_id);
       const vendorInfo = vendorMap.get(order.vendor_id);

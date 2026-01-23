@@ -93,10 +93,11 @@ export async function POST(req: Request) {
       },
       { status: 200 }
     );
-  } catch (err: any) {
+  } catch (err) {
     console.error("🔥 Subscription update API error:", err);
+    const errorMessage = err instanceof Error ? err.message : "Internal server error";
     return NextResponse.json(
-      { success: false, error: err.message || "Internal server error" },
+      { success: false, error: errorMessage },
       { status: 500 }
     );
   }

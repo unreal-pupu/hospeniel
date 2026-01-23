@@ -1,11 +1,25 @@
 "use client";
 
+"use client";
+
 import { useEffect, useState, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { RefreshCw, Loader2 } from "lucide-react";
+import { RefreshCw, Loader2, Info } from "lucide-react";
+import type { User } from "@supabase/supabase-js";
+import type { RealtimeChannel } from "@supabase/supabase-js";
+import { getRoleBasedRedirect } from "@/lib/roleRouting";
+import dynamic from "next/dynamic";
+
+const CookChefDashboard = dynamic(() => import('@/components/CookChefDashboard'), {
+  loading: () => (
+    <div className="w-full min-h-screen bg-hospineil-base-bg flex items-center justify-center">
+      <Loader2 className="h-8 w-8 animate-spin text-hospineil-primary" />
+    </div>
+  ),
+});
 
 interface VendorProfile {
   id: string;
@@ -31,6 +45,10 @@ interface Order {
   created_at: string;
 }
 
+interface WindowWithVendorDashboard extends Window {
+  __vendorDashboardFetchOrders?: (showRefreshing?: boolean) => Promise<void>;
+}
+
 // Commission calculation helper
 const COMMISSION_RATE = 0.10; // 10%
 
@@ -49,12 +67,11 @@ const VendorDashboard: React.FC = () => {
   const [vendor, setVendor] = useState<VendorProfile | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-  const [hasCheckedAuth, setHasCheckedAuth] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [ordersError, setOrdersError] = useState<string | null>(null);
   const [menuItemsError, setMenuItemsError] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const channelRef = useRef<any>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
   const vendorIdRef = useRef<string | null>(null);
 
   // Safety timeout: Force loading to false after 5 seconds to prevent infinite loading
@@ -63,7 +80,6 @@ const VendorDashboard: React.FC = () => {
       if (loading && !vendor) {
         console.warn("⚠️ Vendor Dashboard: Safety timeout - forcing loading to false");
         setLoading(false);
-        setHasCheckedAuth(true);
         // Set a fallback vendor so dashboard can render
         setVendor({
           id: "timeout-fallback",
@@ -83,7 +99,7 @@ const VendorDashboard: React.FC = () => {
     let timeoutId: NodeJS.Timeout;
 
     const loadDashboard = async () => {
-      let currentUser: any = null;
+      let currentUser: User | null = null;
       try {
         console.log("🔵 Vendor Dashboard: Starting to load...");
 
@@ -98,7 +114,6 @@ const VendorDashboard: React.FC = () => {
               email: "",
               role: "vendor",
             });
-            setHasCheckedAuth(true);
             setLoading(false);
             alert("Dashboard loading is taking too long. Please refresh the page.");
           }
@@ -152,7 +167,7 @@ const VendorDashboard: React.FC = () => {
             code: profileError.code || "NO_CODE",
             details: profileError.details || null,
             hint: profileError.hint || null,
-            status: (profileError as any).status || null,
+            status: (profileError as { status?: number }).status || null,
           };
           console.error("❌ Vendor Dashboard: Profile fetch error:", errorDetails);
           
@@ -175,7 +190,6 @@ const VendorDashboard: React.FC = () => {
               email: user.email || "",
               role: "vendor",
             });
-            setHasCheckedAuth(true);
             setLoading(false);
             console.log("✅ Vendor Dashboard: Fallback vendor set due to error - staying on dashboard");
           }
@@ -204,7 +218,6 @@ const VendorDashboard: React.FC = () => {
               email: user.email || "",
               role: "vendor",
             });
-            setHasCheckedAuth(true);
             setLoading(false);
             console.log("✅ Vendor Dashboard: Fallback vendor set - staying on dashboard");
           }
@@ -216,14 +229,32 @@ const VendorDashboard: React.FC = () => {
           return;
         }
 
-        // Step 3: Verify user is a vendor (only if profile exists)
-        if (profile && profile.role !== "vendor") {
-          console.log("❌ Vendor Dashboard: User is not a vendor, role:", profile.role);
-          clearTimeout(timeoutId);
-          if (isMounted) {
-            router.replace("/explore");
+        // Step 3: ✅ CRITICAL - Check role from profiles.role FIRST
+        // Priority: admin → vendor → rider → user
+        if (profile) {
+          const role = profile.role?.toLowerCase().trim();
+          
+          // Admin role → redirect to admin dashboard
+          if (role === "admin") {
+            console.log("❌ Vendor Dashboard: User has admin role - redirecting to admin dashboard");
+            clearTimeout(timeoutId);
+            if (isMounted) {
+              router.replace("/admin");
+            }
+            return;
           }
-          return;
+          
+          // Non-vendor role → redirect to appropriate area
+          if (role !== "vendor") {
+            console.log("❌ Vendor Dashboard: User is not a vendor, role:", profile.role);
+            clearTimeout(timeoutId);
+            if (isMounted) {
+              // Use centralized routing logic
+              const redirectResult = getRoleBasedRedirect(profile.role, null);
+              router.replace(redirectResult.path);
+            }
+            return;
+          }
         }
         
         // If we don't have a profile, we'll still allow them to stay on dashboard
@@ -238,24 +269,29 @@ const VendorDashboard: React.FC = () => {
           return;
         }
 
-        console.log("✅ Vendor Dashboard: Profile validated, setting vendor data");
-        console.log("✅ Vendor Dashboard: Profile name from database:", profile.name);
-        console.log("✅ Vendor Dashboard: Profile name type:", typeof profile.name);
-        console.log("✅ Vendor Dashboard: Profile name value (raw):", JSON.stringify(profile.name));
-        console.log("✅ Vendor Dashboard: Full profile data:", profile);
+        // Only log profile details if profile exists
+        if (profile) {
+          console.log("✅ Vendor Dashboard: Profile validated, setting vendor data");
+          console.log("✅ Vendor Dashboard: Profile name from database:", profile.name);
+          console.log("✅ Vendor Dashboard: Profile name type:", typeof profile.name);
+          console.log("✅ Vendor Dashboard: Profile name value (raw):", JSON.stringify(profile.name));
+          console.log("✅ Vendor Dashboard: Full profile data:", profile);
+        }
         
         // CRITICAL: profiles.name is the PRIMARY source for vendor names
         // Fetch name from profiles table - this is where vendor names are stored
         let finalVendorName: string | null = null; // Start with null to track if name was found
         
         // First, try to get name from profiles table (primary source)
-        if (profile.name && typeof profile.name === 'string' && profile.name.trim() !== "") {
+        if (profile && profile.name && typeof profile.name === 'string' && profile.name.trim() !== "") {
           finalVendorName = profile.name.trim();
           console.log("✅ Vendor Dashboard: Using profile.name from profiles table:", finalVendorName);
         } else {
           // Profile name is missing - try fallback to vendors table
           console.warn("⚠️ Vendor Dashboard: Profile name is missing or empty");
-          console.warn("⚠️ Profile data:", { id: profile.id, name: profile.name, email: profile.email });
+          if (profile) {
+            console.warn("⚠️ Profile data:", { id: profile.id, name: profile.name, email: profile.email });
+          }
           console.warn("⚠️ Attempting fallback to vendors table...");
           
           try {
@@ -276,8 +312,8 @@ const VendorDashboard: React.FC = () => {
             } else {
               console.warn("⚠️ Vendor Dashboard: Could not fetch from vendors table:", vendorError?.message);
             }
-          } catch (error) {
-            console.error("❌ Vendor Dashboard: Error fetching vendor data:", error);
+          } catch (vendorFetchError) {
+            console.error("❌ Vendor Dashboard: Error fetching vendor data:", vendorFetchError);
           }
         }
         
@@ -311,7 +347,6 @@ const VendorDashboard: React.FC = () => {
           
           // Use React's automatic batching - all these state updates will be batched together
           setVendor(vendorData);
-          setHasCheckedAuth(true);
           setLoading(false);
           
           console.log("✅ Vendor Dashboard: States queued for update");
@@ -327,12 +362,10 @@ const VendorDashboard: React.FC = () => {
               email: user.email || "",
               role: "vendor",
             });
-            setHasCheckedAuth(true);
             setLoading(false);
             console.log("✅ Vendor Dashboard: Using fallback vendor data");
           } else {
             // Vendor already set, just update loading state
-            setHasCheckedAuth(true);
             setLoading(false);
           }
         }
@@ -363,10 +396,11 @@ const VendorDashboard: React.FC = () => {
               setMenuItemsError(null);
             }
           }
-        } catch (error: any) {
-          console.error("❌ Vendor Dashboard: Exception fetching menu items:", error);
+        } catch (menuItemsFetchError) {
+          console.error("❌ Vendor Dashboard: Exception fetching menu items:", menuItemsFetchError);
           if (isMounted) {
-            setMenuItemsError(error.message || "An error occurred while fetching menu items");
+            const errorMessage = menuItemsFetchError instanceof Error ? menuItemsFetchError.message : "An error occurred while fetching menu items";
+            setMenuItemsError(errorMessage);
             setMenuItems([]);
           }
         }
@@ -388,17 +422,26 @@ const VendorDashboard: React.FC = () => {
 
           try {
             setOrdersError(null);
+            // Fetch all orders for this vendor (including Pending, Paid, Accepted, etc.)
+            // Use explicit column selection to avoid schema mismatch errors
             const { data: ordersData, error: ordersError } = await supabase
               .from("orders")
-              .select("id, total_price, status, created_at")
+              .select("id, total_price, status, created_at, payment_reference")
               .eq("vendor_id", vendorIdRef.current)
-              .order("created_at", { ascending: false });
+              .order("created_at", { ascending: false })
+              .limit(100); // Add limit to prevent large queries
 
             if (ordersError) {
               console.error("❌ Vendor Dashboard: Error fetching orders:", ordersError);
+              console.error("❌ Error details:", {
+                message: ordersError.message,
+                code: ordersError.code,
+                details: ordersError.details,
+                hint: ordersError.hint
+              });
               if (isMounted) {
                 setOrders([]);
-                setOrdersError(ordersError.message || "Failed to fetch orders");
+                setOrdersError(ordersError.message || "Failed to fetch orders. Please refresh the page.");
               }
             } else {
               console.log("✅ Vendor Dashboard: Orders fetched:", ordersData?.length || 0);
@@ -407,10 +450,11 @@ const VendorDashboard: React.FC = () => {
                 setOrdersError(null);
               }
             }
-          } catch (error: any) {
-            console.error("❌ Vendor Dashboard: Exception fetching orders:", error);
+          } catch (ordersFetchError) {
+            console.error("❌ Vendor Dashboard: Exception fetching orders:", ordersFetchError);
             if (isMounted) {
-              setOrdersError(error.message || "An error occurred while fetching orders");
+              const errorMessage = ordersFetchError instanceof Error ? ordersFetchError.message : "An error occurred while fetching orders";
+              setOrdersError(errorMessage);
             }
           } finally {
             if (isMounted && showRefreshing) {
@@ -420,7 +464,7 @@ const VendorDashboard: React.FC = () => {
         };
 
         // Make fetchOrders available globally for the subscription callback
-        (window as any).__vendorDashboardFetchOrders = fetchOrders;
+        (window as WindowWithVendorDashboard).__vendorDashboardFetchOrders = fetchOrders;
 
         // Initial fetch
         await fetchOrders();
@@ -434,20 +478,21 @@ const VendorDashboard: React.FC = () => {
         }
 
         const ordersChannel = supabase
-          .channel(`vendor-orders-${profile.id}-${Date.now()}`)
+          .channel(`vendor-orders-${vendorIdForQueries}-${Date.now()}`)
           .on(
             "postgres_changes",
             {
               event: "*", // Listen to INSERT, UPDATE, DELETE
               schema: "public",
               table: "orders",
-              filter: `vendor_id=eq.${profile.id}`,
+              filter: `vendor_id=eq.${vendorIdForQueries}`,
             },
             (payload) => {
               console.log("🔄 Vendor Dashboard: Order change detected:", payload);
               // Refetch orders when changes occur
-              if ((window as any).__vendorDashboardFetchOrders) {
-                (window as any).__vendorDashboardFetchOrders(false);
+              const windowWithVendorDashboard = window as WindowWithVendorDashboard;
+              if (windowWithVendorDashboard.__vendorDashboardFetchOrders) {
+                windowWithVendorDashboard.__vendorDashboardFetchOrders(false);
               }
             }
           )
@@ -466,8 +511,8 @@ const VendorDashboard: React.FC = () => {
         }
 
         clearTimeout(timeoutId);
-      } catch (error: any) {
-        console.error("❌ Vendor Dashboard: Unexpected error:", error);
+      } catch (dashboardError) {
+        console.error("❌ Vendor Dashboard: Unexpected error:", dashboardError);
         clearTimeout(timeoutId);
         if (isMounted) {
           // On error, set a default vendor so the dashboard can still render
@@ -478,7 +523,6 @@ const VendorDashboard: React.FC = () => {
             email: currentUser?.email || "",
             role: "vendor",
           });
-          setHasCheckedAuth(true);
           setLoading(false);
           console.error("❌ Vendor Dashboard: Error occurred, using fallback vendor data");
         }
@@ -498,16 +542,18 @@ const VendorDashboard: React.FC = () => {
         channelRef.current = null;
       }
       // Clean up global function
-      delete (window as any).__vendorDashboardFetchOrders;
+      const windowWithVendorDashboard = window as WindowWithVendorDashboard;
+      delete windowWithVendorDashboard.__vendorDashboardFetchOrders;
     };
-  }, []); // Only run once on mount
+  }, [router, vendor]); // Include router and vendor in dependencies
 
   // Refresh orders when page gains focus (user switches back to tab)
   useEffect(() => {
     const handleFocus = () => {
-      if (vendorIdRef.current && (window as any).__vendorDashboardFetchOrders) {
+      const windowWithVendorDashboard = window as WindowWithVendorDashboard;
+      if (vendorIdRef.current && windowWithVendorDashboard.__vendorDashboardFetchOrders) {
         console.log("🔄 Vendor Dashboard: Page focused, refreshing orders...");
-        (window as any).__vendorDashboardFetchOrders(false);
+        windowWithVendorDashboard.__vendorDashboardFetchOrders(false);
       }
     };
 
@@ -561,6 +607,14 @@ const VendorDashboard: React.FC = () => {
   const completedCommission = calculateCommission(completedSales);
   const completedNetEarnings = calculateNetEarnings(completedSales);
 
+  // Check if vendor is a cook or chef - render different dashboard
+  const isCookOrChef = vendor?.category === 'chef' || vendor?.category === 'home_cook';
+
+  // If cook/chef, render CookChefDashboard
+  if (isCookOrChef) {
+    return <CookChefDashboard vendor={vendor} />;
+  }
+
   return (
     <div className="w-full min-h-screen bg-hospineil-base-bg">
       {/* Header Section */}
@@ -610,8 +664,9 @@ const VendorDashboard: React.FC = () => {
               className="rounded-lg hover:scale-105 transition-all font-button"
               onClick={async () => {
                 setRefreshing(true);
-                if ((window as any).__vendorDashboardFetchOrders) {
-                  await (window as any).__vendorDashboardFetchOrders(true);
+                const windowWithVendorDashboard = window as WindowWithVendorDashboard;
+                if (windowWithVendorDashboard.__vendorDashboardFetchOrders) {
+                  await windowWithVendorDashboard.__vendorDashboardFetchOrders(true);
                 }
               }}
               disabled={refreshing}
@@ -640,13 +695,39 @@ const VendorDashboard: React.FC = () => {
             >
               Manage Menu
             </Button>
-            <Button
-              variant="outline"
-              className="rounded-lg hover:scale-105 transition-all font-button"
-              onClick={() => router.push("/explore")}
-            >
-              Back to Explore
-            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Payout + Commission Notice */}
+      <div className="mb-6 p-4 bg-amber-50 border-2 border-amber-300 rounded-lg">
+        <div className="flex items-start gap-3">
+          <Info className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-amber-900 font-body font-semibold mb-2">
+              Action Required: Create Your Subaccount to Receive Payments
+            </p>
+            <p className="text-amber-800 font-body text-sm leading-relaxed">
+              Please create your Paystack subaccount with accurate details from the Settings page. This is required to receive payouts for all orders.
+            </p>
+            <p className="text-amber-800 font-body text-sm leading-relaxed mt-2">
+              Platform commission: <span className="font-semibold">10% per order</span> (deducted automatically).
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Menu Availability Notice */}
+      <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="flex items-start gap-3">
+          <Info className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-blue-800 font-body font-semibold mb-2">
+              Important: Menu Item Availability
+            </p>
+            <p className="text-blue-700 font-body text-sm leading-relaxed">
+              Please only upload menu items that are currently available. Remove or unpublish items that are not available, as customers pay for orders before you are notified. Unavailable items can cause failed or delayed orders.
+            </p>
           </div>
         </div>
       </div>
@@ -684,8 +765,9 @@ const VendorDashboard: React.FC = () => {
             size="sm"
             className="mt-2"
             onClick={async () => {
-              if ((window as any).__vendorDashboardFetchOrders) {
-                await (window as any).__vendorDashboardFetchOrders(true);
+              const windowWithVendorDashboard = window as WindowWithVendorDashboard;
+              if (windowWithVendorDashboard.__vendorDashboardFetchOrders) {
+                await windowWithVendorDashboard.__vendorDashboardFetchOrders(true);
               }
             }}
           >
@@ -786,8 +868,9 @@ const VendorDashboard: React.FC = () => {
           <Button
             variant="outline"
             onClick={async () => {
-              if ((window as any).__vendorDashboardFetchOrders) {
-                await (window as any).__vendorDashboardFetchOrders(true);
+              const windowWithVendorDashboard = window as WindowWithVendorDashboard;
+              if (windowWithVendorDashboard.__vendorDashboardFetchOrders) {
+                await windowWithVendorDashboard.__vendorDashboardFetchOrders(true);
               }
             }}
             disabled={refreshing}
@@ -890,7 +973,7 @@ const VendorDashboard: React.FC = () => {
           {menuItems.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-gray-600 font-body mb-4">
-                You haven't added any menu items yet.
+                You haven&apos;t added any menu items yet.
               </p>
               <Button
                 className="bg-hospineil-primary text-white rounded-lg hover:bg-hospineil-primary/90 font-button"

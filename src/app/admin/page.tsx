@@ -42,85 +42,34 @@ export default function AdminDashboard() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        // Fetch all stats in parallel
-        const [
-          usersResult,
-          vendorsResult,
-          ordersResult,
-          paymentsResult,
-          payoutsResult,
-          subscriptionResult,
-        ] = await Promise.all([
-          // Total users (non-vendor)
-          supabase
-            .from("profiles")
-            .select("id", { count: "exact", head: true })
-            .neq("role", "vendor"),
-          
-          // Total vendors
-          supabase
-            .from("profiles")
-            .select("id", { count: "exact", head: true })
-            .eq("role", "vendor"),
-          
-          // Active orders (Pending, Paid, Confirmed, Accepted)
-          supabase
-            .from("orders")
-            .select("id", { count: "exact", head: true })
-            .in("status", ["Pending", "Paid", "Confirmed", "Accepted"]),
-          
-          // Total revenue and commission
-          supabase
-            .from("payments")
-            .select("total_amount, commission_amount")
-            .eq("status", "success"),
-          
-          // Pending payouts
-          supabase
-            .from("vendor_payouts")
-            .select("payout_amount")
-            .eq("status", "pending"),
-          
-          // Subscription stats
-          supabase
-            .from("profiles")
-            .select("subscription_plan")
-            .eq("role", "vendor"),
-        ]);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          setStats({
+            totalUsers: 0,
+            totalVendors: 0,
+            activeOrders: 0,
+            totalRevenue: 0,
+            totalCommission: 0,
+            pendingPayouts: 0,
+            freeTrialVendors: 0,
+            professionalVendors: 0,
+          });
+          return;
+        }
 
-        const totalRevenue = (paymentsResult.data || []).reduce(
-          (sum, p) => sum + (Number(p.total_amount) || 0),
-          0
-        );
-
-        const totalCommission = (paymentsResult.data || []).reduce(
-          (sum, p) => sum + (Number(p.commission_amount) || 0),
-          0
-        );
-
-        const pendingPayouts = (payoutsResult.data || []).reduce(
-          (sum, p) => sum + (Number(p.payout_amount) || 0),
-          0
-        );
-
-        const freeTrialVendors = (subscriptionResult.data || []).filter(
-          (p) => p.subscription_plan === "free_trial"
-        ).length;
-
-        const professionalVendors = (subscriptionResult.data || []).filter(
-          (p) => p.subscription_plan === "professional"
-        ).length;
-
-        setStats({
-          totalUsers: usersResult.count || 0,
-          totalVendors: vendorsResult.count || 0,
-          activeOrders: ordersResult.count || 0,
-          totalRevenue,
-          totalCommission,
-          pendingPayouts,
-          freeTrialVendors,
-          professionalVendors,
+        const response = await fetch("/api/admin/dashboard", {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
         });
+
+        if (!response.ok) {
+          console.error("Error fetching dashboard stats:", await response.text());
+          return;
+        }
+
+        const data = await response.json();
+        setStats(data);
       } catch (error) {
         console.error("Error fetching dashboard stats:", error);
       } finally {
@@ -129,66 +78,10 @@ export default function AdminDashboard() {
     };
 
     fetchStats();
-
-    // Set up real-time subscriptions for dashboard updates
-    const ordersChannel = supabase
-      .channel("admin-dashboard-orders")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "orders",
-        },
-        () => {
-          console.log("🔄 Admin Dashboard: Order change detected, refreshing stats...");
-          setTimeout(() => {
-            fetchStats();
-          }, 500);
-        }
-      )
-      .subscribe();
-
-    const paymentsChannel = supabase
-      .channel("admin-dashboard-payments")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "payments",
-        },
-        () => {
-          console.log("🔄 Admin Dashboard: Payment change detected, refreshing stats...");
-          setTimeout(() => {
-            fetchStats();
-          }, 500);
-        }
-      )
-      .subscribe();
-
-    const profilesChannel = supabase
-      .channel("admin-dashboard-profiles")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "profiles",
-        },
-        () => {
-          console.log("🔄 Admin Dashboard: Profile change detected, refreshing stats...");
-          setTimeout(() => {
-            fetchStats();
-          }, 500);
-        }
-      )
-      .subscribe();
+    const intervalId = setInterval(fetchStats, 15000);
 
     return () => {
-      supabase.removeChannel(ordersChannel);
-      supabase.removeChannel(paymentsChannel);
-      supabase.removeChannel(profilesChannel);
+      clearInterval(intervalId);
     };
   }, []);
 
@@ -369,7 +262,7 @@ interface CompletedOrder {
   };
   menu_items?: {
     title: string;
-  };
+  }[];
 }
 
 function CompletedOrdersList() {
@@ -381,33 +274,8 @@ function CompletedOrdersList() {
     
     const fetchCompletedOrders = async () => {
       try {
-        // Fetch completed and paid orders
-        const { data, error } = await supabase
-          .from("orders")
-          .select(`
-            id,
-            user_id,
-            vendor_id,
-            total_price,
-            status,
-            payment_reference,
-            created_at,
-            updated_at,
-            menu_items (
-              title
-            )
-          `)
-          .in("status", ["Completed", "Paid"])
-          .order("created_at", { ascending: false })
-          .limit(10);
-
-        if (error) {
-          console.error("Error fetching completed orders:", error);
-          if (isMounted) setLoading(false);
-          return;
-        }
-
-        if (!data || data.length === 0) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
           if (isMounted) {
             setOrders([]);
             setLoading(false);
@@ -415,52 +283,21 @@ function CompletedOrdersList() {
           return;
         }
 
-        // Fetch user and vendor profiles
-        const userIds = [...new Set(data.map((o) => o.user_id).filter(Boolean))];
-        const vendorIds = [...new Set(data.map((o) => o.vendor_id).filter(Boolean))];
-
-        const [userProfiles, vendorProfiles] = await Promise.all([
-          supabase
-            .from("profiles")
-            .select("id, name, email")
-            .in("id", userIds),
-          supabase
-            .from("profiles")
-            .select("id, name")
-            .in("id", vendorIds)
-            .eq("role", "vendor"),
-        ]);
-
-        const [vendors] = await supabase
-          .from("vendors")
-          .select("profile_id, business_name")
-          .in("profile_id", vendorIds);
-
-        const userMap = new Map();
-        userProfiles.data?.forEach((p) => userMap.set(p.id, p));
-
-        const vendorMap = new Map();
-        vendorProfiles.data?.forEach((p) => vendorMap.set(p.id, p));
-        vendors?.data?.forEach((v) => {
-          if (v.profile_id) {
-            const profile = vendorMap.get(v.profile_id);
-            if (profile) {
-              vendorMap.set(v.profile_id, {
-                ...profile,
-                business_name: v.business_name || profile.name,
-              });
-            }
-          }
+        const response = await fetch("/api/admin/completed-orders", {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
         });
 
-        const ordersWithDetails = data.map((order) => ({
-          ...order,
-          profiles: userMap.get(order.user_id) || { name: "Unknown User", email: "N/A" },
-          vendor_profiles: vendorMap.get(order.vendor_id) || { name: "Unknown Vendor", business_name: "N/A" },
-        }));
+        if (!response.ok) {
+          console.error("Error fetching completed orders:", await response.text());
+          if (isMounted) setLoading(false);
+          return;
+        }
 
+        const data = await response.json();
         if (isMounted) {
-          setOrders(ordersWithDetails);
+          setOrders(data.orders || []);
           setLoading(false);
         }
       } catch (error) {
@@ -470,42 +307,11 @@ function CompletedOrdersList() {
     };
 
     fetchCompletedOrders();
-
-    // Set up real-time subscription for completed orders
-    const channel = supabase
-      .channel("admin-completed-orders")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "orders",
-        },
-        (payload) => {
-          console.log("🔄 Completed Orders: Change detected:", payload);
-          // Only refetch if status changed to/from Completed or Paid
-          if (
-            payload.eventType === "UPDATE" &&
-            (payload.new.status === "Completed" ||
-              payload.new.status === "Paid" ||
-              payload.old?.status === "Completed" ||
-              payload.old?.status === "Paid")
-          ) {
-            setTimeout(() => {
-              fetchCompletedOrders();
-            }, 500);
-          } else if (payload.eventType === "INSERT") {
-            setTimeout(() => {
-              fetchCompletedOrders();
-            }, 500);
-          }
-        }
-      )
-      .subscribe();
+    const intervalId = setInterval(fetchCompletedOrders, 15000);
 
     return () => {
       isMounted = false;
-      supabase.removeChannel(channel);
+      clearInterval(intervalId);
     };
   }, []);
 
@@ -534,7 +340,9 @@ function CompletedOrdersList() {
             <div className="flex justify-between items-start mb-2">
               <div>
                 <p className="font-semibold text-sm">
-                  {order.menu_items?.title || "Order"}
+                  {order.menu_items && order.menu_items.length > 0
+                    ? order.menu_items.map((item) => item.title).join(", ")
+                    : "Order"}
                 </p>
                 <p className="text-xs text-gray-600">
                   User: {order.profiles?.name || "N/A"} | Vendor: {order.vendor_profiles?.business_name || order.vendor_profiles?.name || "N/A"}
@@ -575,31 +383,30 @@ function CommissionSummary() {
   useEffect(() => {
     const fetchCommissionSummary = async () => {
       try {
-        // Fetch all completed and paid orders
-        const { data, error } = await supabase
-          .from("orders")
-          .select("total_price, status")
-          .in("status", ["Completed", "Paid"]);
-
-        if (error) {
-          console.error("Error fetching commission summary:", error);
-          setLoading(false);
-          return;
-        }
-
-        if (!data || data.length === 0) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
           setSummary({ totalCommission: 0, totalOrders: 0, totalRevenue: 0 });
           setLoading(false);
           return;
         }
 
-        const totalRevenue = data.reduce((sum, order) => sum + (Number(order.total_price) || 0), 0);
-        const totalCommission = totalRevenue * COMMISSION_RATE;
+        const response = await fetch("/api/admin/commission-summary", {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
 
+        if (!response.ok) {
+          console.error("Error fetching commission summary:", await response.text());
+          setLoading(false);
+          return;
+        }
+
+        const data = await response.json();
         setSummary({
-          totalCommission,
-          totalOrders: data.length,
-          totalRevenue,
+          totalCommission: Number(data.totalCommission || 0),
+          totalOrders: Number(data.totalOrders || 0),
+          totalRevenue: Number(data.totalRevenue || 0),
         });
       } catch (error) {
         console.error("Error in fetchCommissionSummary:", error);
@@ -609,41 +416,10 @@ function CommissionSummary() {
     };
 
     fetchCommissionSummary();
-
-    // Set up real-time subscription for commission summary
-    const channel = supabase
-      .channel("admin-commission-summary")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "orders",
-        },
-        (payload) => {
-          console.log("🔄 Commission Summary: Order change detected:", payload);
-          // Refetch when order status changes to/from Completed or Paid
-          if (
-            payload.eventType === "UPDATE" &&
-            (payload.new.status === "Completed" ||
-              payload.new.status === "Paid" ||
-              payload.old?.status === "Completed" ||
-              payload.old?.status === "Paid")
-          ) {
-            setTimeout(() => {
-              fetchCommissionSummary();
-            }, 500);
-          } else if (payload.eventType === "INSERT") {
-            setTimeout(() => {
-              fetchCommissionSummary();
-            }, 500);
-          }
-        }
-      )
-      .subscribe();
+    const intervalId = setInterval(fetchCommissionSummary, 15000);
 
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(intervalId);
     };
   }, []);
 

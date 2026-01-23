@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Loader2, Search, Star, StarOff, Upload, X } from "lucide-react";
+import { Loader2, Search, Star, StarOff, Upload } from "lucide-react";
 import Image from "next/image";
 
 interface Vendor {
@@ -27,7 +27,6 @@ export default function FeaturedVendorsPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -54,18 +53,49 @@ export default function FeaturedVendorsPage() {
     }
   };
 
+  const getAdminAccessToken = async () => {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error || !session?.access_token) {
+      throw new Error("Admin session not found. Please log in again.");
+    }
+    return session.access_token;
+  };
+
+  const updateFeaturedVendor = async (payload: {
+    id: string;
+    is_featured?: boolean;
+    featured_description?: string | null;
+    featured_image?: string | null;
+  }) => {
+    const token = await getAdminAccessToken();
+    const response = await fetch("/api/admin/featured-vendors", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData?.error || "Failed to update featured vendor");
+    }
+
+    return response.json();
+  };
+
   const handleToggleFeatured = async (vendor: Vendor) => {
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ is_featured: !vendor.is_featured })
-        .eq("id", vendor.id);
-
-      if (error) throw error;
+      await updateFeaturedVendor({
+        id: vendor.id,
+        is_featured: !vendor.is_featured,
+      });
       fetchVendors();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error toggling featured status:", error);
-      alert(error.message || "Failed to update featured status");
+      const errorMessage = error instanceof Error ? error.message : "Failed to update featured status";
+      alert(errorMessage);
     }
   };
 
@@ -81,7 +111,6 @@ export default function FeaturedVendorsPage() {
     if (!editingVendor || !event.target.files?.[0]) return;
 
     try {
-      setUploading(true);
       const file = event.target.files[0];
       const fileExt = file.name.split(".").pop();
       const fileName = `featured-${editingVendor.id}-${Date.now()}.${fileExt}`;
@@ -130,11 +159,9 @@ export default function FeaturedVendorsPage() {
           featured_image: imageUrl,
         });
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error uploading image:", error);
       alert("Failed to upload image. You can paste an image URL instead.");
-    } finally {
-      setUploading(false);
     }
   };
 
@@ -143,21 +170,18 @@ export default function FeaturedVendorsPage() {
 
     try {
       setSaving(true);
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          is_featured: editingVendor.is_featured,
-          featured_description: editingVendor.featured_description || null,
-          featured_image: editingVendor.featured_image || null,
-        })
-        .eq("id", editingVendor.id);
-
-      if (error) throw error;
+      await updateFeaturedVendor({
+        id: editingVendor.id,
+        is_featured: editingVendor.is_featured,
+        featured_description: editingVendor.featured_description || null,
+        featured_image: editingVendor.featured_image || null,
+      });
       setEditingVendor(null);
       fetchVendors();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error saving vendor:", error);
-      alert(error.message || "Failed to save changes");
+      const errorMessage = error instanceof Error ? error.message : "Failed to save changes";
+      alert(errorMessage);
     } finally {
       setSaving(false);
     }

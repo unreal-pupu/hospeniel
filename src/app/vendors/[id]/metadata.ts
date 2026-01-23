@@ -18,10 +18,10 @@ const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
 export async function generateMetadata({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   try {
-    const vendorId = params.id;
+    const { id: vendorId } = await params;
     
     // Try parsing as number first (legacy), then as UUID
     const isNumeric = !isNaN(Number(vendorId));

@@ -26,11 +26,13 @@ interface Order {
   id: string;
   vendor_id: string;
   user_id: string;
-  product_id: string;
+  product_id: string | null;
   quantity: number;
   total_price: number;
   status: string;
   payment_reference: string | null;
+  order_type?: string | null;
+  service_request_id?: string | null;
   created_at: string;
   updated_at: string;
   delivery_address_line_1?: string | null;
@@ -156,6 +158,7 @@ export default function AdminOrdersPage() {
           order.vendor_profiles?.name?.toLowerCase().includes(query) ||
           order.vendor_profiles?.business_name?.toLowerCase().includes(query) ||
           order.menu_items?.title?.toLowerCase().includes(query) ||
+          order.order_type?.toLowerCase().includes(query) ||
           order.status?.toLowerCase().includes(query)
         );
       });
@@ -256,9 +259,10 @@ export default function AdminOrdersPage() {
       alert("Delivery information updated successfully!");
       closeDeliveryDialog();
       await fetchOrders();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error updating delivery info:", error);
-      alert(error.message || "Failed to update delivery information");
+      const errorMessage = error instanceof Error ? error.message : "Failed to update delivery information";
+      alert(errorMessage);
     } finally {
       setUpdatingDelivery(false);
     }
@@ -510,11 +514,16 @@ export default function AdminOrdersPage() {
                       </td>
                       <td className="py-3 px-4">
                         <div className="font-medium text-gray-800 font-body">
-                          {order.menu_items?.title || "N/A"}
+                          {order.menu_items?.title || (order.order_type === "service" ? "Service Request" : "N/A")}
                         </div>
                         {order.menu_items?.price && (
                           <div className="text-xs text-gray-500 font-body">
                             ₦{order.menu_items.price.toLocaleString("en-NG", { minimumFractionDigits: 2 })}
+                          </div>
+                        )}
+                        {order.order_type === "service" && order.service_request_id && (
+                          <div className="text-xs text-gray-500 font-body">
+                            Request: {order.service_request_id.substring(0, 8)}...
                           </div>
                         )}
                       </td>
@@ -711,7 +720,7 @@ export default function AdminOrdersPage() {
             {selectedOrder && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                 <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> Updating delivery information will also update the user's profile and recalculate the delivery charge for this order.
+                  <strong>Note:</strong> Updating delivery information will also update the user&apos;s profile and recalculate the delivery charge for this order.
                 </p>
               </div>
             )}

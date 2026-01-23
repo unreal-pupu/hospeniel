@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { loadPaystackScript, getAuthenticatedUserEmail } from "@/lib/paystack";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -12,13 +12,16 @@ import {
   Crown,
   Loader2,
   AlertCircle,
-  Sparkles,
 } from "lucide-react";
+import { FiCheck } from "react-icons/fi";
 
 interface SubscriptionPlan {
   name: string;
   value: string;
+  description: string;
   price: number;
+  monthlyPrice: number;
+  yearlyPrice: number;
   features: string[];
   isCurrent?: boolean;
   isRecommended?: boolean;
@@ -28,35 +31,48 @@ const PLANS: SubscriptionPlan[] = [
   {
     name: "Free Trial",
     value: "free_trial",
+    description: "Every new vendor gets 30 days of free access to the platform.",
     price: 0,
+    monthlyPrice: 0,
+    yearlyPrice: 0,
     features: [
-      "5 menu items",
-      "Platform access for 6 months",
-      "Basic features",
+      "Get listed on the marketplace",
+      "Upload up to 3 menu items",
+      "Basic vendor dashboard",
+      "Receive customer orders",
+      "24/7 support",
     ],
   },
   {
     name: "Starter Plan",
     value: "starter",
-    price: 12000,
+    description: "Best for growing vendors",
+    price: 10000,
+    monthlyPrice: 10000,
+    yearlyPrice: 108000, // 10000 * 12 * 0.90 (10% discount)
     features: [
-      "10 menu items",
+      "Priority listing and discovery",
+      "Upload and manage up to 10 menu items",
       "Priority support",
       "Featured on Explore page",
       "24/7 support",
     ],
   },
   {
-    name: "Professional Plan",
+    name: "Premium",
     value: "professional",
+    description: "For vendors ready to scale",
     price: 20000,
+    monthlyPrice: 20000,
+    yearlyPrice: 216000, // 20000 * 12 * 0.90 (10% discount)
     features: [
-      "Unlimited menu items",
-      "Featured on Explore and Landing page",
-      "Early access to new tools",
-      "Marketing campaign integration",
-      "Direct contact from users",
-      "Service requests enabled",
+      "Priority placement on Explore and Home page",
+      "Upload unlimited menu items",
+      "Receive and reply to service requests",
+      "Customer chat access",
+      "Higher service request visibility",
+      "Premium vendor credibility",
+      "24/7 support",
     ],
     isRecommended: true,
   },
@@ -67,12 +83,9 @@ export default function SubscriptionPage() {
   const [currentPlan, setCurrentPlan] = useState<string>("free_trial");
   const [loading, setLoading] = useState(true);
   const [upgrading, setUpgrading] = useState<string | null>(null);
+  const [planBillingPeriod, setPlanBillingPeriod] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    fetchCurrentPlan();
-  }, []);
-
-  const fetchCurrentPlan = async () => {
+  const fetchCurrentPlan = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -95,7 +108,11 @@ export default function SubscriptionPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [router]);
+
+  useEffect(() => {
+    fetchCurrentPlan();
+  }, [fetchCurrentPlan]);
 
   const handleUpgrade = async (planValue: string) => {
     if (planValue === currentPlan) {
@@ -128,13 +145,18 @@ export default function SubscriptionPage() {
         return;
       }
 
+      // Get the selected billing period for this plan
+      const isYearly = planBillingPeriod[planValue] || false;
+      const planPrice = isYearly ? selectedPlan.yearlyPrice : selectedPlan.monthlyPrice;
+
       console.log(`🔄 Upgrading subscription to: ${planValue}`);
       console.log(`🔄 Current plan: ${currentPlan}`);
       console.log(`🔄 User ID: ${user.id}`);
-      console.log(`🔄 Plan price: ₦${selectedPlan.price}`);
+      console.log(`🔄 Billing period: ${isYearly ? "Yearly" : "Monthly"}`);
+      console.log(`🔄 Plan price: ₦${planPrice}`);
 
       // If it's a free plan (free_trial or downgrade), update directly without payment
-      if (selectedPlan.price === 0) {
+      if (planPrice === 0) {
         console.log("ℹ️ Free plan selected, updating directly without payment...");
         await updateSubscriptionDirectly(user.id, planValue);
         setUpgrading(null);
@@ -164,7 +186,7 @@ export default function SubscriptionPage() {
       // Load Paystack script
       try {
         await loadPaystackScript();
-      } catch (scriptError: any) {
+      } catch (scriptError) {
         console.error("❌ Failed to load Paystack script:", scriptError);
         alert("Failed to load payment system. Please refresh the page and try again.");
         setUpgrading(null);
@@ -189,7 +211,7 @@ export default function SubscriptionPage() {
       const handler = window.PaystackPop.setup({
         key: paystackPublicKey,
         email: userEmail,
-        amount: selectedPlan.price * 100, // Convert to kobo (Paystack uses kobo)
+        amount: planPrice * 100, // Convert to kobo (Paystack uses kobo)
         currency: "NGN",
         ref: paymentReference,
         callback: function(response: { reference: string; status: string; transaction?: string }) {
@@ -197,7 +219,7 @@ export default function SubscriptionPage() {
           
           if (response.status === "success") {
             // Payment successful - update subscription via API (async, fire and forget)
-            updateSubscriptionAfterPayment(callbackUserId, callbackPlanValue, response.reference).catch((error: any) => {
+            updateSubscriptionAfterPayment(callbackUserId, callbackPlanValue, response.reference).catch((error) => {
               console.error("❌ Error updating subscription after payment:", error);
               alert("Payment was successful, but there was an error updating your subscription. Please contact support with reference: " + response.reference);
             });
@@ -221,9 +243,10 @@ export default function SubscriptionPage() {
       }
 
       handler.openIframe();
-    } catch (error: any) {
+    } catch (error) {
       console.error("❌ Error in upgrade flow:", error);
-      alert(`An error occurred: ${error.message || "Please try again."}`);
+      const errorMessage = error instanceof Error ? error.message : "Please try again.";
+      alert(`An error occurred: ${errorMessage}`);
       setUpgrading(null);
     }
   };
@@ -255,9 +278,10 @@ export default function SubscriptionPage() {
       setTimeout(() => {
         router.push("/vendor/dashboard");
       }, 1500);
-    } catch (error: any) {
+    } catch (error) {
       console.error("❌ Error updating subscription:", error);
-      alert(`Failed to update subscription: ${error.message || "Please try again."}`);
+      const errorMessage = error instanceof Error ? error.message : "Please try again.";
+      alert(`Failed to update subscription: ${errorMessage}`);
       throw error;
     }
   };
@@ -300,9 +324,10 @@ export default function SubscriptionPage() {
       setTimeout(() => {
         router.push("/vendor/dashboard");
       }, 1500);
-    } catch (error: any) {
+    } catch (error) {
       console.error("❌ Error updating subscription after payment:", error);
-      alert(`Payment was successful, but subscription update failed: ${error.message || "Please contact support."}`);
+      const errorMessage = error instanceof Error ? error.message : "Please contact support.";
+      alert(`Payment was successful, but subscription update failed: ${errorMessage}`);
       setUpgrading(null);
       throw error;
     }
@@ -317,6 +342,30 @@ export default function SubscriptionPage() {
       return { label: "Upgrade", color: "bg-indigo-100 text-indigo-800" };
     }
     return { label: "Downgrade", color: "bg-gray-100 text-gray-800" };
+  };
+
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat("en-NG", {
+      style: "currency",
+      currency: "NGN",
+      minimumFractionDigits: 0,
+    }).format(price);
+  };
+
+  const toggleBillingPeriod = (planValue: string) => {
+    setPlanBillingPeriod((prev) => ({
+      ...prev,
+      [planValue]: !prev[planValue],
+    }));
+  };
+
+  const getDisplayPrice = (plan: SubscriptionPlan) => {
+    if (plan.price === 0) return { price: 0, label: "" };
+    const isYearly = planBillingPeriod[plan.value] || false;
+    return {
+      price: isYearly ? plan.yearlyPrice : plan.monthlyPrice,
+      label: isYearly ? "year" : "month",
+    };
   };
 
   if (loading) {
@@ -346,67 +395,157 @@ export default function SubscriptionPage() {
       </div>
 
       {/* Plans Grid */}
-      <div className="grid md:grid-cols-3 gap-6">
-        {PLANS.map((plan) => {
+      <div className="grid md:grid-cols-3 gap-8">
+        {PLANS.map((plan, index) => {
           const status = getPlanStatus(plan.value);
           const isCurrent = plan.value === currentPlan;
+          const displayPrice = getDisplayPrice(plan);
+          const isYearly = planBillingPeriod[plan.value] || false;
+
+          // Determine card and button colors based on index (matching Pricing component)
+          let cardBg, textColor, buttonBg, buttonText, buttonHover;
+          if (index === 0) {
+            // First card: Teal background, Orange button
+            cardBg = "bg-hospineil-primary";
+            textColor = "text-white";
+            buttonBg = "bg-hospineil-accent";
+            buttonText = "text-hospineil-light-bg";
+            buttonHover = "hover:bg-hospineil-accent-hover";
+          } else if (index === 1) {
+            // Middle card: Light background, Teal button
+            cardBg = "bg-hospineil-light-bg";
+            textColor = "text-gray-800";
+            buttonBg = "bg-hospineil-primary";
+            buttonText = "text-hospineil-light-bg";
+            buttonHover = "hover:bg-hospineil-primary/90";
+          } else {
+            // Last card: Orange background, Light button
+            cardBg = "bg-hospineil-accent";
+            textColor = "text-white";
+            buttonBg = "bg-hospineil-light-bg";
+            buttonText = "text-hospineil-primary";
+            buttonHover = "hover:bg-hospineil-light-bg/90";
+          }
 
           return (
-            <Card
+            <div
               key={plan.value}
-              className={`relative rounded-xl shadow-lg transition-all hover:shadow-xl ${
-                plan.isRecommended
-                  ? "border-2 border-indigo-600 bg-indigo-50/30"
-                  : "border border-gray-200"
-              }`}
+              className={`relative rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-xl hover:scale-105 ${cardBg} border-2 border-transparent`}
             >
               {plan.isRecommended && (
-                <div className="absolute -top-3 right-4 bg-indigo-600 text-white px-3 py-1 rounded-full text-xs font-semibold">
-                  RECOMMENDED
+                <div className="absolute top-0 right-0 bg-white/20 backdrop-blur-sm text-white px-4 py-1 text-xs font-semibold rounded-bl-lg font-body">
+                  POPULAR
+                </div>
+              )}
+              {plan.value === "free_trial" && (
+                <div className="absolute top-0 right-0 bg-white/20 backdrop-blur-sm text-white px-4 py-1 text-xs font-semibold rounded-bl-lg font-body">
+                  FREE
                 </div>
               )}
 
-              <CardHeader>
+              <div className="p-8">
+                {/* Plan Name */}
                 <div className="flex items-center justify-between mb-2">
-                  <CardTitle className="text-2xl font-bold text-gray-900">
+                  <h3 className={`text-2xl font-bold font-header ${textColor}`}>
                     {plan.name}
-                  </CardTitle>
+                  </h3>
                   {isCurrent && (
-                    <CheckCircle className="h-6 w-6 text-green-600" />
+                    <CheckCircle className={`h-6 w-6 ${textColor === "text-white" ? "text-white" : "text-green-600"}`} />
                   )}
                 </div>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-3xl font-bold text-gray-900">
-                    ₦{plan.price.toLocaleString("en-NG")}
-                  </span>
-                  {plan.price > 0 && (
-                    <span className="text-gray-500 text-sm">/month</span>
-                  )}
-                </div>
-                <Badge className={`mt-2 ${status.color}`}>
-                  {status.label}
-                </Badge>
-              </CardHeader>
 
-              <CardContent>
-                <ul className="space-y-3 mb-6">
-                  {plan.features.map((feature, index) => (
-                    <li key={index} className="flex items-start gap-2">
-                      <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
-                      <span className="text-gray-700 text-sm">{feature}</span>
+                {/* Description */}
+                <p className={`text-sm mb-4 font-body ${textColor === "text-white" ? "text-white/90" : "text-gray-700"}`}>
+                  {plan.description}
+                </p>
+
+                {/* Price and Billing Toggle */}
+                <div className="mb-6">
+                  {plan.price === 0 ? (
+                    <span className={`text-4xl font-bold font-header ${textColor}`}>
+                      FREE
+                    </span>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-baseline gap-2">
+                        <span className={`text-4xl font-bold font-header ${textColor}`}>
+                          {formatPrice(displayPrice.price)}
+                        </span>
+                        <span className={`text-sm font-body ${textColor === "text-white" ? "text-white/80" : "text-gray-600"}`}>
+                          /{displayPrice.label}
+                        </span>
+                      </div>
+                      {/* Billing Period Toggle */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => toggleBillingPeriod(plan.value)}
+                          className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                            isYearly 
+                              ? textColor === "text-white" ? "bg-white/30" : "bg-hospineil-primary" 
+                              : textColor === "text-white" ? "bg-white/20" : "bg-gray-300"
+                          } ${textColor === "text-white" ? "focus:ring-white" : "focus:ring-hospineil-primary"}`}
+                          aria-label="Toggle billing period"
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                              isYearly ? "translate-x-8" : "translate-x-1"
+                            }`}
+                          />
+                        </button>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-body ${!isYearly ? (textColor === "text-white" ? "text-white" : "text-gray-800") : (textColor === "text-white" ? "text-white/60" : "text-gray-500")}`}>
+                            Monthly
+                          </span>
+                          <span className={`text-xs font-body ${isYearly ? (textColor === "text-white" ? "text-white" : "text-gray-800") : (textColor === "text-white" ? "text-white/60" : "text-gray-500")}`}>
+                            Yearly
+                          </span>
+                          {isYearly && (
+                            <span className={`ml-1 px-2 py-0.5 text-xs font-semibold rounded-full font-body ${
+                              textColor === "text-white" 
+                                ? "bg-white/20 text-white" 
+                                : "bg-hospineil-primary/20 text-hospineil-primary"
+                            }`}>
+                              10% OFF
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Status Badge */}
+                {!isCurrent && (
+                  <Badge className={`mb-4 ${status.color} font-body`}>
+                    {status.label}
+                  </Badge>
+                )}
+
+                {/* Features List */}
+                <ul className="space-y-4 mb-8">
+                  {plan.features.map((feature, featureIndex) => (
+                    <li
+                      key={featureIndex}
+                      className="flex items-start gap-3"
+                    >
+                      <FiCheck
+                        className={`flex-shrink-0 w-5 h-5 mt-0.5 ${textColor === "text-white" ? "text-white" : "text-hospineil-accent"}`}
+                      />
+                      <span className={`text-sm font-body ${textColor === "text-white" ? "text-white/90" : "text-gray-800"}`}>
+                        {feature}
+                      </span>
                     </li>
                   ))}
                 </ul>
 
+                {/* CTA Button */}
                 <Button
                   onClick={() => handleUpgrade(plan.value)}
                   disabled={isCurrent || upgrading === plan.value}
-                  className={`w-full ${
-                    plan.isRecommended
-                      ? "bg-indigo-600 hover:bg-indigo-700 text-white"
-                      : isCurrent
-                      ? "bg-gray-300 text-gray-600 cursor-not-allowed"
-                      : "bg-gray-900 hover:bg-gray-800 text-white"
+                  className={`w-full rounded-full py-3 font-button font-medium transition-all duration-300 hover:scale-105 hover:shadow-lg focus:ring-2 focus:ring-hospineil-primary focus:ring-offset-2 ${
+                    isCurrent
+                      ? "bg-gray-300 text-gray-600 cursor-not-allowed hover:scale-100"
+                      : `${buttonBg} ${buttonText} ${buttonHover}`
                   }`}
                 >
                   {upgrading === plan.value ? (
@@ -426,8 +565,8 @@ export default function SubscriptionPage() {
                     </>
                   )}
                 </Button>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           );
         })}
       </div>
@@ -442,7 +581,7 @@ export default function SubscriptionPage() {
                 Subscription Information
               </h3>
               <ul className="text-sm text-blue-800 space-y-1">
-                <li>• Free trial lasts 6 months from account creation</li>
+                <li>• Free trial lasts 30 days from account creation</li>
                 <li>• All plans include 10% commission on sales</li>
                 <li>• Professional plan enables direct contact from users</li>
                 <li>• You can upgrade or downgrade at any time</li>

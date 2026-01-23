@@ -23,10 +23,10 @@ const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
  */
 export async function PUT(
   req: Request,
-  { params }: { params: { orderId: string } }
+  { params }: { params: Promise<{ orderId: string }> }
 ) {
   try {
-    const orderId = params.orderId;
+    const { orderId } = await params;
     const body = await req.json();
 
     const {
@@ -67,7 +67,13 @@ export async function PUT(
     }
 
     // Update order delivery information
-    const orderUpdateData: any = {
+    const orderUpdateData: {
+      delivery_address_line_1: string;
+      delivery_city: string;
+      delivery_state: string;
+      delivery_postal_code?: string;
+      delivery_phone_number?: string;
+    } = {
       delivery_address_line_1: delivery_address_line_1.trim(),
       delivery_city: delivery_city.trim(),
       delivery_state: delivery_state.trim(),
@@ -100,10 +106,18 @@ export async function PUT(
     // If user_id is provided, also update user's profile delivery information
     const targetUserId = user_id || order.user_id;
     if (targetUserId) {
-      const profileUpdateData: any = {
+      const profileUpdateData: {
+        delivery_address_line_1: string;
+        delivery_city: string;
+        delivery_state: string;
+        delivery_postal_code?: string;
+        phone_number?: string;
+        address: string;
+      } = {
         delivery_address_line_1: delivery_address_line_1.trim(),
         delivery_city: delivery_city.trim(),
         delivery_state: delivery_state.trim(),
+        address: delivery_address_line_1.trim(), // Main address field for backward compatibility
       };
 
       if (delivery_postal_code) {
@@ -113,9 +127,6 @@ export async function PUT(
       if (delivery_phone_number) {
         profileUpdateData.phone_number = delivery_phone_number.trim();
       }
-
-      // Also update the main address field for backward compatibility
-      profileUpdateData.address = delivery_address_line_1.trim();
 
       const { error: updateProfileError } = await supabaseAdmin
         .from("profiles")
@@ -166,8 +177,8 @@ export async function PUT(
             vendor_location: vendorLocation,
             vendor_city: vendorCity,
             vendor_state: vendorState,
-            order_total: (order as any).total_price || 0,
-            item_count: (order as any).quantity || 1,
+            order_total: order.total_price || 0,
+            item_count: order.quantity || 1,
           }),
         }
       );
@@ -198,12 +209,13 @@ export async function PUT(
       },
       { status: 200 }
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error updating delivery information:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to update delivery information";
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Failed to update delivery information",
+        error: errorMessage,
       },
       { status: 500 }
     );

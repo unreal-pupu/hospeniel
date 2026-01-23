@@ -61,22 +61,28 @@ export async function POST(req: Request) {
         if (user) {
           userId = user.id;
         }
-      } catch (error) {
+      } catch {
         // User not authenticated, continue as guest
         console.log("Guest order placement");
       }
     }
 
-    // Calculate total
-    const total = cartItems.reduce(
-      (sum: number, item: any) => sum + (item.price * item.quantity),
-      0
-    );
-
     // Group items by vendor
-    const ordersByVendor = new Map<string, any[]>();
+    interface CartItem {
+      id: string;
+      vendor_id?: string;
+      vendors?: { id: string };
+      quantity: number;
+      price: number;
+    }
+
+    const ordersByVendor = new Map<string, Array<{
+      menu_item_id: string;
+      quantity: number;
+      price: number;
+    }>>();
     
-    for (const item of cartItems) {
+    for (const item of cartItems as CartItem[]) {
       const vendorId = item.vendor_id || item.vendors?.id;
       if (!vendorId) continue;
 
@@ -135,10 +141,11 @@ export async function POST(req: Request) {
       { success: true, orders },
       { status: 200 }
     );
-  } catch (err: any) {
+  } catch (err) {
     console.error("🔥 Orders route crashed:", err);
+    const errorMessage = err instanceof Error ? err.message : "Failed to place order";
     return NextResponse.json(
-      { success: false, error: err.message || "Failed to place order" },
+      { success: false, error: errorMessage },
       { status: 500 }
     );
   }

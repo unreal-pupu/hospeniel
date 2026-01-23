@@ -214,7 +214,7 @@ export default function VendorNotificationsPage() {
           <MessageSquare className="mx-auto h-16 w-16 text-gray-400 mb-4" />
           <p className="text-gray-600 text-lg font-body">No notifications yet</p>
           <p className="text-gray-500 text-sm mt-2 font-body">
-            You'll see notifications about new orders and payments here
+            You&apos;ll see notifications about new orders and payments here
           </p>
         </div>
       ) : (
@@ -230,7 +230,7 @@ export default function VendorNotificationsPage() {
                   markAsRead(notification.id);
                 }
                 // Navigate to service requests page if it's a service request notification
-                if (notification.metadata?.type === 'service_request' && notification.metadata?.service_request_id) {
+                if ((notification.metadata?.type === 'service_request' || notification.metadata?.type === 'service_request_paid') && notification.metadata?.service_request_id) {
                   router.push(`/vendor/service-requests?request_id=${notification.metadata.service_request_id}`);
                 }
               }}

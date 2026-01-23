@@ -11,7 +11,7 @@
  * @param delay Delay in milliseconds
  * @returns Throttled function
  */
-export function throttle<T extends (...args: any[]) => any>(
+export function throttle<T extends (...args: unknown[]) => unknown>(
   func: T,
   delay: number
 ): (...args: Parameters<T>) => void {
@@ -26,7 +26,7 @@ export function throttle<T extends (...args: any[]) => any>(
   let lastCall = 0;
   let timeoutId: NodeJS.Timeout | null = null;
 
-  return function (this: any, ...args: Parameters<T>) {
+  return function (this: unknown, ...args: Parameters<T>) {
     // Check if function still exists
     if (typeof func !== 'function') {
       console.warn('Throttle: Function is no longer valid');
@@ -70,7 +70,7 @@ export function throttle<T extends (...args: any[]) => any>(
  * @param delay Delay in milliseconds
  * @returns Debounced function
  */
-export function debounce<T extends (...args: any[]) => any>(
+export function debounce<T extends (...args: unknown[]) => unknown>(
   func: T,
   delay: number
 ): (...args: Parameters<T>) => void {
@@ -84,7 +84,7 @@ export function debounce<T extends (...args: any[]) => any>(
 
   let timeoutId: NodeJS.Timeout | null = null;
 
-  return function (this: any, ...args: Parameters<T>) {
+  return function (this: unknown, ...args: Parameters<T>) {
     // Check if function still exists
     if (typeof func !== 'function') {
       console.warn('Debounce: Function is no longer valid');
@@ -189,5 +189,6 @@ export const ThrottleDelays = {
   BUTTON_CLICK: 1000, // 1 second for button clicks
   FORM_SUBMIT: 2000, // 2 seconds for form submissions
   API_CALL: 100, // 100ms minimum between API calls
+  ADD_TO_CART: 1000, // 1 second for add to cart actions
 };
 

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import { supabase } from "../../lib/supabaseClient";
 import { useCart } from "../context/CartContex";
@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   ShoppingCart,
   UtensilsCrossed,
+  MapPin,
   Settings,
   LogOut,
   Menu,
@@ -22,6 +23,8 @@ import ServiceRequestDialog from "@/components/ServiceRequestDialog";
 import { throttle, debounce, ThrottleDelays } from "@/lib/clientThrottle";
 import SEOHead from "@/components/SEOHead";
 import { generateBreadcrumbSchema } from "@/lib/seo";
+import { getLocationsWithAll } from "@/lib/vendorLocations";
+import { getCategoriesWithAll, getCategoryLabel } from "@/lib/vendorCategories";
 
 interface Vendor {
   id: string;
@@ -41,7 +44,7 @@ interface MenuItem {
   description: string;
   price: number;
   image_url: string;
-  availability: boolean;
+  availability: boolean | string;
   vendors?: {
     id: string | null;
     name: string;
@@ -58,31 +61,26 @@ interface UserProfile {
   avatar_url: string;
 }
 
-const LOCATIONS = [
-  "All Locations",
-  "Bayelsa",
-  "Port Harcourt",
-  "Lagos",
-  "Abuja",
-];
+interface ServiceProfileVendor {
+  id: string;
+  profile_id: string;
+  name: string;
+  image_url: string | null;
+  location: string | null;
+  category: 'chef' | 'home_cook';
+  specialties: string[];
+  pricing_model: 'per_meal' | 'per_hour' | 'per_job';
+  base_price: number;
+  service_mode: string[];
+  bio: string | null;
+}
 
-const CATEGORIES = [
-  { label: "All", value: "All" },
-  { label: "Food Vendor", value: "food_vendor" },
-  { label: "Chef", value: "chef" },
-  { label: "Baker", value: "baker" },
-  { label: "Finger Chop", value: "finger_chop" },
-];
-
-// Helper function to get category label from value
-const getCategoryLabel = (value: string | null | undefined): string => {
-  if (!value) return "";
-  const category = CATEGORIES.find(c => c.value === value);
-  return category?.label || value;
-};
+const LOCATIONS = getLocationsWithAll();
+const CATEGORIES = getCategoriesWithAll();
 
 export default function ExplorePage() {
   const router = useRouter();
+  const pathname = usePathname();
   const { addToCart } = useCart();
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [filteredMenuItems, setFilteredMenuItems] = useState<MenuItem[]>([]);
@@ -94,6 +92,8 @@ export default function ExplorePage() {
   const [selectedLocation, setSelectedLocation] = useState("All Locations");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [addingToCart, setAddingToCart] = useState<string | null>(null);
+  const [serviceProfileVendors, setServiceProfileVendors] = useState<ServiceProfileVendor[]>([]);
+  const [loadingServiceProfiles, setLoadingServiceProfiles] = useState(false);
   const [serviceRequestDialog, setServiceRequestDialog] = useState<{
     open: boolean;
     vendorId: string;
@@ -101,7 +101,78 @@ export default function ExplorePage() {
     isPremium: boolean;
     subscriptionPlan?: string;
   } | null>(null);
-  const [vendorPremiumStatus, setVendorPremiumStatus] = useState<Map<string, boolean>>(new Map());
+
+  // Fetch chefs and home cooks with service profiles
+  // Use API route (like Featured Vendors) to bypass RLS and ensure consistency
+  const fetchServiceProfileVendors = useCallback(async () => {
+    try {
+      setLoadingServiceProfiles(true);
+      console.log('🔍 Fetching service profile vendors (chefs/home cooks) via API...');
+      
+      // Use API route (same pattern as Featured Vendors) to bypass RLS issues
+      const response = await fetch('/api/service-profile-vendors', {
+        cache: 'no-store', // Always fetch fresh data
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('❌ API Error:', response.status, errorData);
+        setServiceProfileVendors([]);
+        return;
+      }
+      
+      const apiPayload = await response.json() as {
+        vendors?: ServiceProfileVendor[];
+        error?: string;
+      };
+      const data = apiPayload.vendors || [];
+      const apiError = apiPayload.error;
+      
+      if (apiError) {
+        console.error('❌ API returned error:', apiError);
+        setServiceProfileVendors([]);
+        return;
+      }
+      
+      if (!data || data.length === 0) {
+        console.log('ℹ️ API returned no vendors');
+        setServiceProfileVendors([]);
+        return;
+      }
+      
+      console.log(`✅ API returned ${data.length} service profile vendors:`, 
+        data.map((v) => ({ 
+          id: v.id, 
+          name: v.name, 
+          category: v.category, 
+          specialtiesCount: v.specialties?.length || 0,
+          hasImage: !!v.image_url
+        }))
+      );
+      
+      // Transform API response to match ServiceProfileVendor interface
+      const transformed: ServiceProfileVendor[] = data.map((v) => ({
+        id: v.id,
+        profile_id: v.profile_id,
+        name: v.name,
+        image_url: v.image_url,
+        location: v.location,
+        category: v.category,
+        specialties: v.specialties || [],
+        pricing_model: v.pricing_model,
+        base_price: v.base_price || 0,
+        service_mode: v.service_mode || [],
+        bio: v.bio
+      }));
+      
+      setServiceProfileVendors(transformed);
+    } catch (error) {
+      console.error('❌ Error fetching service profile vendors:', error);
+      setServiceProfileVendors([]);
+    } finally {
+      setLoadingServiceProfiles(false);
+    }
+  }, []);
 
   // Memoize fetchAllMenuItems to prevent recreation and ensure stable reference
   const fetchAllMenuItems = useCallback(async () => {
@@ -316,10 +387,6 @@ export default function ExplorePage() {
           const vendorIsPremium = profile?.is_premium || vendor?.is_premium || false;
           const vendorSubscriptionPlan = profile?.subscription_plan || vendor?.subscription_plan || "free_trial";
           
-          // Store premium status in map for quick lookup
-          if (vendor?.profile_id) {
-            setVendorPremiumStatus(prev => new Map(prev).set(vendor.profile_id, vendorIsPremium));
-          }
           
           // Always create vendors object, even if data is incomplete
           // This ensures vendor info is always available for display
@@ -353,12 +420,13 @@ export default function ExplorePage() {
     } finally {
       setLoading(false);
     }
-  }, []); // Empty deps - setMenuItems, setFilteredMenuItems, setLoading, setVendorPremiumStatus are stable
+  }, []); // Empty deps - setMenuItems, setFilteredMenuItems, setLoading are stable
 
   // Initialize data on mount
   useEffect(() => {
     fetchUserProfile();
     fetchAllMenuItems(); // Show menu items by default
+    fetchServiceProfileVendors(); // Fetch chefs/home cooks with service profiles
 
     // Listen for auth state changes to update greeting
     const {
@@ -367,6 +435,20 @@ export default function ExplorePage() {
       fetchUserProfile();
     });
 
+    // Listen for service profile updates from CookChefDashboard
+    const handleServiceProfileUpdate = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      console.log('Service profile updated event received:', customEvent.detail);
+      // Immediately refetch without debounce for user-initiated updates
+      // Add a small delay to ensure database has updated
+      setTimeout(() => {
+        console.log('Refetching service profile vendors after update...');
+        fetchServiceProfileVendors();
+      }, 500);
+    };
+    
+    window.addEventListener('vendor-service-profile-updated', handleServiceProfileUpdate);
+
     // Debounced handler for menu items updates - use memoized fetchAllMenuItems
     const debouncedFetchMenuItems = debounce(() => {
       if (typeof fetchAllMenuItems === 'function') {
@@ -374,6 +456,7 @@ export default function ExplorePage() {
       }
     }, 1000); // 1 second debounce for real-time updates
 
+    // Debounced handler for service profile updates
     // Set up real-time subscription for menu items
     const menuItemsChannel = supabase
       .channel("menu_items_changes")
@@ -400,11 +483,63 @@ export default function ExplorePage() {
         }
       });
 
+    // Set up real-time subscription for service profiles
+    const serviceProfilesChannel = supabase
+      .channel("vendor_service_profiles_changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "vendor_service_profiles",
+        },
+        (payload) => {
+          console.log("Service profile changed:", payload.eventType, payload);
+          // Immediately refetch for updates (no debounce for real-time)
+          fetchServiceProfileVendors();
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          console.log("✅ Successfully subscribed to vendor_service_profiles changes");
+        } else if (status === "CHANNEL_ERROR") {
+          console.error("❌ Error subscribing to vendor_service_profiles changes");
+        }
+      });
+    
+    // Also subscribe to profiles table changes (in case category or role changes)
+    const profilesChannel = supabase
+      .channel("profiles_changes_for_service_vendors")
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+          filter: "category=in.(chef,home_cook)",
+        },
+        (payload) => {
+          console.log("Profile category/role changed for chef/home_cook:", payload);
+          // Refetch service profile vendors when profile updates
+          fetchServiceProfileVendors();
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          console.log("✅ Successfully subscribed to profiles changes for service vendors");
+        } else if (status === "CHANNEL_ERROR") {
+          console.error("❌ Error subscribing to profiles changes");
+        }
+      });
+
     return () => {
       subscription.unsubscribe();
       menuItemsChannel.unsubscribe();
+      serviceProfilesChannel.unsubscribe();
+      profilesChannel.unsubscribe();
+      window.removeEventListener('vendor-service-profile-updated', handleServiceProfileUpdate);
     };
-  }, [fetchAllMenuItems]);
+  }, [fetchAllMenuItems, fetchServiceProfileVendors]);
 
   const fetchUserProfile = async () => {
     try {
@@ -416,7 +551,7 @@ export default function ExplorePage() {
       }
 
       // Fetch user's name from profiles table
-      const { data: profile, error: profileError } = await supabase
+      const { data: profile } = await supabase
         .from("profiles")
         .select("name")
         .eq("id", user.id)
@@ -427,7 +562,11 @@ export default function ExplorePage() {
         .from("user_settings")
         .select("avatar_url")
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
+
+      if (settingsError) {
+        console.warn("User settings not available (continuing without avatar):", settingsError);
+      }
 
       if (profile) {
         setUserProfile({
@@ -472,8 +611,13 @@ export default function ExplorePage() {
   }, [selectedLocation, selectedCategory, menuItems]);
 
   // Throttled add to cart handler
-  const handleAddToCart = useCallback(
-    throttle(async (itemId: string, vendorId: string) => {
+  const handleAddToCart = useMemo(
+    () => throttle(async (...args: unknown[]) => {
+      const [itemId, vendorId] = args;
+      if (typeof itemId !== "string" || typeof vendorId !== "string") {
+        console.error("Invalid arguments for addToCart");
+        return;
+      }
       try {
         setAddingToCart(itemId);
         if (!vendorId) {
@@ -491,157 +635,37 @@ export default function ExplorePage() {
             document.body.removeChild(toast);
           }
         }, 3000);
-      } catch (error: any) {
+      } catch (error) {
         console.error("Error adding to cart:", error);
-        if (error.message?.includes("log in")) {
+        const errorMessage = error instanceof Error ? error.message : "";
+        if (errorMessage.includes("log in")) {
           alert("Please log in to add items to cart.");
           router.push("/loginpage");
         } else {
-          alert(error.message || "Failed to add item to cart. Please try again.");
+          const errMsg = error instanceof Error ? error.message : "Failed to add item to cart. Please try again.";
+          alert(errMsg);
         }
       } finally {
         setAddingToCart(null);
       }
-    }, ThrottleDelays.BUTTON_CLICK),
+    }, ThrottleDelays.ADD_TO_CART),
     [addToCart, router]
   );
 
-  const fetchVendorMenu = async (vendorId: string) => {
-    try {
-      setLoading(true);
-      // Fetch menu items for a specific vendor
-      // vendorId here is the vendor's profile_id (auth.users.id)
-      // Fetch all items and filter by availability in the UI
-      const { data: menuData, error: menuError } = await supabase
-        .from("menu_items")
-        .select("*")
-        .eq("vendor_id", vendorId)
-        .order("created_at", { ascending: false });
-
-      if (menuError) {
-        console.error("Error fetching menu:", menuError.message);
-        setMenuItems([]);
-        setLoading(false);
-        return;
-      }
-
-      // Fetch the vendor information
-      // Note: vendors table may have 'name' or 'business_name' field
-      const { data: vendorData, error: vendorError } = await supabase
-        .from("vendors")
-        .select("id, name, business_name, image_url, location, profile_id, description, category, is_premium, subscription_plan")
-        .eq("profile_id", vendorId)
-        .single();
-
-      // Also fetch profile for location, category, and is_premium fallback
-      const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, name, location, role, category, is_premium, subscription_plan")
-        .eq("id", vendorId)
-        .eq("role", "vendor")
-        .single();
-
-      if (vendorError) {
-        console.error("Error fetching vendor:", vendorError.message);
-      }
-      if (profileError) {
-        console.error("Error fetching profile:", profileError.message);
-      }
-
-      // Combine menu items with vendor information
-      // Filter out items that are not available (handle both boolean and text)
-      const itemsWithVendors = menuData
-        .filter(item => {
-          // Only show available items
-          const isAvailable = item.availability === true || 
-                              item.availability === "available" ||
-                              item.availability === "Available";
-          return isAvailable;
-        })
-        .map(item => {
-          // Use vendor location first, then fall back to profile location
-          const vendorLocation = vendorData?.location || profileData?.location || null;
-          
-          // Priority order for vendor name:
-          // 1. name from profiles table (PRIMARY SOURCE - where vendor names are stored)
-          // 2. business_name from vendors table (fallback)
-          // 3. name from vendors table (fallback)
-          // 4. Only use fallback message if absolutely nothing is found
-          let finalVendorName: string | null = null;
-          
-          // PRIMARY: Use profiles.name first (this is where vendor names are stored)
-          if (profileData?.name && profileData.name.trim() !== "") {
-            finalVendorName = profileData.name.trim();
-          } else if (vendorData?.business_name && vendorData.business_name.trim() !== "") {
-            finalVendorName = vendorData.business_name.trim();
-          } else if (vendorData?.name && vendorData.name.trim() !== "") {
-            finalVendorName = vendorData.name.trim();
-          }
-          
-          // Only use fallback if we truly have no name
-          if (!finalVendorName || finalVendorName === "") {
-            console.error(`❌ CRITICAL: No vendor name found for vendor ${vendorId}`);
-            console.error(`Vendor data:`, vendorData);
-            console.error(`Profile data:`, profileData);
-            // This should rarely happen - but if it does, we'll show a message
-            finalVendorName = "Vendor Name Not Available";
-          }
-          
-          // Use category from profiles table (primary source), fallback to vendors table
-          const vendorCategory = profileData?.category || vendorData?.category || null;
-          // Use is_premium from profiles table (primary source), fallback to vendors table
-          const vendorIsPremium = profileData?.is_premium || vendorData?.is_premium || false;
-          const vendorSubscriptionPlan = profileData?.subscription_plan || vendorData?.subscription_plan || "free_trial";
-          
-          // Log if vendor data is missing for debugging
-          if (!vendorData && !profileData) {
-            console.warn(`⚠️ No vendor or profile data found for vendor ${vendorId}`);
-          }
-          
-          // Always create vendors object, even if data is incomplete
-          // This ensures vendor info is always available for display
-          const vendorInfo = {
-            id: vendorData?.id || profileData?.id || null,
-            // Use the resolved vendor name
-            name: finalVendorName,
-            image_url: vendorData?.image_url || null,
-            location: vendorLocation || null,
-            category: vendorCategory || null,
-            is_premium: vendorIsPremium || false,
-            subscription_plan: vendorSubscriptionPlan || "free_trial"
-          };
-          
-          console.log(`✅ Menu item ${item.id}: Vendor info - name: "${vendorInfo.name}", category: ${vendorInfo.category || 'none'}, location: ${vendorInfo.location || 'none'}`);
-          
-          return {
-            ...item,
-            vendors: vendorInfo
-          };
-        });
-
-      setMenuItems(itemsWithVendors);
-      // Initialize filtered menu items with all items (location filter doesn't apply to single vendor view)
-      setFilteredMenuItems(itemsWithVendors);
-    } catch (error) {
-      console.error("Error fetching vendor menu:", error);
-      setMenuItems([]);
-      setFilteredMenuItems([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVendorClick = (vendor: Vendor) => {
-    setSelectedVendor(vendor);
-    // Use profile_id if available, otherwise fall back to id
-    // profile_id is the auth.users.id that menu_items.vendor_id references
-    const vendorUserId = vendor.profile_id || vendor.id;
-    fetchVendorMenu(vendorUserId);
-  };
 
   // Memoize placeOrder to prevent recreation on every render
-  const placeOrder = useCallback(
-    throttle(async (menuItem: MenuItem) => {
+  const placeOrder = useMemo(
+    () => throttle(async (...args: unknown[]) => {
+      const [menuItemArg] = args;
+      
+      // Validate menuItem argument
+      if (!menuItemArg || typeof menuItemArg !== "object") {
+        console.error("Invalid menuItem argument for placeOrder");
+        return;
+      }
+      
+      const menuItem = menuItemArg as MenuItem;
+      
       try {
         setPlacingOrder(true);
         
@@ -732,9 +756,10 @@ export default function ExplorePage() {
 
         // Redirect to payment/checkout page
         router.push("/payment");
-      } catch (error: any) {
+      } catch (error) {
         console.error("Unexpected error placing order:", error);
-        alert(`An unexpected error occurred: ${error.message || "Please try again"}`);
+        const errorMessage = error instanceof Error ? error.message : "Please try again";
+        alert(`An unexpected error occurred: ${errorMessage}`);
       } finally {
         setPlacingOrder(false);
       }
@@ -787,6 +812,7 @@ export default function ExplorePage() {
 
   const navigationItems = [
     { href: "/explore", label: "Explore", icon: LayoutDashboard, active: true },
+    { href: "/explore/service-responses", label: "Service Responses", icon: MessageSquare },
     { href: "/orders", label: "Orders", icon: ShoppingBag },
     { href: "/cart", label: "Cart", icon: ShoppingCart },
     { href: "/settings", label: "Settings", icon: Settings },
@@ -840,6 +866,7 @@ export default function ExplorePage() {
           <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
             {navigationItems.map((item) => {
               const Icon = item.icon;
+              const isActive = pathname === item.href || (item.href !== "/explore" && pathname?.startsWith(item.href));
               return (
                 <button
                   key={item.href}
@@ -851,7 +878,7 @@ export default function ExplorePage() {
                     w-full flex items-center gap-3 px-4 py-3 rounded-lg
                     transition-colors duration-200
                     ${
-                      item.active
+                      item.active || isActive
                         ? "bg-white/20 text-white font-semibold"
                         : "text-white/90 hover:bg-hospineil-accent hover:text-white"
                     }
@@ -928,6 +955,174 @@ export default function ExplorePage() {
 
         {/* Main Content */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+          {/* ✅ Service Profile Vendors Section (Chefs & Home Cooks) */}
+          {!selectedVendor && (() => {
+            // Show loading state
+            if (loadingServiceProfiles) {
+              return (
+                <div className="mb-8 p-4 bg-hospineil-light-bg rounded-lg">
+                  <p className="text-gray-600 text-center font-body">
+                    Loading chefs and home cooks...
+                  </p>
+                </div>
+              );
+            }
+            
+            // If no vendors, log debug info
+            if (serviceProfileVendors.length === 0) {
+              console.log('⚠️ Service Profile Vendors Section: No vendors to display', {
+                loadingServiceProfiles,
+                serviceProfileVendorsCount: serviceProfileVendors.length,
+                timestamp: new Date().toISOString()
+              });
+              return null;
+            }
+            
+            console.log('✅ Rendering Service Profile Vendors Section with', serviceProfileVendors.length, 'vendors');
+            
+            // Filter service profile vendors by location and category
+            const filteredServiceVendors = serviceProfileVendors.filter((vendor) => {
+              // Filter by location if selected
+              if (selectedLocation !== "All Locations" && vendor.location !== selectedLocation) {
+                return false;
+              }
+              
+              // Filter by category if selected
+              if (selectedCategory !== "All") {
+                const categoryMatch = selectedCategory === "chef" && vendor.category === "chef" ||
+                                     selectedCategory === "home_cook" && vendor.category === "home_cook";
+                if (!categoryMatch) {
+                  return false;
+                }
+              }
+              
+              return true;
+            });
+            
+            // Debug logging
+            console.log('Service Profile Vendors Section:', {
+              total: serviceProfileVendors.length,
+              filtered: filteredServiceVendors.length,
+              selectedLocation,
+              selectedCategory,
+              vendors: serviceProfileVendors.map(v => ({ id: v.id, name: v.name, category: v.category }))
+            });
+            
+            if (filteredServiceVendors.length === 0) {
+              // Show message if filtered out, but only if we have vendors that were filtered
+              if (serviceProfileVendors.length > 0) {
+                return (
+                  <div className="mb-8 p-4 bg-hospineil-light-bg rounded-lg">
+                    <p className="text-gray-600 text-center font-body">
+                      No chefs or home cooks match your current filters. Try adjusting location or category filters.
+                    </p>
+                  </div>
+                );
+              }
+              return null;
+            }
+            
+            return (
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold text-gray-800 mb-4 font-header">
+                  Chefs & Home Cooks
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {filteredServiceVendors.map((vendor) => {
+                    const priceLabel = vendor.pricing_model === 'per_meal' ? 'per meal' :
+                                     vendor.pricing_model === 'per_hour' ? 'per hour' :
+                                     'per job';
+                    const hasPricing = vendor.base_price > 0;
+                    
+                    return (
+                    <div
+                      key={vendor.id}
+                      className="bg-white rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:scale-105 border border-gray-100"
+                    >
+                      {/* Vendor Image */}
+                      <div className="relative w-full h-48 overflow-hidden bg-gray-200">
+                        {vendor.image_url ? (
+                          <Image
+                            src={vendor.image_url}
+                            alt={vendor.name}
+                            fill
+                            className="object-cover"
+                            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.src = "/default-vendor.png";
+                            }}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+                            <UtensilsCrossed className="h-12 w-12 text-gray-400" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Vendor Info */}
+                      <div className="p-5">
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="text-lg font-bold text-gray-800 font-header">
+                            {vendor.name}
+                          </h3>
+                          <span className="px-2 py-1 bg-hospineil-primary/10 text-hospineil-primary text-xs font-semibold rounded-full">
+                            {getCategoryLabel(vendor.category)}
+                          </span>
+                        </div>
+                        
+                        {vendor.location && (
+                          <p className="text-sm text-gray-600 mb-2 font-body flex items-center gap-1">
+                            <MapPin className="h-4 w-4 text-gray-500" />
+                            <span>{vendor.location}</span>
+                          </p>
+                        )}
+
+                        {vendor.specialties.length > 0 && (
+                          <p className="text-sm text-gray-500 mb-2 font-body">
+                            {vendor.specialties.join(", ")}
+                          </p>
+                        )}
+                        
+                        <div className="flex items-center justify-between mb-3">
+                          {hasPricing ? (
+                            <>
+                              <span className="text-lg font-bold text-hospineil-primary font-header">
+                                ₦{vendor.base_price.toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                              </span>
+                              <span className="text-xs text-gray-500 font-body">{priceLabel}</span>
+                            </>
+                          ) : (
+                            <span className="text-sm font-semibold text-gray-600 font-body">
+                              Contact for pricing
+                            </span>
+                          )}
+                        </div>
+                        
+                        <button
+                          onClick={() => {
+                            setServiceRequestDialog({
+                              open: true,
+                              vendorId: vendor.profile_id,
+                              vendorName: vendor.name,
+                              isPremium: true, // Set to true so dialog works (chefs/home cooks always accept requests)
+                              subscriptionPlan: 'professional', // Not used for chefs/home cooks but required by dialog
+                            });
+                          }}
+                          className="w-full bg-hospineil-primary text-white py-2 rounded-lg hover:bg-hospineil-primary/90 transition-colors font-button flex items-center justify-center gap-2"
+                        >
+                          <MessageSquare className="h-4 w-4" />
+                          Request Service
+                        </button>
+                      </div>
+                    </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* ✅ Menu Items Section */}
           {!selectedVendor ? (
             <>
@@ -1024,14 +1219,17 @@ export default function ExplorePage() {
                       {/* Product Image */}
                       <div className="relative h-48 overflow-hidden">
                         {item.image_url ? (
-                          <img
+                          <Image
                             src={item.image_url}
                             alt={item.title}
-                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                            fill
+                            className="object-cover group-hover:scale-110 transition-transform duration-300"
+                            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                             onError={(e) => {
                               const target = e.target as HTMLImageElement;
                               target.src = "/placeholder-image.png";
                             }}
+                            unoptimized
                           />
                         ) : (
                           <div className="w-full h-full bg-gray-200 flex items-center justify-center">
@@ -1042,12 +1240,12 @@ export default function ExplorePage() {
                         <div className="absolute top-3 right-3">
                           <span
                             className={`px-3 py-1 rounded-full text-xs font-semibold shadow-md ${
-                              (item.availability === true || item.availability === "available")
+                              (item.availability === true || (typeof item.availability === "string" && item.availability.toLowerCase() === "available"))
                                 ? "bg-green-500 text-white"
                                 : "bg-red-500 text-white"
                             }`}
                           >
-                            {(item.availability === true || item.availability === "available") ? "Available" : "Out of Stock"}
+                            {(item.availability === true || (typeof item.availability === "string" && item.availability.toLowerCase() === "available")) ? "Available" : "Out of Stock"}
                           </span>
                         </div>
                       </div>
@@ -1059,15 +1257,19 @@ export default function ExplorePage() {
                           <div className="mb-3 pb-3 -mx-5 px-5 bg-hospineil-accent rounded-t-2xl">
                             <div className="flex items-center gap-2 mb-1">
                               {item.vendors.image_url ? (
-                                <img
-                                  src={item.vendors.image_url}
-                                  alt={item.vendors.name || "Vendor"}
-                                  className="w-8 h-8 rounded-full object-cover border-2 border-white/30"
-                                  onError={(e) => {
-                                    const target = e.target as HTMLImageElement;
-                                    target.src = "/default-vendor.png";
-                                  }}
-                                />
+                                <div className="relative w-8 h-8 rounded-full overflow-hidden border-2 border-white/30">
+                                  <Image
+                                    src={item.vendors.image_url}
+                                    alt={item.vendors.name || "Vendor"}
+                                    fill
+                                    className="object-cover"
+                                    sizes="32px"
+                                    onError={(e) => {
+                                      const target = e.target as HTMLImageElement;
+                                      target.src = "/default-vendor.png";
+                                    }}
+                                  />
+                                </div>
                               ) : (
                                 <div className="w-8 h-8 rounded-full bg-white/20 border-2 border-white/30 flex items-center justify-center">
                                   <UtensilsCrossed className="w-4 h-4 text-white" />
@@ -1146,6 +1348,9 @@ export default function ExplorePage() {
                               {placingOrder ? "Placing..." : (item.availability === true || item.availability === "available") ? "Order Now" : "Out of Stock"}
                             </button>
                           </div>
+                          <p className="text-xs text-gray-500 text-center">
+                            Payments are currently in TEST MODE and are awaiting approval. No real money will be charged.
+                          </p>
                           {/* Contact Vendor Button - Only for Premium Vendors (is_premium = true) */}
                           {item.vendors && item.vendor_id && item.vendors.is_premium === true && (
                             <button
@@ -1207,10 +1412,12 @@ export default function ExplorePage() {
                       className="bg-hospineil-light-bg rounded-2xl shadow-md hover:shadow-lg transition-all overflow-hidden border border-gray-200 group"
                     >
                       <div className="relative h-48 overflow-hidden">
-                        <img
-                          src={item.image_url}
+                        <Image
+                          src={item.image_url || "/placeholder-image.png"}
                           alt={item.title}
-                          className="w-full h-full object-cover"
+                          fill
+                          className="object-cover"
+                          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                         />
                         <div className="absolute top-3 right-3">
                           <span
@@ -1230,15 +1437,19 @@ export default function ExplorePage() {
                           <div className="mb-3 pb-3 -mx-5 px-5 bg-hospineil-accent rounded-t-2xl">
                             <div className="flex items-center gap-2 mb-1">
                               {item.vendors.image_url ? (
-                                <img
-                                  src={item.vendors.image_url}
-                                  alt={item.vendors.name || "Vendor"}
-                                  className="w-8 h-8 rounded-full object-cover border-2 border-white/30"
-                                  onError={(e) => {
-                                    const target = e.target as HTMLImageElement;
-                                    target.src = "/default-vendor.png";
-                                  }}
-                                />
+                                <div className="relative w-8 h-8 rounded-full overflow-hidden border-2 border-white/30">
+                                  <Image
+                                    src={item.vendors.image_url}
+                                    alt={item.vendors.name || "Vendor"}
+                                    fill
+                                    className="object-cover"
+                                    sizes="32px"
+                                    onError={(e) => {
+                                      const target = e.target as HTMLImageElement;
+                                      target.src = "/default-vendor.png";
+                                    }}
+                                  />
+                                </div>
                               ) : (
                                 <div className="w-8 h-8 rounded-full bg-white/20 border-2 border-white/30 flex items-center justify-center">
                                   <UtensilsCrossed className="w-4 h-4 text-white" />
@@ -1351,6 +1562,7 @@ export default function ExplorePage() {
           vendorName={serviceRequestDialog.vendorName}
           isPremium={serviceRequestDialog.isPremium}
           subscriptionPlan={serviceRequestDialog.subscriptionPlan}
+          isChefOrHomeCook={serviceProfileVendors.some(v => v.profile_id === serviceRequestDialog.vendorId)}
         />
       )}
     </div>

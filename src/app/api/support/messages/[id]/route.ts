@@ -46,18 +46,30 @@ export async function PATCH(
     // Check if user is admin
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
-      .select("is_admin")
+      .select("is_admin, role")
       .eq("id", user.id)
       .single();
 
     if (profileError || !profile) {
+      console.error("Profile error in PATCH:", profileError);
       return NextResponse.json(
         { error: "User profile not found" },
         { status: 404 }
       );
     }
 
-    if (!profile.is_admin) {
+    // Check if user is admin (either is_admin = true OR role = 'admin')
+    const isAdmin = profile.is_admin === true || profile.role?.toLowerCase().trim() === "admin";
+
+    console.log("PATCH - User profile:", { 
+      id: user.id, 
+      role: profile.role, 
+      is_admin: profile.is_admin,
+      isAdmin: isAdmin 
+    });
+
+    if (!isAdmin) {
+      console.warn("PATCH - Non-admin user attempted to update message:", user.id);
       return NextResponse.json(
         { error: "Forbidden. Admin access required." },
         { status: 403 }
@@ -76,7 +88,9 @@ export async function PATCH(
       updateData.status = status;
     }
 
-    // Update message
+    console.log("PATCH - Updating message:", { messageId, updateData });
+
+    // Update message using service role (bypasses RLS)
     const { data: updatedMessage, error: updateError } = await supabaseAdmin
       .from("support_messages")
       .update(updateData)
@@ -86,11 +100,14 @@ export async function PATCH(
 
     if (updateError) {
       console.error("Error updating message:", updateError);
+      console.error("Update error details:", JSON.stringify(updateError, null, 2));
       return NextResponse.json(
-        { error: "Failed to update message" },
+        { error: "Failed to update message", details: updateError.message },
         { status: 500 }
       );
     }
+
+    console.log("PATCH - Message updated successfully:", updatedMessage?.id);
 
     return NextResponse.json({
       message: updatedMessage,
@@ -185,8 +202,11 @@ export async function GET(
 
     const messageWithSender = message as MessageWithSender;
 
+    // Check if user is admin (either is_admin = true OR role = 'admin')
+    const isAdmin = profile.is_admin === true || profile.role?.toLowerCase().trim() === "admin";
+
     // If not admin, verify user owns the message
-    if (!profile.is_admin && messageWithSender.sender_id !== user.id) {
+    if (!isAdmin && messageWithSender.sender_id !== user.id) {
       return NextResponse.json(
         { error: "Forbidden" },
         { status: 403 }
@@ -217,7 +237,7 @@ export async function GET(
     }
 
     // If admin and message is unread, mark as read
-    if (profile.is_admin && messageWithSender.status === "pending") {
+    if (isAdmin && messageWithSender.status === "pending") {
       await supabaseAdmin
         .from("support_messages")
         .update({ status: "read" })

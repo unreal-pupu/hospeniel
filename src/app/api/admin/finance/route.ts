@@ -9,7 +9,7 @@ const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-export async function GET(req: Request) {
+export async function GET() {
   try {
     // TODO: Add admin authentication check here
     // For now, this endpoint is accessible - add proper admin role check in production
@@ -123,10 +123,11 @@ export async function GET(req: Request) {
       },
       { status: 200 }
     );
-  } catch (err: any) {
+  } catch (err) {
     console.error("Finance API error:", err);
+    const errorMessage = err instanceof Error ? err.message : "Internal server error";
     return NextResponse.json(
-      { success: false, error: err.message || "Internal server error" },
+      { success: false, error: errorMessage },
       { status: 500 }
     );
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,22 +15,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Upload, CheckCircle2, XCircle, Image as ImageIcon } from "lucide-react";
+import { Loader2, Upload, CheckCircle2, XCircle, Image as ImageIcon, Plus, X } from "lucide-react";
+import Image from "next/image";
+import { VENDOR_LOCATIONS } from "@/lib/vendorLocations";
+import { VENDOR_CATEGORIES } from "@/lib/vendorCategories";
 
-const LOCATIONS = [
-  "Bayelsa",
-  "Port Harcourt",
-  "Lagos",
-  "Abuja",
-];
-
-// Valid categories matching database constraint
-const CATEGORIES = [
-  { label: "Food Vendor", value: "food_vendor" },
-  { label: "Chef", value: "chef" },
-  { label: "Baker", value: "baker" },
-  { label: "Finger Chop", value: "finger_chop" },
-];
+const LOCATIONS = VENDOR_LOCATIONS;
+const CATEGORIES = VENDOR_CATEGORIES;
 
 interface VendorSettings {
   business_name: string;
@@ -44,6 +35,22 @@ interface VendorSettings {
   delivery_enabled: boolean;
   pickup_enabled: boolean;
   address: string;
+}
+
+interface VendorData {
+  business_name?: string | null;
+  name?: string | null;
+  email?: string | null;
+  phone_number?: string | null;
+  location?: string | null;
+  category?: string | null;
+  description?: string | null;
+  image_url?: string | null;
+  is_open?: boolean;
+  delivery_enabled?: boolean;
+  pickup_enabled?: boolean;
+  address?: string | null;
+  [key: string]: unknown;
 }
 
 interface Bank {
@@ -70,6 +77,9 @@ export default function VendorSettingsPage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
+  const [subscriptionPlan, setSubscriptionPlan] = useState("free_trial");
+  const [specialties, setSpecialties] = useState<string[]>([]);
+  const [specialtyInput, setSpecialtyInput] = useState("");
   const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const [banks, setBanks] = useState<Bank[]>([]);
   const [bankCode, setBankCode] = useState("");
@@ -92,44 +102,95 @@ export default function VendorSettingsPage() {
     address: "",
   });
 
-  useEffect(() => {
-    fetchVendorData();
-    fetchBanks();
+  function sanitizeSpecialty(value: string) {
+    return value.trim().replace(/\s+/g, " ");
+  }
+
+  function normalizeCategory(value: string) {
+    return value.toLowerCase().replace(/[\s-]+/g, "_");
+  }
+
+  const normalizedCategory = normalizeCategory(settings.category || "");
+  const isChefOrHomeCook = normalizedCategory === "chef" || normalizedCategory === "home_cook";
+  const isPremiumPlan = subscriptionPlan === "professional" || subscriptionPlan === "premium";
+  const maxSpecialties = isPremiumPlan ? 10 : 4;
+  const hasReachedSpecialtyLimit = specialties.length >= maxSpecialties;
+
+  const handleAddSpecialty = () => {
+    const nextValue = sanitizeSpecialty(specialtyInput);
+    if (!nextValue || !isChefOrHomeCook || hasReachedSpecialtyLimit) return;
+    if (specialties.some((value) => value.toLowerCase() === nextValue.toLowerCase())) {
+      setSpecialtyInput("");
+      return;
+    }
+    setSpecialties((prev) => [...prev, nextValue]);
+    setSpecialtyInput("");
+  };
+
+  const handleRemoveSpecialty = (value: string) => {
+    setSpecialties((prev) => prev.filter((item) => item !== value));
+  };
+
+  const populateSettings = useCallback((vendorData: VendorData, userEmail: string) => {
+    const normalizedVendorCategory = vendorData.category
+      ? normalizeCategory(vendorData.category)
+      : "";
+    setSettings({
+      business_name: vendorData.business_name || vendorData.name || "",
+      email: vendorData.email || userEmail || "",
+      phone_number: vendorData.phone_number || "",
+      location: vendorData.location || "",
+      category: normalizedVendorCategory,
+      description: vendorData.description || "",
+      image_url: vendorData.image_url || null,
+      is_open: vendorData.is_open !== undefined ? vendorData.is_open : true,
+      delivery_enabled: vendorData.delivery_enabled !== undefined ? vendorData.delivery_enabled : true,
+      pickup_enabled: vendorData.pickup_enabled !== undefined ? vendorData.pickup_enabled : true,
+      address: vendorData.address || "",
+    });
+
+    // Set image preview if image_url exists
+    if (vendorData.image_url) {
+      setImagePreview(vendorData.image_url);
+    }
   }, []);
 
-  const fetchBanks = async () => {
+  const createVendorRecord = async (userId: string, email: string) => {
     try {
-      setLoadingBanks(true);
-      const res = await fetch("/api/banks");
-      const data = await res.json();
+      // Get user's name from profile
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("name")
+        .eq("id", userId)
+        .single();
+
+      const vendorName = profileData?.name || "Vendor";
       
-      if (data.success && data.banks && Array.isArray(data.banks)) {
-        // Filter only active banks that support pay_with_bank
-        // Also include banks that don't have pay_with_bank set (some banks might not have this field)
-        const activeBanks = data.banks.filter(
-          (bank: Bank) => bank.active !== false && (bank.pay_with_bank !== false)
-        );
-        
-        // Sort banks alphabetically by name
-        activeBanks.sort((a: Bank, b: Bank) => a.name.localeCompare(b.name));
-        
-        setBanks(activeBanks);
-        console.log(`✅ Loaded ${activeBanks.length} banks from ${data.source || 'Paystack'}`);
-      } else {
-        console.error("Failed to fetch banks:", data.error || "Unknown error");
-        // Set empty array to prevent errors
-        setBanks([]);
+      const { error } = await supabase
+        .from("vendors")
+        .insert([
+          {
+            profile_id: userId,
+            name: vendorName, // Always set name field
+            business_name: vendorName, // Use name as default business_name
+            email: email,
+            is_open: true,
+            delivery_enabled: true,
+            pickup_enabled: true,
+          },
+        ]);
+
+      if (error) {
+        console.error("Error creating vendor record:", error);
+        throw error;
       }
     } catch (error) {
-      console.error("Error fetching banks:", error);
-      // Set empty array to prevent errors
-      setBanks([]);
-    } finally {
-      setLoadingBanks(false);
+      console.error("Error in createVendorRecord:", error);
+      throw error;
     }
   };
 
-  const fetchVendorData = async () => {
+  const fetchVendorData = useCallback(async () => {
     try {
       setLoading(true);
       setMessage(null); // Clear any previous messages
@@ -181,7 +242,7 @@ export default function VendorSettingsPage() {
       // Also fetch profile for email and subaccount_code
       const { data: profileData } = await supabase
         .from("profiles")
-        .select("email, subaccount_code")
+        .select("email, subaccount_code, subscription_plan, category")
         .eq("id", user.id)
         .single();
       
@@ -192,73 +253,80 @@ export default function VendorSettingsPage() {
         if (profileData.subaccount_code) {
           setSubaccountCode(profileData.subaccount_code);
         }
+        if ((!vendorData || !vendorData.category) && profileData.category) {
+          setSettings(prev => ({ ...prev, category: normalizeCategory(profileData.category || "") }));
+        }
+        setSubscriptionPlan(profileData.subscription_plan || "free_trial");
       }
-    } catch (error: any) {
+
+      const activeCategory = normalizeCategory(
+        vendorData?.category || profileData?.category || ""
+      );
+      const isChefOrHomeCook = activeCategory === "chef" || activeCategory === "home_cook";
+      if (isChefOrHomeCook) {
+        const { data: serviceProfileData, error: serviceProfileError } = await supabase
+          .from("vendor_service_profiles")
+          .select("specialties")
+          .eq("profile_id", user.id)
+          .maybeSingle();
+
+        if (serviceProfileError) {
+          console.error("Error loading service profile specialties:", serviceProfileError);
+        }
+
+        const initialSpecialties = (serviceProfileData?.specialties || [])
+          .map((value: string) => sanitizeSpecialty(value))
+          .filter(Boolean);
+        setSpecialties(initialSpecialties);
+      }
+    } catch (error) {
       console.error("Error fetching vendor data:", error);
+      const errorMessage = error instanceof Error ? error.message : "An error occurred while loading settings. Please try refreshing the page.";
       setMessage({ 
         type: "error", 
-        text: error.message || "An error occurred while loading settings. Please try refreshing the page." 
+        text: errorMessage
       });
     } finally {
       setLoading(false);
     }
-  };
+  }, [router, populateSettings]);
 
-  const populateSettings = (vendorData: any, userEmail: string) => {
-    setSettings({
-      business_name: vendorData.business_name || vendorData.name || "",
-      email: vendorData.email || userEmail || "",
-      phone_number: vendorData.phone_number || "",
-      location: vendorData.location || "",
-      category: vendorData.category || "",
-      description: vendorData.description || "",
-      image_url: vendorData.image_url || null,
-      is_open: vendorData.is_open !== undefined ? vendorData.is_open : true,
-      delivery_enabled: vendorData.delivery_enabled !== undefined ? vendorData.delivery_enabled : true,
-      pickup_enabled: vendorData.pickup_enabled !== undefined ? vendorData.pickup_enabled : true,
-      address: vendorData.address || "",
-    });
-
-    // Set image preview if image_url exists
-    if (vendorData.image_url) {
-      setImagePreview(vendorData.image_url);
-    }
-  };
-
-  const createVendorRecord = async (userId: string, email: string) => {
+  const fetchBanks = useCallback(async () => {
     try {
-      // Get user's name from profile
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("name")
-        .eq("id", userId)
-        .single();
-
-      const vendorName = profileData?.name || "Vendor";
+      setLoadingBanks(true);
+      const res = await fetch("/api/banks");
+      const data = await res.json();
       
-      const { error } = await supabase
-        .from("vendors")
-        .insert([
-          {
-            profile_id: userId,
-            name: vendorName, // Always set name field
-            business_name: vendorName, // Use name as default business_name
-            email: email,
-            is_open: true,
-            delivery_enabled: true,
-            pickup_enabled: true,
-          },
-        ]);
-
-      if (error) {
-        console.error("Error creating vendor record:", error);
-        throw error;
+      if (data.success && data.banks && Array.isArray(data.banks)) {
+        // Filter only active banks that support pay_with_bank
+        // Also include banks that don't have pay_with_bank set (some banks might not have this field)
+        const activeBanks = data.banks.filter(
+          (bank: Bank) => bank.active !== false && (bank.pay_with_bank !== false)
+        );
+        
+        // Sort banks alphabetically by name
+        activeBanks.sort((a: Bank, b: Bank) => a.name.localeCompare(b.name));
+        
+        setBanks(activeBanks);
+        console.log(`✅ Loaded ${activeBanks.length} banks from ${data.source || 'Paystack'}`);
+      } else {
+        console.error("Failed to fetch banks:", data.error || "Unknown error");
+        // Set empty array to prevent errors
+        setBanks([]);
       }
     } catch (error) {
-      console.error("Error in createVendorRecord:", error);
-      throw error;
+      console.error("Error fetching banks:", error);
+      // Set empty array to prevent errors
+      setBanks([]);
+    } finally {
+      setLoadingBanks(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchVendorData();
+    fetchBanks();
+  }, [fetchVendorData, fetchBanks]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -349,7 +417,7 @@ export default function VendorSettingsPage() {
         .getPublicUrl(fileName);
 
       return urlData.publicUrl;
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error uploading image:", error);
       throw error;
     } finally {
@@ -392,8 +460,9 @@ export default function VendorSettingsPage() {
             return;
           }
           setMessage({ type: "success", text: "Image uploaded successfully" });
-        } catch (error: any) {
-          setMessage({ type: "error", text: error.message || "Failed to upload image" });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Failed to upload image";
+          setMessage({ type: "error", text: errorMessage });
           return;
         }
       }
@@ -402,7 +471,22 @@ export default function VendorSettingsPage() {
       // Build update data object, only including fields that have values
       // Always set name to match business_name to satisfy NOT NULL constraint
       const businessName = settings.business_name.trim() || "Vendor";
-      const updateData: any = {
+      interface UpdateData {
+        name: string;
+        business_name?: string;
+        email?: string;
+        phone_number?: string;
+        location?: string;
+        category?: string;
+        description?: string;
+        image_url?: string | null;
+        is_open?: boolean;
+        delivery_enabled?: boolean;
+        pickup_enabled?: boolean;
+        address?: string;
+        [key: string]: unknown;
+      }
+      const updateData: UpdateData = {
         name: businessName, // Always set name field (required by schema)
         business_name: businessName,
       };
@@ -459,12 +543,59 @@ export default function VendorSettingsPage() {
         return;
       }
 
-      // Also update profile location if it's different
-      if (settings.location) {
+      // Also update profile location/category to keep profiles as source of truth
+      if (settings.location || settings.category) {
+        const profileUpdates: { location?: string; category?: string } = {};
+        if (settings.location) {
+          profileUpdates.location = settings.location;
+        }
+        if (settings.category) {
+          profileUpdates.category = settings.category;
+        }
         await supabase
           .from("profiles")
-          .update({ location: settings.location })
+          .update(profileUpdates)
           .eq("id", userId);
+      }
+
+      // If chef/home cook, sync description/image to vendor_service_profiles
+      const isChefOrHomeCook =
+        normalizedCategory === "chef" || normalizedCategory === "home_cook";
+      if (isChefOrHomeCook) {
+        const { data: existingServiceProfile, error: serviceProfileError } = await supabase
+          .from("vendor_service_profiles")
+          .select("profile_id, pricing_model, base_price, service_mode, specialties, bio, image_url")
+          .eq("profile_id", userId)
+          .maybeSingle();
+
+        if (serviceProfileError) {
+          console.error("Error loading service profile for sync:", serviceProfileError);
+        }
+
+        const specialtiesList = specialties
+          .map((value) => sanitizeSpecialty(value))
+          .filter(Boolean);
+        const serviceProfilePayload = {
+          profile_id: userId,
+          pricing_model: existingServiceProfile?.pricing_model || "per_meal",
+          base_price: existingServiceProfile?.base_price || 0,
+          service_mode: existingServiceProfile?.service_mode || [],
+          specialties: specialtiesList,
+          bio: settings.description?.trim() || existingServiceProfile?.bio || "",
+          image_url: imageUrl ?? (existingServiceProfile?.image_url || null),
+        };
+
+        const { error: serviceProfileUpsertError } = await supabase
+          .from("vendor_service_profiles")
+          .upsert(serviceProfilePayload, { onConflict: "profile_id" });
+
+        if (serviceProfileUpsertError) {
+          console.error("Error syncing service profile:", serviceProfileUpsertError);
+        } else if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("vendor-service-profile-updated", {
+            detail: { profile_id: userId, source: "vendor-settings" },
+          }));
+        }
       }
 
       setMessage({ type: "success", text: "Settings saved successfully!" });
@@ -475,9 +606,10 @@ export default function VendorSettingsPage() {
       
       // Refresh data
       await fetchVendorData();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error saving settings:", error);
-      setMessage({ type: "error", text: error.message || "An error occurred while saving settings" });
+      const errorMessage = error instanceof Error ? error.message : "An error occurred while saving settings";
+      setMessage({ type: "error", text: errorMessage });
     } finally {
       setSaving(false);
     }
@@ -534,9 +666,10 @@ export default function VendorSettingsPage() {
       
       // Refresh data to get updated subaccount_code
       await fetchVendorData();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error creating subaccount:", error);
-      setMessage({ type: "error", text: error.message || "An error occurred while creating subaccount" });
+      const errorMessage = error instanceof Error ? error.message : "An error occurred while creating subaccount";
+      setMessage({ type: "error", text: errorMessage });
     } finally {
       setCreatingSubaccount(false);
     }
@@ -591,12 +724,15 @@ export default function VendorSettingsPage() {
             <CardContent className="space-y-4">
               {/* Image Preview */}
               <div className="flex flex-col items-center">
-                <div className="relative w-48 h-48 rounded-lg overflow-hidden border-2 border-gray-200 bg-gray-100">
+                  <div className="relative w-48 h-48 rounded-lg overflow-hidden border-2 border-gray-200 bg-gray-100">
                   {imagePreview ? (
-                    <img
+                    <Image
                       src={imagePreview}
                       alt="Vendor profile"
-                      className="w-full h-full object-cover"
+                      fill
+                      className="object-cover"
+                      sizes="192px"
+                      unoptimized
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
@@ -784,6 +920,58 @@ export default function VendorSettingsPage() {
                   className="bg-hospineil-base-bg border-gray-300 focus:ring-hospineil-primary focus:border-hospineil-primary font-body"
                 />
               </div>
+
+              {isChefOrHomeCook && (
+                <div className="space-y-2">
+                  <Label htmlFor="specialties" className="font-body text-gray-700">Specialties</Label>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="specialties"
+                        value={specialtyInput}
+                        onChange={(e) => setSpecialtyInput(e.target.value)}
+                        placeholder="e.g. Nigerian soups"
+                        className="bg-hospineil-base-bg border-gray-300 focus:ring-hospineil-primary focus:border-hospineil-primary font-body"
+                        disabled={hasReachedSpecialtyLimit}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleAddSpecialty}
+                        disabled={hasReachedSpecialtyLimit || !specialtyInput.trim()}
+                        className="px-3"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-gray-500 font-body">
+                      {isPremiumPlan
+                        ? "Premium plan: up to 10 specialties"
+                        : "Starter plan: up to 4 specialties"}
+                    </p>
+                    {specialties.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {specialties.map((item) => (
+                          <span
+                            key={item}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-hospineil-light-bg text-gray-700 text-xs rounded-full font-body"
+                          >
+                            {item}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveSpecialty(item)}
+                              className="text-gray-500 hover:text-gray-700"
+                              aria-label={`Remove ${item}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -892,7 +1080,7 @@ export default function VendorSettingsPage() {
                   <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                     <p className="text-sm text-yellow-800 font-body">
                       <strong>Payment Setup Required:</strong> Please add your bank details to receive payments. 
-                      Once set up, you'll automatically receive 90% of each payment, with Hospineil retaining 10% commission.
+                      Once set up, you&apos;ll automatically receive 90% of each payment, with Hospineil retaining 10% commission.
                     </p>
                   </div>
 

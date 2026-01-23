@@ -6,9 +6,7 @@ import {
   FaFacebookF, 
   FaInstagram, 
   FaWhatsapp, 
-  FaLinkedinIn, 
-  FaTiktok, 
-  FaSnapchatGhost 
+  FaTiktok 
 } from "react-icons/fa";
 
 export default function Footer() {
@@ -121,40 +119,40 @@ export default function Footer() {
           <div className="flex flex-wrap gap-4 sm:gap-5 justify-center sm:justify-end text-gray-600 text-lg sm:text-xl">
             {/* Facebook */}
             <Link 
-              href="#" 
+              href="https://www.facebook.com/hospeniel"
               aria-label="Facebook"
+              target="_blank"
+              rel="noopener noreferrer"
               className="hover:text-[#1877F2] transition-all duration-300 hover:scale-110 hover:rotate-3"
             >
               <FaFacebookF />
             </Link>
             {/* Instagram */}
             <Link 
-              href="#" 
+              href="https://www.instagram.com/hospeniel"
               aria-label="Instagram"
+              target="_blank"
+              rel="noopener noreferrer"
               className="hover:text-[#E1306C] transition-all duration-300 hover:scale-110 hover:rotate-3"
             >
               <FaInstagram />
             </Link>
             {/* WhatsApp */}
             <Link 
-              href="#" 
+              href="https://wa.me/2348162813032"
               aria-label="WhatsApp"
+              target="_blank"
+              rel="noopener noreferrer"
               className="hover:text-[#25D366] transition-all duration-300 hover:scale-110 hover:rotate-3"
             >
               <FaWhatsapp />
             </Link>
-            {/* LinkedIn */}
-            <Link 
-              href="#" 
-              aria-label="LinkedIn"
-              className="hover:text-[#0077B5] transition-all duration-300 hover:scale-110 hover:rotate-3"
-            >
-              <FaLinkedinIn />
-            </Link>
             {/* X (formerly Twitter) */}
             <Link 
-              href="#" 
+              href="https://x.com/hospeniel"
               aria-label="X"
+              target="_blank"
+              rel="noopener noreferrer"
               className="hover:text-black dark:hover:text-white transition-all duration-300 hover:scale-110 hover:rotate-3"
             >
               <svg 
@@ -170,19 +168,13 @@ export default function Footer() {
             </Link>
             {/* TikTok */}
             <Link 
-              href="#" 
+              href="https://www.tiktok.com/@hospeniel"
               aria-label="TikTok"
+              target="_blank"
+              rel="noopener noreferrer"
               className="hover:text-[#FE2C55] transition-all duration-300 hover:scale-110 hover:rotate-3"
             >
               <FaTiktok />
-            </Link>
-            {/* Snapchat */}
-            <Link 
-              href="#" 
-              aria-label="Snapchat"
-              className="hover:text-[#FFFC00] transition-all duration-300 hover:scale-110 hover:rotate-3"
-            >
-              <FaSnapchatGhost />
             </Link>
           </div>
         </div>

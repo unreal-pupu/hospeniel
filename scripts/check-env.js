@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 // Script to check .env.local file and verify PAYSTACK_SECRET_KEY
 // Run with: node scripts/check-env.js
 

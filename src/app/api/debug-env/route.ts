@@ -6,8 +6,7 @@ export async function GET() {
   try {
     const paystackKey = process.env.PAYSTACK_SECRET_KEY;
     
-    // Get the raw value for debugging (we'll mask it in the response)
-    const rawValue = paystackKey;
+    // Get the raw length for debugging
     const rawLength = paystackKey?.length || 0;
     
     // Log to server console for debugging
@@ -33,13 +32,27 @@ export async function GET() {
             : "EMPTY")
       : "NOT SET";
     
+    // Safe helper to get prefix
+    const getPrefix = (key: string | undefined): string => {
+      if (!key || typeof key !== 'string') return "N/A";
+      const length = key.length;
+      return key.substring(0, Math.min(15, length));
+    };
+
+    // Safe helper to get suffix
+    const getSuffix = (key: string | undefined): string => {
+      if (!key || typeof key !== 'string') return "N/A";
+      const length = key.length;
+      return length > 4 ? key.substring(length - 4) : key;
+    };
+
     const debugInfo = {
       paystackKeyExists: !!paystackKey,
       paystackKeyLength: rawLength,
       paystackKeyType: typeof paystackKey,
       paystackKeyValue: paystackKey ? JSON.stringify(paystackKey) : "undefined",
-      paystackKeyPrefix: paystackKey?.substring(0, Math.min(15, paystackKey.length)) || "N/A",
-      paystackKeySuffix: paystackKey?.length > 4 ? paystackKey.substring(paystackKey.length - 4) : paystackKey || "N/A",
+      paystackKeyPrefix: getPrefix(paystackKey),
+      paystackKeySuffix: getSuffix(paystackKey),
       paystackKeyMasked: maskedKey,
       startsWithSkTest: paystackKey?.startsWith('sk_test_') || false,
       startsWithSkLive: paystackKey?.startsWith('sk_live_') || false,
@@ -73,13 +86,15 @@ export async function GET() {
       },
       { status: 200 }
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error("❌ Error in debug endpoint:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const errorStack = error instanceof Error ? error.stack : undefined;
     return NextResponse.json(
       {
         success: false,
-        error: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+        error: errorMessage,
+        stack: process.env.NODE_ENV === 'development' ? errorStack : undefined,
       },
       { status: 500 }
     );

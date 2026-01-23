@@ -18,38 +18,43 @@ interface Plan {
 const plans: Plan[] = [
   {
     name: "Free Trial",
-    description: "The platform is free for the first six months",
+    description: "Every new vendor gets 30 days of free access to the platform.",
     isFreeTrial: true,
     features: [
-      "Platform access for 6 months",
-      "Limited Starter features",
-      "Perfect for testing the platform",
+      "Get listed on the marketplace",
+      "Upload up to 3 menu items",
+      "Basic vendor dashboard",
+      "Receive customer orders",
+      "24/7 support",
     ],
   },
   {
     name: "Starter Plan",
-    monthlyPrice: 12000,
-    yearlyPrice: 136800,
-    description: "Perfect for small businesses getting started",
+    monthlyPrice: 10000,
+    yearlyPrice: 108000, // 10000 * 12 * 0.90 (10% discount)
+    description: "Best for growing vendors",
     features: [
-      "Upload up to 10 menu items",
+      "Priority listing and discovery",
+      "Upload and manage up to 10 menu items",
       "Priority support",
       "Featured on Explore page",
       "24/7 support",
     ],
   },
   {
-    name: "Professional Plan",
+    name: "Premium",
     monthlyPrice: 20000,
-    yearlyPrice: 228000,
-    description: "Ideal for growing businesses",
+    yearlyPrice: 216000, // 20000 * 12 * 0.90 (10% discount)
+    description: "For vendors ready to scale",
     isFeatured: true,
     features: [
-      "Unlimited product listings",
-      "Featured on both Explore and Landing page",
-      "Early access to new tools",
-      "Marketing campaign integration",
-      "Direct contact from users",
+      "Priority placement on Explore and Home page",
+      "Upload unlimited menu items",
+      "Receive and reply to service requests",
+      "Customer chat access",
+      "Higher service request visibility",
+      "Premium vendor credibility",
+      "24/7 support",
     ],
   },
 ];
@@ -74,7 +79,7 @@ export default function Pricing() {
             Plans available for every budget.
           </h2>
           <p className="text-lg text-gray-800 font-body mb-8">
-            Choose the plan that fits your business needs. Start with a free 6-month trial, then upgrade when you're ready.
+            Choose the plan that fits your business needs. Start with a free 30-day trial, then upgrade when you&apos;re ready.
           </p>
 
           {/* Toggle Button */}
@@ -108,7 +113,7 @@ export default function Pricing() {
             </span>
             {isYearly && (
               <span className="ml-2 px-3 py-1 bg-hospineil-primary/20 text-hospineil-primary text-xs font-semibold rounded-full font-body">
-                5% OFF
+                10% OFF
               </span>
             )}
           </div>

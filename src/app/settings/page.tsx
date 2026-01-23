@@ -6,12 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import Image from "next/image";
+import type { User } from "@supabase/supabase-js";
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
 
   const [profile, setProfile] = useState({
     username: "",
@@ -36,7 +37,8 @@ export default function SettingsPage() {
         return;
       }
 
-      setUser(user);
+      // Explicitly type the user to match Supabase User type
+      setUser(user as User);
 
       const { data, error } = await supabase
         .from("user_settings")
@@ -61,10 +63,10 @@ export default function SettingsPage() {
   }, []);
 
  // ✅ Final Fixed Avatar Upload Logic
-const handleAvatarUpload = async (event: any) => {
+const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
   try {
     setUploading(true);
-    const file = event.target.files[0];
+    const file = event.target.files?.[0];
     if (!file) return;
 
     // ✅ Ensure user is authenticated - use getUser() for more reliable auth check
@@ -167,9 +169,10 @@ const handleAvatarUpload = async (event: any) => {
     setProfile((prev) => ({ ...prev, avatar_url: publicUrl }));
 
     alert("✅ Avatar uploaded successfully!");
-  } catch (error: any) {
-    console.error("Upload error:", error.message);
-    alert("Error uploading image: " + error.message);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error("Upload error:", errorMessage);
+    alert("Error uploading image: " + errorMessage);
   } finally {
     setUploading(false);
   }

@@ -18,9 +18,12 @@ const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
 interface PaymentWithDetails {
   id: string;
   user_id: string;
+  vendor_id?: string | null;
   total_amount: number;
   status: string;
   payment_reference: string | null;
+  payment_type?: "product" | "service";
+  service_request_id?: string | null;
   created_at: string;
   updated_at: string;
   profiles?: {
@@ -31,7 +34,7 @@ interface PaymentWithDetails {
   orders?: Array<{
     id: string;
     vendor_id: string;
-    product_id: string;
+    product_id: string | null;
     quantity: number;
     total_price: number;
     status: string;
@@ -66,7 +69,7 @@ export async function GET(req: Request) {
     // Check if user is admin
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
-      .select("is_admin")
+      .select("is_admin, role")
       .eq("id", user.id)
       .single();
 
@@ -77,7 +80,8 @@ export async function GET(req: Request) {
       );
     }
 
-    if (!profile.is_admin) {
+    const isAdmin = profile?.is_admin === true || profile?.role?.toLowerCase().trim() === "admin";
+    if (!isAdmin) {
       return NextResponse.json(
         { error: "Forbidden. Admin access required." },
         { status: 403 }
@@ -120,19 +124,52 @@ export async function GET(req: Request) {
       );
     }
 
-    if (!payments || payments.length === 0) {
-      return NextResponse.json({ payments: [], summary: {
-        totalRevenue: 0,
-        totalCommission: 0,
-        totalTax: 0,
-        successfulPayments: 0,
-        pendingPayments: 0,
-        failedPayments: 0,
-      } });
+    const { data: servicePaymentsRaw, error: servicePaymentsError } = await supabaseAdmin
+      .from("service_requests")
+      .select("id, user_id, vendor_id, payment_reference, amount_paid, final_price, paid_at, created_at, updated_at, payment_status, status")
+      .or("payment_status.eq.paid,status.eq.Paid,status.eq.Completed")
+      .order("created_at", { ascending: false });
+
+    if (servicePaymentsError) {
+      console.error("Error fetching service payments:", servicePaymentsError);
+    }
+
+    const servicePayments: PaymentWithDetails[] = (servicePaymentsRaw || []).map((serviceRequest) => ({
+      id: `service_${serviceRequest.id}`,
+      user_id: serviceRequest.user_id,
+      vendor_id: serviceRequest.vendor_id,
+      total_amount: Number(serviceRequest.amount_paid ?? serviceRequest.final_price ?? 0),
+      status: "success",
+      payment_reference: serviceRequest.payment_reference,
+      payment_type: "service",
+      service_request_id: serviceRequest.id,
+      created_at: serviceRequest.paid_at || serviceRequest.updated_at || serviceRequest.created_at,
+      updated_at: serviceRequest.updated_at || serviceRequest.created_at,
+    }));
+
+    const productPayments: PaymentWithDetails[] = (payments || []).map((payment) => ({
+      ...payment,
+      payment_type: "product",
+    }));
+
+    const allPayments = [...productPayments, ...servicePayments];
+
+    if (allPayments.length === 0) {
+      return NextResponse.json({
+        payments: [],
+        summary: {
+          totalRevenue: 0,
+          totalCommission: 0,
+          totalTax: 0,
+          successfulPayments: 0,
+          pendingPayments: 0,
+          failedPayments: 0,
+        },
+      });
     }
 
     // Get unique user IDs
-    const userIds = [...new Set(payments.map((p: any) => p.user_id).filter(Boolean))];
+    const userIds = [...new Set(allPayments.map((p: PaymentWithDetails) => p.user_id).filter(Boolean))];
 
     // Fetch user profiles
     const { data: userProfiles } = await supabaseAdmin
@@ -147,11 +184,20 @@ export async function GET(req: Request) {
     });
 
     // Fetch related orders for each payment (if payment_reference exists)
-    const paymentReferences = payments
-      .map((p: any) => p.payment_reference)
+    const paymentReferences = allPayments
+      .map((p: PaymentWithDetails) => p.payment_reference)
       .filter(Boolean) as string[];
 
-    let ordersByPayment: Map<string, any[]> = new Map();
+    const ordersByPayment: Map<string, Array<{
+      id: string;
+      vendor_id: string;
+      product_id: string | null;
+      quantity: number;
+      total_price: number;
+      status: string;
+      payment_reference: string | null;
+      menu_items?: { title: string };
+    }>> = new Map();
     if (paymentReferences.length > 0) {
       const { data: orders } = await supabaseAdmin
         .from("orders")
@@ -173,7 +219,20 @@ export async function GET(req: Request) {
       orders?.forEach((order) => {
         if (order.payment_reference) {
           const existing = ordersByPayment.get(order.payment_reference) || [];
-          existing.push(order);
+          // Normalize menu_items: convert array to single object (take first item)
+          const normalizedOrder = {
+            id: order.id,
+            vendor_id: order.vendor_id,
+            product_id: order.product_id,
+            quantity: order.quantity,
+            total_price: order.total_price,
+            status: order.status,
+            payment_reference: order.payment_reference,
+            menu_items: Array.isArray(order.menu_items) && order.menu_items.length > 0
+              ? { title: typeof order.menu_items[0].title === "string" ? order.menu_items[0].title : String(order.menu_items[0].title || "") }
+              : undefined,
+          };
+          existing.push(normalizedOrder);
           ordersByPayment.set(order.payment_reference, existing);
         }
       });
@@ -181,13 +240,16 @@ export async function GET(req: Request) {
 
     // Fetch vendor information for orders
     const vendorIds = [...new Set(
-      Array.from(ordersByPayment.values())
-        .flat()
-        .map((o: any) => o.vendor_id)
-        .filter(Boolean)
+      [
+        ...Array.from(ordersByPayment.values())
+          .flat()
+          .map((o) => o.vendor_id)
+          .filter(Boolean),
+        ...servicePayments.map((p) => p.vendor_id).filter(Boolean),
+      ]
     )];
 
-    let vendorMap = new Map();
+    const vendorMap = new Map<string, { name: string; profile_name: string }>();
     if (vendorIds.length > 0) {
       // Fetch vendor profiles
       const { data: vendorProfiles } = await supabaseAdmin
@@ -212,20 +274,35 @@ export async function GET(req: Request) {
     }
 
     // Combine payments with user information, orders, and vendor details
-    const paymentsWithDetails: PaymentWithDetails[] = payments.map((payment: any) => {
+    const paymentsWithDetails: PaymentWithDetails[] = allPayments.map((payment: PaymentWithDetails) => {
       const userProfile = userProfileMap.get(payment.user_id);
       const relatedOrders = payment.payment_reference
         ? ordersByPayment.get(payment.payment_reference) || []
         : [];
 
       // Add vendor information to orders
-      const ordersWithVendors = relatedOrders.map((order: any) => {
+      let ordersWithVendors = relatedOrders.map((order) => {
         const vendorInfo = vendorMap.get(order.vendor_id);
         return {
           ...order,
           vendor_name: vendorInfo?.name || "Unknown Vendor",
         };
       });
+
+      if (ordersWithVendors.length === 0 && payment.payment_type === "service" && payment.vendor_id) {
+        const vendorInfo = vendorMap.get(payment.vendor_id);
+        ordersWithVendors = [{
+          id: payment.service_request_id || payment.id,
+          vendor_id: payment.vendor_id,
+          product_id: null,
+          quantity: 1,
+          total_price: payment.total_amount,
+          status: "Paid",
+          payment_reference: payment.payment_reference ?? null,
+          vendor_name: vendorInfo?.name || "Unknown Vendor",
+          menu_items: undefined,
+        }];
+      }
 
       return {
         ...payment,

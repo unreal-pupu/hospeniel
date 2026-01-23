@@ -40,12 +40,13 @@ export async function POST(req: Request) {
       },
       { status: 403 }
     );
-  } catch (error: any) {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Verification failed";
     return NextResponse.json(
       { 
         valid: false, 
         requiresKey: false,
-        error: error.message || "Verification failed" 
+        error: errorMessage
       },
       { status: 500 }
     );

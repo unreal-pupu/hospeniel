@@ -111,9 +111,9 @@ export function checkRateLimit(
  */
 export function withRateLimit(
   config: RateLimitConfig,
-  handler: (req: Request, ...args: any[]) => Promise<Response>
+  handler: (req: Request, ...args: unknown[]) => Promise<Response>
 ) {
-  return async (req: Request, ...args: any[]): Promise<Response> => {
+  return async (req: Request, ...args: unknown[]): Promise<Response> => {
     // Extract user ID from request if available (for authenticated endpoints)
     let userId: string | undefined;
     try {
@@ -123,7 +123,7 @@ export function withRateLimit(
         // If you have a way to extract user ID from token, do it here
         // For now, we'll rely on IP-based limiting
       }
-    } catch (error) {
+    } catch {
       // Ignore auth extraction errors
     }
     

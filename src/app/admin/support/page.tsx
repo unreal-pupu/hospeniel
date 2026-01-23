@@ -74,7 +74,16 @@ export default function AdminSupportPage() {
 
       if (response.ok) {
         const data = await response.json();
+        console.log("Admin support messages fetched:", data.messages?.length || 0);
+        if (data.messages && data.messages.length > 0) {
+          console.log("Sample message data:", data.messages.slice(0, 2));
+        } else {
+          console.warn("⚠️ No messages in response, but request was successful");
+        }
         setMessages(data.messages || []);
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Error fetching messages:", response.status, errorData);
       }
     } catch (error) {
       console.error("Error fetching messages:", error);

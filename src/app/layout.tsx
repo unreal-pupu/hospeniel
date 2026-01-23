@@ -1,28 +1,13 @@
 import type { Metadata } from "next";
-import { Inter, Poppins } from "next/font/google";
 import "./globals.css";
 import NavbarVisibilityWrapper from "@/components/NavbarVisibilityWrapper";
-import Footer from "@/components/Footer";
-import BackToTop from "@/components/BackToTop";
 import CopyProtection from "@/components/CopyProtection";
 import { CartProvider } from "../app/context/CartContex";
 import SupabaseProvider from "../../src/providers/SupabaseProvider"; // ✅ default import
 
-// Load Poppins for headers, logo, and buttons
-const poppins = Poppins({
-  variable: "--font-poppins",
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  display: "swap",
-});
-
-// Load Inter for body text
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  display: "swap",
-});
+// Fonts are now loaded via CSS @import in globals.css
+// This prevents build failures when Google Fonts is unavailable
+// The CSS variables --font-poppins and --font-inter are set in globals.css
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://hospineil.com"),
@@ -86,7 +71,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${poppins.variable} ${inter.variable}`}>
+      <body>
         {/* Copy Protection - Disables text selection, right-click, and keyboard shortcuts */}
         <CopyProtection />
         {/* ✅ Supabase wraps everything so session is available globally */}

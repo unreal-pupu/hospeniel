@@ -148,8 +148,8 @@ export async function GET() {
       }
 
       // Ensure Moniepoint is in the list (add if missing)
-      const banks = [...data.data];
-      const moniepointExists = banks.some((bank: any) => 
+      const banks = [...data.data] as Array<{ name?: string; code?: string; [key: string]: unknown }>;
+      const moniepointExists = banks.some((bank) => 
         bank.name?.toLowerCase().includes('moniepoint') || 
         bank.code === '50515'
       );
@@ -176,8 +176,9 @@ export async function GET() {
         },
         { status: 200 }
       );
-    } catch (apiError: any) {
-      console.warn("⚠️ Error calling Paystack API, using fallback bank list:", apiError.message);
+    } catch (apiError) {
+      const errorMessage = apiError instanceof Error ? apiError.message : "Unknown error";
+      console.warn("⚠️ Error calling Paystack API, using fallback bank list:", errorMessage);
       // Return fallback banks if there's an error
       return NextResponse.json(
         {
@@ -188,7 +189,7 @@ export async function GET() {
         { status: 200 }
       );
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error in banks API route:", error);
     // Always return fallback banks on error
     return NextResponse.json(

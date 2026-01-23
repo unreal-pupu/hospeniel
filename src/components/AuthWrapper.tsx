@@ -6,7 +6,6 @@ import { supabase } from "@/lib/supabaseClient";
 
 export default function AuthWrapper({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<any>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -17,8 +16,6 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
 
       if (!user) {
         router.push("/login"); 
-      } else {
-        setUser(user);
       }
       setLoading(false);
     };

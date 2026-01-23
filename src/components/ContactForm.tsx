@@ -84,7 +84,7 @@ export default function ContactForm() {
             Get In Touch
           </h2>
           <p className="text-lg text-gray-800 font-body">
-            Have a question or want to reach out? Send us a message and we'll respond as soon as possible.
+            Have a question or want to reach out? Send us a message and we&apos;ll respond as soon as possible.
           </p>
         </div>
 

@@ -10,12 +10,12 @@ interface FAQItem {
 
 const faqData: FAQItem[] = [
   {
-    question: "How do I place an order on Hospineil?",
+    question: "How do I place an order on Hospeniel?",
     answer: "To place an order, simply browse through our vendors, select the items you want, add them to your cart, and proceed to checkout. You can pay securely using various payment methods available on our platform."
   },
   {
     question: "Can I hire a chef for a private event?",
-    answer: "Yes! Hospineil offers professional chef hiring services for private dining experiences, events, and catering. Browse our chef profiles, check their specialties and availability, then book directly through the platform."
+    answer: "Yes! Hospeniel offers professional chef hiring services for private dining experiences, events, and catering. Browse our chef profiles, check their specialties and availability, then book directly through the platform."
   },
   {
     question: "What delivery options are available?",
@@ -23,7 +23,7 @@ const faqData: FAQItem[] = [
   },
   {
     question: "How can vendors join the platform?",
-    answer: "Vendors can join Hospineil by signing up through our vendor registration page. After submitting your business details and verification documents, our team will review your application and get you set up on the platform."
+    answer: "Vendors can join Hospeniel by signing up through our vendor registration page. After submitting your business details and verification documents, our team will review your application and get you set up on the platform."
   },
   {
     question: "What payment methods do you accept?",

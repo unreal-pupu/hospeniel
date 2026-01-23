@@ -6,6 +6,7 @@
  */
 
 import { Metadata } from "next";
+import { CATEGORY_LABELS } from "./vendorCategories";
 
 export interface SEOConfig {
   title: string;
@@ -212,13 +213,7 @@ export function getVendorPageMetadata(vendor: {
  * Get category label from value
  */
 function getCategoryLabel(value: string): string {
-  const categories: Record<string, string> = {
-    food_vendor: "Food Vendor",
-    chef: "Chef",
-    baker: "Baker",
-    finger_chop: "Finger Chop",
-  };
-  return categories[value] || value;
+  return CATEGORY_LABELS[value] || value;
 }
 
 /**

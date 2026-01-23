@@ -49,7 +49,6 @@ export async function POST(req: Request) {
     const name = body.name || "";
     const role = body.role || "user";
     // DO NOT create an 'address' variable - use body.address directly everywhere
-    const location = body.location || null;
     const category = body.category || null;
     const bank_code = body.bank_code || null;
     const account_number = body.account_number || null;
@@ -131,7 +130,21 @@ export async function POST(req: Request) {
       : (body.address ? String(body.address).trim() : "");
     
     // Build profile data object - ensure all fields are always defined
-    const profileData: any = {
+    const profileData: {
+      id: string;
+      email: string;
+      name: string;
+      role: string;
+      address: string;
+      location?: string | null;
+      category?: string | null;
+      business_name?: string | null;
+      phone_number?: string | null;
+      rider_approval_status?: string | null;
+      approval_status?: string | null;
+      is_available?: boolean;
+      [key: string]: unknown;
+    } = {
       id: user.id,
       email: email || "",
       name: name || "",
@@ -141,8 +154,8 @@ export async function POST(req: Request) {
       // ✅ SECURITY: Password is NEVER stored here - it's only in auth.users.encrypted_password
     };
     
-    // Add location only for vendors - use body.location directly
-    if (role === "vendor") {
+    // Add location for vendors and riders - use body.location directly
+    if (role === "vendor" || role === "rider") {
       const locationValue = (body.location && typeof body.location === "string") 
         ? body.location.trim() || null 
         : null;
@@ -156,11 +169,19 @@ export async function POST(req: Request) {
       profileData.category = category || null;
       profileData.subscription_plan = "free_trial";
       profileData.is_premium = false;
+      profileData.approval_status = "pending";
     }
 
-    // Add phone number for users (ensure it's always a string or null)
-    if (role === "user") {
+    // Add phone number for users, riders, and vendors (ensure it's always a string or null)
+    if (role === "user" || role === "rider" || role === "vendor") {
       profileData.phone_number = typeof phone_number === "string" ? phone_number.trim() || null : null;
+    }
+
+    // Set rider approval status to pending for new rider registrations
+    if (role === "rider") {
+      profileData.rider_approval_status = "pending";
+      // Set is_available to true by default for new riders
+      profileData.is_available = true;
     }
 
     // Log profile data before insert for debugging
@@ -192,6 +213,14 @@ export async function POST(req: Request) {
         hint: profileError?.hint || null,
       }, null, 2));
       
+      // Delete the auth user if profile creation failed
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(user.id);
+        console.log("🗑️ Deleted auth user after profile creation failure");
+      } catch (deleteError) {
+        console.error("⚠️ Failed to delete auth user:", deleteError);
+      }
+      
       // Return more detailed error message
       return NextResponse.json(
         { 
@@ -200,6 +229,7 @@ export async function POST(req: Request) {
           details: profileError.details,
           hint: profileError.hint,
           code: profileError.code,
+          message: `Database error creating new user: ${profileError.message || "Unknown error"}. ${profileError.hint ? `Hint: ${profileError.hint}` : ""}`,
         },
         { status: 400 }
       );
@@ -218,6 +248,7 @@ export async function POST(req: Request) {
       const vendorCategory = (body.category && typeof body.category === "string") 
         ? body.category.trim() || null 
         : null;
+      const vendorPhoneNumber = typeof phone_number === "string" ? phone_number.trim() || null : null;
       
       const vendorData = {
         profile_id: user.id, // link to profiles.id
@@ -226,6 +257,7 @@ export async function POST(req: Request) {
         address: vendorAddress,
         location: vendorLocation,
         category: vendorCategory,
+        phone_number: vendorPhoneNumber, // Add phone number for vendors
         created_at: new Date().toISOString(),
       };
 
@@ -309,7 +341,7 @@ export async function POST(req: Request) {
               // Registration is still successful
             }
           }
-        } catch (subaccountError: any) {
+        } catch (subaccountError) {
           console.error("❌ Error creating Paystack subaccount:", subaccountError);
           // Don't fail registration if subaccount creation fails - vendor can add it later
           // Registration is still successful
@@ -329,19 +361,28 @@ export async function POST(req: Request) {
       { success: true, user: { id: user.id, email, role } },
       { status: 200 }
     );
-  } catch (err: any) {
+  } catch (err) {
     console.error("🔥 Register route crashed:", err);
-    console.error("🔥 Error stack:", err.stack);
-    console.error("🔥 Error name:", err.name);
     
-    // Safely extract error message without referencing any undefined variables
-    const errorMessage = err?.message || err?.toString() || "An unexpected error occurred";
+    // Safely extract error properties with proper type narrowing
+    const errorName = err instanceof Error ? err.name : "Error";
+    const errorMessage = err instanceof Error 
+      ? err.message 
+      : typeof err === "string" 
+        ? err 
+        : err !== null && typeof err === "object" && "toString" in err && typeof err.toString === "function"
+          ? err.toString()
+          : "An unexpected error occurred";
+    const errorStack = err instanceof Error ? err.stack : undefined;
+    
+    console.error("🔥 Error name:", errorName);
+    console.error("🔥 Error stack:", errorStack);
     
     return NextResponse.json(
       { 
         success: false, 
         error: errorMessage,
-        type: err?.name || "Error",
+        type: errorName,
       },
       { status: 500 }
     );

@@ -12,12 +12,21 @@ interface RateLimitError {
 export function useRateLimitHandler() {
   const [rateLimitError, setRateLimitError] = useState<string | null>(null);
 
-  const handleRateLimitError = useCallback((error: any): boolean => {
+  interface ErrorWithStatus {
+    status?: number;
+    response?: { status?: number; data?: RateLimitError };
+    data?: RateLimitError;
+    [key: string]: unknown;
+  }
+  const handleRateLimitError = useCallback((error: ErrorWithStatus): boolean => {
     // Check if it's a rate limit error (429 status)
     if (error?.status === 429 || error?.response?.status === 429) {
-      const errorData: RateLimitError = error?.data || error?.response?.data || {};
-      const message = errorData.message || errorData.error || "Too many requests. Please try again later.";
-      const retryAfter = errorData.retryAfter || 60;
+      const errorData = error?.data || error?.response?.data;
+      const message =
+        errorData?.message ||
+        errorData?.error ||
+        "Too many requests. Please try again later.";
+      const retryAfter = errorData?.retryAfter || 60;
 
       setRateLimitError(message);
       

@@ -19,6 +19,9 @@ import {
   Shield,
   Star,
   HelpCircle,
+  Settings,
+  Truck,
+  HandCoins,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -46,10 +49,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           return;
         }
 
-        // Check if user is admin
+        // ✅ CRITICAL: Check role from profiles.role column (not is_admin flag)
         const { data: profile, error } = await supabase
           .from("profiles")
-          .select("is_admin, name")
+          .select("role, name")
           .eq("id", user.id)
           .single();
 
@@ -59,9 +62,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           return;
         }
 
-        // ✅ SECURITY: Verify admin status
-        if (!profile.is_admin) {
-          console.warn("⚠️ SECURITY: Non-admin user attempted to access admin dashboard:", user.id);
+        // ✅ SECURITY: Verify admin role from profiles.role
+        const role = profile.role?.toLowerCase().trim();
+        if (role !== "admin") {
+          console.warn("⚠️ SECURITY: Non-admin user attempted to access admin dashboard. Role:", profile.role);
           setLoading(false);
           return; // Will show access denied message
         }
@@ -194,6 +198,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     { href: "/admin", label: "Dashboard Home", icon: LayoutDashboard },
     { href: "/admin/users", label: "Users", icon: Users },
     { href: "/admin/vendors", label: "Vendors", icon: Store },
+    { href: "/admin/riders", label: "Riders", icon: Users },
+    { href: "/admin/delivery-reports", label: "Delivery Reports", icon: Truck },
+    { href: "/admin/rider-payouts", label: "Rider Payouts", icon: HandCoins },
+    { href: "/admin/delivery-commission", label: "Delivery Commission", icon: Truck },
+    { href: "/admin/vat-collected", label: "VAT Collected", icon: BarChart3 },
     { href: "/admin/featured-vendors", label: "Featured Vendors", icon: Star },
     { href: "/admin/orders", label: "Orders", icon: ShoppingBag },
     { href: "/admin/payments", label: "Payments", icon: CreditCard },
@@ -201,6 +210,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     { href: "/admin/support", label: "Support Messages", icon: HelpCircle },
     { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
     { href: "/admin/notifications", label: "Notifications", icon: Bell },
+    { href: "/admin/settings", label: "Settings", icon: Settings },
   ];
 
   if (loading) {

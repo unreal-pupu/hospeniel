@@ -58,7 +58,26 @@ export default function ProductsShowcase() {
         }
 
         // Get unique vendor IDs
-        const vendorIds = [...new Set(menuData.map((item: any) => item.vendor_id).filter(Boolean))];
+        interface MenuDataItem {
+          vendor_id: string;
+          [key: string]: unknown;
+        }
+        interface VendorData {
+          id: string;
+          profile_id: string;
+          name?: string | null;
+          business_name?: string | null;
+          image_url?: string | null;
+          location?: string | null;
+          [key: string]: unknown;
+        }
+        interface ProfileData {
+          id: string;
+          name?: string | null;
+          location?: string | null;
+          [key: string]: unknown;
+        }
+        const vendorIds = [...new Set(menuData.map((item: MenuDataItem) => item.vendor_id).filter(Boolean))];
 
         if (vendorIds.length === 0) {
           setMenuItems(menuData);
@@ -82,9 +101,9 @@ export default function ProductsShowcase() {
         // Create vendor map
         const vendorMap = new Map();
         if (vendorsData) {
-          vendorsData.forEach((vendor: any) => {
+          vendorsData.forEach((vendor: VendorData) => {
             if (vendor.profile_id) {
-              const profile = profilesData?.find((p: any) => p.id === vendor.profile_id);
+              const profile = profilesData?.find((p: ProfileData) => p.id === vendor.profile_id);
               vendorMap.set(vendor.profile_id, {
                 id: vendor.id,
                 name: profile?.name || vendor.business_name || vendor.name || "Vendor",
@@ -96,15 +115,21 @@ export default function ProductsShowcase() {
         }
 
         // Combine menu items with vendor information
-        const itemsWithVendors = menuData
-          .filter((item: any) => {
+        const itemsWithVendors: MenuItem[] = (menuData || [])
+          .filter((item: MenuDataItem) => {
             // Only show available items
             return item.availability === true || 
                    item.availability === "available" ||
                    item.availability === "Available";
           })
-          .map((item: any) => ({
-            ...item,
+          .map((item: MenuDataItem) => ({
+            id: String(item.id),
+            vendor_id: String(item.vendor_id),
+            title: String(item.title),
+            description: typeof item.description === "string" ? item.description : "",
+            price: typeof item.price === "number" ? item.price : Number(item.price || 0),
+            image_url: typeof item.image_url === "string" ? item.image_url : null,
+            availability: item.availability as MenuItem["availability"],
             vendors: vendorMap.get(item.vendor_id),
           }));
 
@@ -126,11 +151,12 @@ export default function ProductsShowcase() {
       await addToCart(item.id, item.vendor_id, 1);
       // Success - cart context will handle the update
       // Show success message (optional)
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error adding to cart:", error);
       // Only show alert if it's not a localStorage error (which is handled silently)
-      if (error.message && !error.message.includes("localStorage")) {
-        alert(error.message || "Failed to add item to cart. Please try again.");
+      const errorMessage = error instanceof Error ? error.message : "";
+      if (errorMessage && !errorMessage.includes("localStorage")) {
+        alert(errorMessage || "Failed to add item to cart. Please try again.");
       }
     } finally {
       setAddingToCart(null);
@@ -183,6 +209,7 @@ export default function ProductsShowcase() {
                     quality={85}
                     placeholder="blur"
                     blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAIAAoDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAhEAACAQMDBQAAAAAAAAAAAAABAgMABAUGIWGRkqGx0f/EABUBAQEAAAAAAAAAAAAAAAAAAAMF/8QAGhEAAgIDAAAAAAAAAAAAAAAAAAECEgMRkf/aAAwDAQACEQMRAD8AltJagyeH0AthI5xdrLcNM91BF5pX2HaH9bcfaSXWGaRmknyJckliyjqTzSlT54b6bk+h0R//2Q=="
+                    unoptimized
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-gray-200">

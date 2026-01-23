@@ -9,6 +9,16 @@ const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
+interface SupportMessageRow {
+  id: string;
+  sender_id: string;
+  sender_role?: string | null;
+  message?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+  responded_by?: string | null;
+}
+
 // GET /api/support/messages - Get messages (filtered by user role)
 export async function GET(req: Request) {
   try {
@@ -39,14 +49,26 @@ export async function GET(req: Request) {
       .single();
 
     if (profileError || !profile) {
+      console.error("Profile error:", profileError);
       return NextResponse.json(
         { error: "User profile not found" },
         { status: 404 }
       );
     }
 
+    // Check if user is admin (either is_admin = true OR role = 'admin')
+    const isAdmin = profile.is_admin === true || profile.role?.toLowerCase().trim() === "admin";
+
+    console.log("User profile:", { 
+      id: user.id, 
+      role: profile.role, 
+      is_admin: profile.is_admin,
+      isAdmin: isAdmin 
+    });
+
     // If admin, return all messages with sender info
-    if (profile.is_admin) {
+    if (isAdmin) {
+      console.log("Admin user detected, fetching all messages");
       const { data: messages, error } = await supabaseAdmin
         .from("support_messages")
         .select("*")
@@ -60,10 +82,41 @@ export async function GET(req: Request) {
         );
       }
 
+      console.log(`Fetched ${messages?.length || 0} messages for admin`);
+      
+      // Log first few messages for debugging
+      if (messages && messages.length > 0) {
+        console.log("Sample messages:", (messages as SupportMessageRow[]).slice(0, 3).map((m) => ({
+          id: m.id,
+          sender_id: m.sender_id,
+          sender_role: m.sender_role,
+          message_preview: m.message?.substring(0, 50),
+          status: m.status,
+          created_at: m.created_at
+        })));
+      } else {
+        console.warn("⚠️ No messages found in database for admin");
+      }
+
       // Batch fetch sender and responder info to avoid N+1 queries
       // Get unique sender IDs and responder IDs
-      const senderIds = [...new Set((messages || []).map((msg: any) => msg.sender_id).filter(Boolean))];
-      const responderIds = [...new Set((messages || []).map((msg: any) => msg.responded_by).filter(Boolean))];
+      interface Message {
+        sender_id?: string;
+        responded_by?: string;
+        [key: string]: unknown;
+      }
+      interface Sender {
+        id: string;
+        name: string;
+        email: string;
+      }
+      interface Responder {
+        id: string;
+        name: string;
+      }
+      
+      const senderIds = [...new Set((messages || []).map((msg: Message) => msg.sender_id).filter(Boolean) as string[])];
+      const responderIds = [...new Set((messages || []).map((msg: Message) => msg.responded_by).filter(Boolean) as string[])];
       
       // Batch fetch all senders
       const { data: senders, error: sendersError } = senderIds.length > 0
@@ -90,18 +143,26 @@ export async function GET(req: Request) {
       }
 
       // Create maps for quick lookup
-      const senderMap = new Map((senders || []).map((s: any) => [s.id, s]));
-      const responderMap = new Map((responders || []).map((r: any) => [r.id, r]));
+      const senderMap = new Map<string, Sender>((senders || []).map((s: Sender) => [s.id, s]));
+      const responderMap = new Map<string, Responder>((responders || []).map((r: Responder) => [r.id, r]));
 
       // Attach sender and responder info to each message
-      const messagesWithSenderInfo = (messages || []).map((msg: any) => {
-        const sender = senderMap.get(msg.sender_id) || {
-          id: msg.sender_id,
-          name: "Unknown User",
-          email: null,
-        };
+      const messagesWithSenderInfo = (messages || []).map((msg: Message) => {
+        // Safely handle undefined sender_id
+        const senderId = msg.sender_id;
+        const sender = senderId && typeof senderId === "string"
+          ? (senderMap.get(senderId) || {
+              id: senderId,
+              name: "Unknown User",
+              email: null,
+            })
+          : {
+              id: senderId || "unknown",
+              name: "Unknown User",
+              email: null,
+            };
 
-        const responder = msg.responded_by
+        const responder = msg.responded_by && typeof msg.responded_by === "string"
           ? (responderMap.get(msg.responded_by) || null)
           : null;
 
@@ -112,6 +173,8 @@ export async function GET(req: Request) {
         };
       });
 
+      console.log(`Returning ${messagesWithSenderInfo.length} messages with sender info to admin`);
+      
       return NextResponse.json({ messages: messagesWithSenderInfo });
     }
 
@@ -176,9 +239,9 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!["user", "vendor"].includes(sender_role)) {
+    if (!["user", "vendor", "rider"].includes(sender_role)) {
       return NextResponse.json(
-        { error: "Invalid sender_role. Must be 'user' or 'vendor'" },
+        { error: "Invalid sender_role. Must be 'user', 'vendor', or 'rider'" },
         { status: 400 }
       );
     }
@@ -224,6 +287,12 @@ export async function POST(req: Request) {
     }
 
     // Insert message
+    console.log("Inserting support message:", {
+      sender_id: user.id,
+      sender_role,
+      message_length: message.length,
+    });
+
     const { data: newMessage, error: insertError } = await supabaseAdmin
       .from("support_messages")
       .insert([
@@ -239,11 +308,14 @@ export async function POST(req: Request) {
 
     if (insertError) {
       console.error("Error inserting message:", insertError);
+      console.error("Insert error details:", JSON.stringify(insertError, null, 2));
       return NextResponse.json(
-        { error: "Failed to send message" },
+        { error: "Failed to send message", details: insertError.message },
         { status: 500 }
       );
     }
+
+    console.log("Message inserted successfully:", newMessage?.id);
 
     return NextResponse.json(
       { message: newMessage, success: true },

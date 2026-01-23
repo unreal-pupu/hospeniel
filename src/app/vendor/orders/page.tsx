@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { 
   Clock, 
@@ -11,9 +11,10 @@ import {
   Search, 
   Filter,
   User,
-  Calendar,
   DollarSign,
-  Loader2
+  Loader2,
+  RefreshCw,
+  Bike
 } from "lucide-react";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -57,6 +58,7 @@ interface Order {
   delivery_postal_code?: string | null;
   delivery_phone_number?: string | null;
   delivery_charge?: number | null;
+  payment_reference?: string | null;
   menu_items?: {
     id: string;
     title: string;
@@ -72,15 +74,300 @@ interface Order {
   };
 }
 
+interface OrderWithUser extends Order {
+  profiles?: {
+    id: string;
+    name: string;
+  };
+  user_settings?: {
+    avatar_url: string;
+  };
+  deliveryTask?: {
+    id: string;
+    status: string;
+    rider_id: string | null;
+  };
+}
+
 export default function OrdersPage() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<OrderWithUser[]>([]);
+  const [filteredOrders, setFilteredOrders] = useState<OrderWithUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+  const [requestingRiderForOrderId, setRequestingRiderForOrderId] = useState<string | null>(null);
+  const [subscriptionPlan, setSubscriptionPlan] = useState<string>("free_trial");
+  const [vendorCategory, setVendorCategory] = useState<string | null>(null);
+  const [planLoading, setPlanLoading] = useState(true);
+
+  const isCookOrChef = vendorCategory === "chef" || vendorCategory === "home_cook";
+  const canAccessOrders = !isCookOrChef || subscriptionPlan === "professional";
+
+  // Fetch orders with error handling
+  const fetchOrders = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        setError("You must be logged in to view orders.");
+        return;
+      }
+
+      // Fetch orders with related data
+      // Note: user_id references auth.users(id), so we need to join profiles and user_settings
+      // Explicitly select columns to avoid schema mismatch errors
+      const { data: ordersData, error: ordersError } = await supabase
+        .from("orders")
+        .select(`
+          id,
+          vendor_id,
+          user_id,
+          product_id,
+          quantity,
+          total_price,
+          status,
+          created_at,
+          updated_at,
+          delivery_address,
+          delivery_address_line_1,
+          delivery_city,
+          delivery_state,
+          delivery_zone,
+          delivery_postal_code,
+          delivery_phone,
+          delivery_phone_number,
+          delivery_charge,
+          special_instructions,
+          payment_reference,
+          menu_items (
+            id,
+            title,
+            image_url,
+            price
+          )
+        `)
+        .eq("vendor_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (ordersError) {
+        console.error("❌ Error fetching orders:", ordersError);
+        console.error("❌ Error details:", {
+          message: ordersError.message,
+          code: ordersError.code,
+          details: ordersError.details,
+          hint: ordersError.hint
+        });
+        setError(`Failed to load orders: ${ordersError.message || "Unknown error"}`);
+        setOrders([]);
+        setLoading(false);
+        return;
+      }
+
+      if (!ordersData || ordersData.length === 0) {
+        setOrders([]);
+        setFilteredOrders([]);
+        setLoading(false);
+        return;
+      }
+
+      // Get unique user IDs
+      const userIds = [...new Set(ordersData.map((order) => order.user_id))];
+
+      // Fetch user profiles and settings
+      const [profilesResult, settingsResult] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("id, name")
+          .in("id", userIds),
+        supabase
+          .from("user_settings")
+          .select("user_id, avatar_url")
+          .in("user_id", userIds)
+      ]);
+
+      // Create maps for quick lookup
+      interface Profile {
+        id: string;
+        name: string;
+      }
+      interface UserSetting {
+        user_id: string;
+        avatar_url: string | null;
+      }
+      const profilesMap = new Map<string, Profile>();
+      if (profilesResult.data) {
+        profilesResult.data.forEach((profile) => {
+          profilesMap.set(profile.id, profile);
+        });
+      }
+
+      const settingsMap = new Map<string, UserSetting>();
+      if (settingsResult.data) {
+        settingsResult.data.forEach((setting) => {
+          settingsMap.set(setting.user_id, setting);
+        });
+      }
+
+      // Fetch delivery tasks for these orders
+      const orderIds = ordersData.map((o) => o.id);
+      const { data: deliveryTasks } = await supabase
+        .from("delivery_tasks")
+        .select("id, order_id, status, rider_id")
+        .in("order_id", orderIds);
+
+      // Create map of order_id -> delivery_task
+      const deliveryTaskMap = new Map<string, { id: string; status: string; rider_id: string | null }>();
+      if (deliveryTasks) {
+        deliveryTasks.forEach((task) => {
+          deliveryTaskMap.set(task.order_id, {
+            id: task.id,
+            status: task.status,
+            rider_id: task.rider_id,
+          });
+        });
+      }
+
+      // Combine orders with user data - explicitly map all required Order fields
+      const ordersWithUsers: OrderWithUser[] = ordersData.map((order) => {
+        const menuItem = Array.isArray(order.menu_items)
+          ? order.menu_items[0]
+          : order.menu_items;
+        const resolvedMenuItem = menuItem
+          ? {
+              id: String(menuItem.id),
+              title: String(menuItem.title),
+              image_url: String(menuItem.image_url),
+              price: Number(menuItem.price),
+            }
+          : undefined;
+
+        // Ensure all required Order fields are present
+        const baseOrder: Order = {
+          id: order.id as string,
+          vendor_id: order.vendor_id as string,
+          user_id: order.user_id as string,
+          product_id: order.product_id as string,
+          quantity: order.quantity as number,
+          total_price: order.total_price as number,
+          status: order.status as Order["status"],
+          created_at: order.created_at as string,
+          updated_at: order.updated_at as string,
+          // Handle both delivery_address and delivery_address_line_1 for backward compatibility
+          delivery_address_line_1: (order.delivery_address || order.delivery_address_line_1) as string | null | undefined,
+          delivery_city: order.delivery_city as string | null | undefined,
+          delivery_state: order.delivery_state as string | null | undefined,
+          delivery_postal_code: order.delivery_postal_code as string | null | undefined,
+          // Handle both delivery_phone and delivery_phone_number for backward compatibility
+          delivery_phone_number: (order.delivery_phone || order.delivery_phone_number) as string | null | undefined,
+          delivery_charge: order.delivery_charge as number | null | undefined,
+          payment_reference: order.payment_reference as string | null | undefined,
+          menu_items: resolvedMenuItem,
+        };
+
+        const profile = profilesMap.get(order.user_id);
+        const setting = settingsMap.get(order.user_id);
+
+        return {
+          ...baseOrder,
+          profiles: profile
+            ? {
+                id: profile.id,
+                name: profile.name,
+              }
+            : undefined,
+          user_settings: setting
+            ? {
+                avatar_url: setting.avatar_url || "",
+              }
+            : undefined,
+          deliveryTask: deliveryTaskMap.get(order.id),
+        };
+      });
+
+      setOrders(ordersWithUsers);
+      setFilteredOrders(ordersWithUsers);
+      setError(null);
+    } catch (fetchOrdersError) {
+      console.error("❌ Exception fetching orders:", fetchOrdersError);
+      const errorMessage = fetchOrdersError instanceof Error ? fetchOrdersError.message : "An unexpected error occurred";
+      setError(`Failed to load orders: ${errorMessage}`);
+      setOrders([]);
+      setFilteredOrders([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const filterOrders = useCallback(() => {
+    let filtered = [...orders];
+
+    // Filter by status
+    if (statusFilter !== "all") {
+      filtered = filtered.filter((order) => order.status === statusFilter);
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((order) => {
+        const productName = order.menu_items?.title?.toLowerCase() || "";
+        const userName = order.profiles?.name?.toLowerCase() || "";
+        return productName.includes(query) || userName.includes(query);
+      });
+    }
+
+    setFilteredOrders(filtered);
+  }, [orders, statusFilter, searchQuery]);
 
   useEffect(() => {
+    const fetchSubscriptionPlan = async () => {
+      try {
+        setPlanLoading(true);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("subscription_plan, category")
+          .eq("id", user.id)
+          .single();
+
+        if (profile) {
+          setSubscriptionPlan(profile.subscription_plan || "free_trial");
+          setVendorCategory(profile.category || null);
+        } else {
+          const { data: vendor } = await supabase
+            .from("vendors")
+            .select("subscription_plan, category")
+            .eq("profile_id", user.id)
+            .single();
+
+          if (vendor) {
+            setSubscriptionPlan(vendor.subscription_plan || "free_trial");
+            setVendorCategory(vendor.category || null);
+          }
+        }
+      } catch (planError) {
+        console.error("Error fetching subscription plan:", planError);
+      } finally {
+        setPlanLoading(false);
+      }
+    };
+
+    fetchSubscriptionPlan();
+  }, []);
+
+  useEffect(() => {
+    if (planLoading) return;
+    if (!canAccessOrders) {
+      setLoading(false);
+      return;
+    }
+
     fetchOrders();
     
     // Set up real-time subscription for orders
@@ -108,135 +395,92 @@ export default function OrdersPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [planLoading, canAccessOrders, fetchOrders]);
 
   useEffect(() => {
     filterOrders();
-  }, [searchQuery, statusFilter, orders]);
+  }, [filterOrders]);
 
-  const fetchOrders = async () => {
+  const requestRider = async (orderId: string) => {
     try {
-      setLoading(true);
+      setRequestingRiderForOrderId(orderId);
+      console.log("🚴 Requesting rider for order:", orderId);
+
+      // Get current user (vendor) ID
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        setLoading(false);
+        alert("You must be logged in to request a rider");
         return;
       }
 
-      // Fetch orders with payment reference information
-      // RLS will automatically filter to vendor's orders
-
-      // Fetch orders with related data
-      // Note: user_id references auth.users(id), so we need to join profiles and user_settings
-      const { data: ordersData, error: ordersError } = await supabase
-        .from("orders")
-        .select(`
-          *,
-          menu_items (
-            id,
-            title,
-            image_url,
-            price
-          )
-        `)
-        .eq("vendor_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (ordersError) {
-        console.error("Error fetching orders:", ordersError);
-        setOrders([]);
-        setLoading(false);
-        return;
-      }
-
-      if (!ordersData || ordersData.length === 0) {
-        setOrders([]);
-        setLoading(false);
-        return;
-      }
-
-      // Get unique user IDs
-      const userIds = [...new Set(ordersData.map((order: any) => order.user_id))];
-
-      // Fetch user profiles and settings
-      const [profilesResult, settingsResult] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, name")
-          .in("id", userIds),
-        supabase
-          .from("user_settings")
-          .select("user_id, avatar_url")
-          .in("user_id", userIds)
-      ]);
-
-      // Create maps for quick lookup
-      const profilesMap = new Map();
-      if (profilesResult.data) {
-        profilesResult.data.forEach((profile: any) => {
-          profilesMap.set(profile.id, profile);
-        });
-      }
-
-      const settingsMap = new Map();
-      if (settingsResult.data) {
-        settingsResult.data.forEach((setting: any) => {
-          settingsMap.set(setting.user_id, setting);
-        });
-      }
-
-      // Combine orders with user data
-      const ordersWithUsers = ordersData.map((order: any) => ({
-        ...order,
-        profiles: profilesMap.get(order.user_id),
-        user_settings: settingsMap.get(order.user_id)
-      }));
-
-      setOrders(ordersWithUsers);
-      setFilteredOrders(ordersWithUsers);
-    } catch (error) {
-      console.error("Error fetching orders:", error);
-      setOrders([]);
-      setFilteredOrders([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filterOrders = () => {
-    let filtered = [...orders];
-
-    // Filter by status
-    if (statusFilter !== "all") {
-      filtered = filtered.filter((order) => order.status === statusFilter);
-    }
-
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter((order) => {
-        const productName = order.menu_items?.title?.toLowerCase() || "";
-        const userName = order.profiles?.name?.toLowerCase() || "";
-        return productName.includes(query) || userName.includes(query);
+      // Create timeout promise (30 seconds)
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("Request timeout: Rider request took too long")), 30000);
       });
-    }
 
-    setFilteredOrders(filtered);
+      // Call API to create delivery task
+      const fetchPromise = fetch("/api/vendor/delivery-tasks/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          orderId,
+          vendorId: user.id,
+        }),
+      });
+
+      const response = await Promise.race([fetchPromise, timeoutPromise]);
+      console.log("✅ API response received:", response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(errorData.error || `HTTP ${response.status}: Failed to request rider`);
+      }
+
+      const data = await response.json();
+      console.log("✅ Delivery task created:", data);
+
+      if (!data.success) {
+        throw new Error(data.error || "Failed to request rider");
+      }
+
+      alert("Rider request sent! Riders will be notified and can accept the delivery.");
+
+      // Refetch orders to show delivery task status
+      fetchOrders().catch((err) => {
+        console.error("Error refetching orders after rider request:", err);
+      });
+    } catch (requestError) {
+      console.error("❌ Error requesting rider:", requestError);
+      const errorMessage = requestError instanceof Error ? requestError.message : "An error occurred while requesting rider";
+      alert(`Failed to request rider: ${errorMessage}`);
+    } finally {
+      setRequestingRiderForOrderId(null);
+      console.log("✅ Rider request flow completed");
+    }
   };
 
   const updateOrderStatus = async (orderId: string, newStatus: "Accepted" | "Rejected" | "Completed" | "Cancelled") => {
     try {
       setUpdatingOrderId(orderId);
+      console.log("🔄 Updating order status:", { orderId, newStatus });
       
       // Get current user (vendor) ID
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         alert("You must be logged in to update orders");
+        setUpdatingOrderId(null);
         return;
       }
 
-      // Call API route to update status and create notifications
-      const response = await fetch("/api/vendor/orders/update-status", {
+      // Create a timeout promise (30 seconds)
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("Request timeout: Order update took too long")), 30000);
+      });
+
+      // Call API route to update status and create notifications with timeout
+      const fetchPromise = fetch("/api/vendor/orders/update-status", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -248,14 +492,28 @@ export default function OrdersPage() {
         }),
       });
 
-      const data = await response.json();
+      const response = await Promise.race([fetchPromise, timeoutPromise]);
+      console.log("✅ API response received:", response.status);
 
-      if (!response.ok || !data.success) {
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(errorData.error || `HTTP ${response.status}: Failed to update order status`);
+      }
+
+      const data = await response.json();
+      console.log("✅ API response data:", data);
+
+      if (!data.success) {
         throw new Error(data.error || "Failed to update order status");
       }
 
       // Update local state immediately for better UX
       setOrders((prevOrders) =>
+        prevOrders.map((order) =>
+          order.id === orderId ? { ...order, status: newStatus } : order
+        )
+      );
+      setFilteredOrders((prevOrders) =>
         prevOrders.map((order) =>
           order.id === orderId ? { ...order, status: newStatus } : order
         )
@@ -271,13 +529,18 @@ export default function OrdersPage() {
       
       alert(statusMessages[newStatus] || "Order status updated successfully");
 
-      // Refetch to ensure consistency
-      await fetchOrders();
-    } catch (error: any) {
-      console.error("Error updating order status:", error);
-      alert(error.message || "An error occurred while updating the order");
+      // Refetch in background (non-blocking) to ensure consistency
+      fetchOrders().catch((err) => {
+        console.error("Error refetching orders after update:", err);
+        // Don't show error to user - local state is already updated
+      });
+    } catch (updateError) {
+      console.error("❌ Error updating order status:", updateError);
+      const errorMessage = updateError instanceof Error ? updateError.message : "An error occurred while updating the order";
+      alert(`Failed to update order: ${errorMessage}`);
     } finally {
       setUpdatingOrderId(null);
+      console.log("✅ Order update flow completed");
     }
   };
 
@@ -324,11 +587,53 @@ export default function OrdersPage() {
     }
   };
 
-  if (loading) {
+  if (planLoading || loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] bg-hospineil-base-bg">
         <Loader2 className="animate-spin text-hospineil-primary h-8 w-8 mb-4" />
         <p className="text-gray-600 font-body">Loading orders...</p>
+      </div>
+    );
+  }
+
+  if (!canAccessOrders) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] bg-hospineil-base-bg px-6 text-center">
+        <h2 className="text-2xl font-semibold text-hospineil-primary font-header mb-2">
+          Orders Access Requires Professional Plan
+        </h2>
+        <p className="text-gray-600 font-body mb-6 max-w-lg">
+          Home cooks and chefs can manage orders only on the Professional plan.
+          Upgrade your subscription to access order management tools.
+        </p>
+        <Button
+          onClick={() => (window.location.href = "/vendor/subscription")}
+          className="bg-hospineil-primary text-white rounded-lg hover:bg-hospineil-primary/90 hover:scale-105 transition-all font-button"
+        >
+          Upgrade Plan
+        </Button>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] bg-hospineil-base-bg">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md text-center">
+          <XCircle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-red-800 mb-2">Error Loading Orders</h3>
+          <p className="text-red-600 mb-4">{error}</p>
+          <Button
+            onClick={() => {
+              setError(null);
+              fetchOrders();
+            }}
+            className="bg-red-600 hover:bg-red-700 text-white"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Try Again
+          </Button>
+        </div>
       </div>
     );
   }
@@ -413,17 +718,11 @@ export default function OrdersPage() {
         {orders.length > 0 && (
           <div className="mt-6 pt-6 border-t border-gray-300">
             <h3 className="text-lg font-semibold text-hospineil-primary mb-4 font-header">Earnings Summary</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-hospineil-base-bg rounded-lg p-4 border border-gray-200">
                 <p className="text-sm text-gray-600 font-body mb-1">Total Sales</p>
                 <p className="text-xl font-bold text-hospineil-primary font-header">
                   ₦{orders.reduce((sum, o) => sum + (o.total_price || 0), 0).toLocaleString("en-NG", { minimumFractionDigits: 2 })}
-                </p>
-              </div>
-              <div className="bg-hospineil-base-bg rounded-lg p-4 border border-gray-200">
-                <p className="text-sm text-gray-600 font-body mb-1">Total Commission (10%)</p>
-                <p className="text-xl font-bold text-hospineil-accent font-header">
-                  ₦{calculateCommission(orders.reduce((sum, o) => sum + (o.total_price || 0), 0)).toLocaleString("en-NG", { minimumFractionDigits: 2 })}
                 </p>
               </div>
               <div className="bg-hospineil-base-bg rounded-lg p-4 border border-gray-200">
@@ -518,14 +817,17 @@ export default function OrdersPage() {
                   <div className="relative w-20 h-20 rounded-lg overflow-hidden flex-shrink-0 border border-gray-200 bg-gray-100">
                     {order.menu_items?.image_url ? (
                       <>
-                        <img
+                        <Image
                           src={order.menu_items.image_url}
                           alt={order.menu_items.title || "Product"}
-                          className="w-full h-full object-cover relative z-10"
+                          fill
+                          className="object-cover relative z-10"
+                          sizes="80px"
                           onError={(e) => {
                             const target = e.target as HTMLImageElement;
                             target.style.display = "none";
                           }}
+                          unoptimized
                         />
                         {/* Fallback product image (shown if image fails to load) */}
                         <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
@@ -637,19 +939,48 @@ export default function OrdersPage() {
                     </>
                   )}
                   {order.status === "Accepted" && (
-                    <Button
-                      onClick={() => updateOrderStatus(order.id, "Completed")}
-                      disabled={updatingOrderId === order.id}
-                      className="w-full bg-hospineil-primary text-white hover:bg-hospineil-primary/90 hover:scale-105 transition-all font-button"
-                      size="sm"
-                    >
-                      {updatingOrderId === order.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      ) : (
-                        <Package className="h-4 w-4 mr-2" />
+                    <>
+                      {!order.deliveryTask && (
+                        <Button
+                          onClick={() => requestRider(order.id)}
+                          disabled={requestingRiderForOrderId === order.id}
+                          className="w-full bg-blue-600 text-white hover:bg-blue-700 hover:scale-105 transition-all font-button mb-2"
+                          size="sm"
+                        >
+                          {requestingRiderForOrderId === order.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          ) : (
+                            <Bike className="h-4 w-4 mr-2" />
+                          )}
+                          Request Rider
+                        </Button>
                       )}
-                      Mark as Completed
-                    </Button>
+                      {order.deliveryTask && (
+                        <div className="w-full mb-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                          <p className="text-sm font-semibold text-blue-800 font-body">
+                            Delivery Status: {order.deliveryTask.status}
+                          </p>
+                          {order.deliveryTask.rider_id && (
+                            <p className="text-xs text-blue-600 font-body mt-1">
+                              Rider assigned
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      <Button
+                        onClick={() => updateOrderStatus(order.id, "Completed")}
+                        disabled={updatingOrderId === order.id}
+                        className="w-full bg-hospineil-primary text-white hover:bg-hospineil-primary/90 hover:scale-105 transition-all font-button"
+                        size="sm"
+                      >
+                        {updatingOrderId === order.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <Package className="h-4 w-4 mr-2" />
+                        )}
+                        Mark as Completed
+                      </Button>
+                    </>
                   )}
                   {(order.status === "Completed" || order.status === "Cancelled" || order.status === "Rejected") && (
                     <div className="w-full text-center py-2">

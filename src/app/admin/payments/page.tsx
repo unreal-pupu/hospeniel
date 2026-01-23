@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, CheckCircle, XCircle, Search, Filter, CreditCard, User } from "lucide-react";
+import { Loader2, Search, Filter, CreditCard, User } from "lucide-react";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 
@@ -14,9 +14,12 @@ dayjs.extend(relativeTime);
 interface Payment {
   id: string;
   user_id: string;
+  vendor_id?: string | null;
   total_amount: number;
   status: string;
   payment_reference: string | null;
+  payment_type?: "product" | "service";
+  service_request_id?: string | null;
   created_at: string;
   updated_at: string;
   profiles?: {
@@ -136,6 +139,7 @@ export default function AdminPaymentsPage() {
           payment.payment_reference?.toLowerCase().includes(query) ||
           payment.profiles?.name?.toLowerCase().includes(query) ||
           payment.profiles?.email?.toLowerCase().includes(query) ||
+          payment.payment_type?.toLowerCase().includes(query) ||
           payment.status?.toLowerCase().includes(query)
         );
       });
@@ -161,21 +165,6 @@ export default function AdminPaymentsPage() {
     });
 
     setFilteredPayments(filtered);
-  };
-
-  const getStatusBadgeColor = (status: string) => {
-    switch (status) {
-      case "success":
-        return "bg-green-100 text-green-800";
-      case "pending":
-        return "bg-yellow-100 text-yellow-800";
-      case "failed":
-        return "bg-red-100 text-red-800";
-      case "cancelled":
-        return "bg-gray-100 text-gray-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
   };
 
   if (loading) {
@@ -338,6 +327,7 @@ export default function AdminPaymentsPage() {
                 <thead>
                   <tr className="border-b border-gray-200">
                     <th className="text-left py-3 px-4 font-semibold text-hospineil-primary font-header">Transaction ID</th>
+                    <th className="text-left py-3 px-4 font-semibold text-hospineil-primary font-header">Type</th>
                     <th className="text-left py-3 px-4 font-semibold text-hospineil-primary font-header">Vendor Name</th>
                     <th className="text-left py-3 px-4 font-semibold text-hospineil-primary font-header">User Name</th>
                     <th className="text-left py-3 px-4 font-semibold text-hospineil-primary font-header">Amount Paid</th>
@@ -364,6 +354,11 @@ export default function AdminPaymentsPage() {
                       >
                         <td className="py-3 px-4 text-sm font-mono text-gray-600 font-body">
                           {payment.payment_reference || payment.id.substring(0, 8) + "..."}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="text-sm font-semibold text-gray-700 font-header capitalize">
+                            {payment.payment_type || "product"}
+                          </div>
                         </td>
                         <td className="py-3 px-4">
                           <div className="font-medium text-gray-800 font-body">

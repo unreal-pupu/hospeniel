@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { useRouter } from "next/navigation";
 import {
   Card,
   CardHeader,
@@ -23,7 +22,6 @@ export default function ForgotPasswordPage() {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error" | "info">("info");
   const [emailError, setEmailError] = useState("");
-  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,7 +80,7 @@ export default function ForgotPasswordPage() {
         // Clear email field for security
         setEmail("");
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Error sending password reset email:", err);
       setLoading(false);
       setMessage("An unexpected error occurred. Please try again later.");
@@ -101,7 +99,7 @@ export default function ForgotPasswordPage() {
             Forgot Password
           </CardTitle>
           <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-            Enter your email address and we'll send you a link to reset your password.
+            Enter your email address and we&apos;ll send you a link to reset your password.
           </p>
         </CardHeader>
 
@@ -152,7 +150,7 @@ export default function ForgotPasswordPage() {
           )}
 
           <div className="mt-4 text-xs text-gray-500 text-center">
-            <p>💡 Check your spam folder if you don't see the email.</p>
+            <p>💡 Check your spam folder if you don&apos;t see the email.</p>
             <p className="mt-1">The reset link will expire in 1 hour.</p>
           </div>
         </CardContent>

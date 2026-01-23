@@ -16,16 +16,23 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { getAuthenticatedUserEmail, initiatePaystackPayment } from "@/lib/paystack";
+import { getAuthenticatedUserEmail } from "@/lib/paystack";
 import Image from "next/image";
 import { Loader2, ShoppingBag, Store, CreditCard, ArrowLeft } from "lucide-react";
-import { getDeliveryFeeByState, getDeliveryZoneByState, getAvailableStates } from "@/lib/deliveryFees";
+import { 
+  getAvailableStates,
+  getDeliveryFeeByLandmark,
+  getZoneByLandmark,
+  getLandmarkInfo,
+  getAvailableLandmarks
+} from "@/lib/deliveryFees";
 
 interface DirectOrderItem {
   product_id: string;
   vendor_id: string;
   quantity: number;
   total_price: number;
+  price?: number; // Optional for compatibility with CartItem
   menu_items?: {
     id: string;
     title: string;
@@ -38,6 +45,7 @@ interface DirectOrderItem {
     image_url: string;
     location?: string;
   };
+  [key: string]: unknown; // Index signature for compatibility
 }
 
 export default function PaymentPage() {
@@ -50,14 +58,16 @@ export default function PaymentPage() {
     address: "",
     phone: "",
     city: "",
-    state: "",
+    state: "Bayelsa", // Default to Bayelsa for landmark-based delivery
   });
+  const [selectedLandmark, setSelectedLandmark] = useState("");
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [deliveryCharge, setDeliveryCharge] = useState(0);
   const [calculatingDelivery, setCalculatingDelivery] = useState(false);
   const [deliveryZone, setDeliveryZone] = useState("");
   const [estimatedDeliveryTime, setEstimatedDeliveryTime] = useState("");
   const [isPaymentLocked, setIsPaymentLocked] = useState(false);
+  const [landmarkError, setLandmarkError] = useState("");
   const router = useRouter();
 
   // Load delivery details from user profile (including admin-entered fields)
@@ -134,14 +144,14 @@ export default function PaymentPage() {
               }
 
               // Fetch vendor details from profiles table (primary source for vendor names)
-              const { data: profile, error: profileError } = await supabase
+              const { data: profile } = await supabase
                 .from("profiles")
                 .select("id, name, location")
                 .eq("id", orderData.vendor_id)
                 .single();
 
               // Also try to fetch from vendors table for additional info
-              const { data: vendor, error: vendorError } = await supabase
+              const { data: vendor } = await supabase
                 .from("vendors")
                 .select("id, name, business_name, image_url, location, profile_id")
                 .eq("profile_id", orderData.vendor_id)
@@ -189,7 +199,7 @@ export default function PaymentPage() {
                 menu_title: menuItem.title,
                 vendor_name: vendorName,
               });
-            } catch (itemError: any) {
+            } catch (itemError) {
               console.error("❌ Error processing order item:", itemError);
               console.error("Order data:", orderData);
               // Continue to next item
@@ -221,18 +231,43 @@ export default function PaymentPage() {
   const groupedByVendor = itemsToDisplay.reduce((acc, item) => {
     const vendorId = item.vendor_id;
     if (!acc[vendorId]) {
+      // Safely extract and transform vendors to match expected type
+      const itemVendors = item.vendors;
+      let vendor: { id: string; name?: string; business_name?: string; image_url?: string | null; location?: string } | null = null;
+      
+      if (itemVendors && typeof itemVendors === "object" && "id" in itemVendors) {
+        // Safely access business_name and location by checking if they exist on the object
+        const vendorsObj = itemVendors as Record<string, unknown>;
+        const businessName = vendorsObj.business_name;
+        const location = vendorsObj.location;
+        
+        vendor = {
+          id: typeof itemVendors.id === "string" ? itemVendors.id : "",
+          name: typeof itemVendors.name === "string" ? itemVendors.name : undefined,
+          business_name: typeof businessName === "string" ? businessName : undefined,
+          image_url: typeof itemVendors.image_url === "string" 
+            ? itemVendors.image_url 
+            : itemVendors.image_url === null 
+              ? null 
+              : undefined,
+          location: typeof location === "string" ? location : undefined,
+        };
+      }
+      
       acc[vendorId] = {
-        vendor: item.vendors || (item as any).vendors,
+        vendor,
         items: [],
         subtotal: 0,
       };
     }
     acc[vendorId].items.push(item);
-    const price = isDirectOrder ? item.total_price : (item as any).price;
+    const price = isDirectOrder 
+      ? ((item as DirectOrderItem).total_price ?? 0)
+      : ((item as import("../context/CartContex").CartItem).price ?? 0);
     const quantity = item.quantity;
     acc[vendorId].subtotal += price * quantity;
     return acc;
-  }, {} as Record<string, { vendor: any; items: any[]; subtotal: number }>);
+  }, {} as Record<string, { vendor: { id: string; name?: string; business_name?: string; image_url?: string | null; location?: string } | null; items: Array<DirectOrderItem | import("../context/CartContex").CartItem>; subtotal: number }>);
 
   // Calculate overall subtotal (before tax and commission)
   const subtotal = Object.values(groupedByVendor).reduce(
@@ -242,44 +277,51 @@ export default function PaymentPage() {
 
   // Calculate total items count (moved before delivery charge calculation)
   const totalItems = itemsToDisplay.reduce((sum, item) => sum + item.quantity, 0);
+  const vendorCount = Object.keys(groupedByVendor).length;
 
-  // Calculate delivery charge when state is selected (state-based pricing)
+  // Calculate delivery charge when landmark is selected (landmark-based pricing)
   useEffect(() => {
     const calculateDeliveryCharge = () => {
-      // Only calculate if we have a selected state
-      if (!deliveryDetails.state) {
+      // Only Bayelsa is available, so always use landmark-based pricing
+      if (!selectedLandmark) {
         setDeliveryCharge(0);
         setDeliveryZone("");
         setEstimatedDeliveryTime("");
+        setLandmarkError("Please select the closest landmark to you.");
         return;
       }
 
       setCalculatingDelivery(true);
+      setLandmarkError("");
       
-      // Use state-based pricing from configuration
-      const fee = getDeliveryFeeByState(deliveryDetails.state);
-      const zone = getDeliveryZoneByState(deliveryDetails.state);
+      // Use landmark-based pricing (internal zone mapping)
+      const fee = getDeliveryFeeByLandmark(selectedLandmark);
+      const zone = getZoneByLandmark(selectedLandmark);
+      const landmarkInfo = getLandmarkInfo(selectedLandmark);
       
-      if (fee > 0 && zone) {
-        setDeliveryCharge(fee);
-        setDeliveryZone(zone.state);
-        setEstimatedDeliveryTime("0–30 minutes");
+      if (fee > 0 && zone && landmarkInfo) {
+        const baseDeliveryTotal = fee * Math.max(vendorCount, 1);
+        const discount = vendorCount === 2 ? 500 : vendorCount >= 3 ? 800 : 0;
+        setDeliveryCharge(Math.max(baseDeliveryTotal - discount, 0));
+        setDeliveryZone(selectedLandmark); // Store landmark name only, no zone info in UI
+        setEstimatedDeliveryTime("20-40 minutes");
       } else {
         setDeliveryCharge(0);
         setDeliveryZone("");
         setEstimatedDeliveryTime("");
+        setLandmarkError("Invalid landmark selected.");
       }
       
       setCalculatingDelivery(false);
     };
 
-    // Calculate immediately when state changes (no debounce needed for state-based pricing)
+    // Calculate immediately when landmark changes
     calculateDeliveryCharge();
-  }, [deliveryDetails.state]);
+  }, [selectedLandmark, vendorCount]);
 
-  // Calculate tax (7.5% VAT on subtotal + delivery charge)
+  // Calculate tax (7.5% VAT on food subtotal only)
   const TAX_RATE = 0.075;
-  const taxableAmount = subtotal + deliveryCharge;
+  const taxableAmount = subtotal;
   const taxAmount = taxableAmount * TAX_RATE;
 
   // Calculate commission (10% of subtotal)
@@ -328,27 +370,49 @@ export default function PaymentPage() {
         console.log("✅ Direct order items loaded successfully:", directOrderItems.length);
       }
     }
-  }, [cartItems.length, cartLoading, isDirectOrder, loadingOrderData, directOrderItems.length, router]);
+  }, [cartItems.length, cartLoading, isDirectOrder, loadingOrderData, directOrderItems, router]);
 
   // Handle payment with Paystack
   const handlePayWithPaystack = async () => {
+    console.log("🔄 handlePayWithPaystack called");
+    console.log("📦 itemsToDisplay:", itemsToDisplay);
+    console.log("📋 deliveryDetails:", deliveryDetails);
+    console.log("💰 deliveryCharge:", deliveryCharge);
+    
     if (itemsToDisplay.length === 0) {
+      console.error("❌ No items to display");
       alert("No items to purchase.");
       return;
     }
 
     // Validate delivery details
     if (!deliveryDetails.address || !deliveryDetails.phone || !deliveryDetails.city || !deliveryDetails.state) {
+      console.error("❌ Missing delivery details:", {
+        address: !!deliveryDetails.address,
+        phone: !!deliveryDetails.phone,
+        city: !!deliveryDetails.city,
+        state: !!deliveryDetails.state,
+      });
       alert("Please fill in all required delivery details (address, city, state, and phone number) before proceeding with payment.");
       return;
     }
 
-    // Ensure delivery charge is calculated
-    if (deliveryCharge === 0 && deliveryDetails.state) {
-      alert("Please select a valid state to calculate delivery charge.");
+    // Validate landmark selection (required for delivery fee calculation)
+    if (!selectedLandmark) {
+      console.error("❌ Landmark not selected");
+      alert("Please select the closest landmark to you.");
       return;
     }
 
+    // Ensure delivery charge is calculated
+    if (deliveryCharge === 0) {
+      console.error("❌ Delivery charge not calculated");
+      alert("Please select the closest landmark to you.");
+      return;
+    }
+
+    console.log("✅ Validation passed, proceeding with payment");
+    
     // Lock delivery details once payment is initiated
     setIsPaymentLocked(true);
     setLoading(true);
@@ -381,7 +445,15 @@ export default function PaymentPage() {
       }
 
       // Prepare order data (but don't create orders yet - wait for payment success)
-      const ordersToInsert: any[] = [];
+      interface OrderToInsert {
+        user_id: string;
+        vendor_id: string;
+        product_id: string;
+        quantity: number;
+        total_price: number;
+        status: string;
+      }
+      const ordersToInsert: OrderToInsert[] = [];
 
       if (isDirectOrder) {
         // Use direct order data
@@ -405,7 +477,7 @@ export default function PaymentPage() {
               vendor_id: vendorId,
               product_id: item.product_id,
               quantity: item.quantity,
-              total_price: (item as any).price * item.quantity,
+              total_price: ((item as { price?: number }).price || 0) * item.quantity,
               status: "Pending",
             });
           }
@@ -452,7 +524,9 @@ export default function PaymentPage() {
         sessionStorage.setItem("paymentAmount", total.toString());
         sessionStorage.setItem("deliveryDetails", JSON.stringify({
           ...deliveryDetails,
+          delivery_zone: deliveryZone,
           delivery_charge: deliveryCharge,
+          landmark: deliveryDetails.state === "Bayelsa" ? selectedLandmark : null,
         }));
         // Clean up direct order data
         if (isDirectOrder) {
@@ -471,11 +545,21 @@ export default function PaymentPage() {
           body: JSON.stringify({
             email: resolvedEmail,
             amount: total,
+            food_amount: subtotal,
+            delivery_fee: deliveryCharge,
+            vat_amount: taxAmount,
             vendor_id: primaryVendorId,
             payment_id: paymentData.id,
+            pending_orders: ordersToInsert,
+            delivery_details: {
+              ...deliveryDetails,
+              delivery_zone: deliveryZone,
+              delivery_charge: deliveryCharge,
+              landmark: deliveryDetails.state === "Bayelsa" ? selectedLandmark : null,
+            },
             metadata: {
               order_count: ordersToInsert.length,
-              vendor_count: new Set(ordersToInsert.map((o: any) => o.vendor_id)).size,
+              vendor_count: new Set(ordersToInsert.map((o) => o.vendor_id)).size,
             },
           }),
         });
@@ -500,14 +584,16 @@ export default function PaymentPage() {
         } else {
           throw new Error("No authorization URL received from Paystack");
         }
-      } catch (paymentError: any) {
+      } catch (paymentError) {
         console.error("Error initializing payment:", paymentError);
-        alert(`Failed to initialize payment: ${paymentError.message || "Please try again"}`);
+        const errorMessage = paymentError instanceof Error ? paymentError.message : "Please try again";
+        alert(`Failed to initialize payment: ${errorMessage}`);
         setLoading(false);
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Unexpected error during payment:", error);
-      alert(`An unexpected error occurred: ${error.message || "Please try again"}`);
+      const errorMessage = error instanceof Error ? error.message : "Please try again";
+      alert(`An unexpected error occurred: ${errorMessage}`);
       setLoading(false);
     }
   };
@@ -641,14 +727,20 @@ export default function PaymentPage() {
                         </Label>
                         <Select
                           value={deliveryDetails.state}
-                          onValueChange={(value) =>
-                            !isPaymentLocked && setDeliveryDetails({ ...deliveryDetails, state: value })
-                          }
-                          disabled={isPaymentLocked}
+                          onValueChange={(value) => {
+                            if (!isPaymentLocked) {
+                              setDeliveryDetails({ ...deliveryDetails, state: value });
+                              // Reset landmark when state changes
+                              if (value !== "Bayelsa") {
+                                setSelectedLandmark("");
+                              }
+                            }
+                          }}
+                          disabled={isPaymentLocked} // Disabled only when payment is locked
                           required
                         >
                           <SelectTrigger className="mt-1 bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11 w-full disabled:opacity-50 disabled:cursor-not-allowed">
-                            <SelectValue placeholder="Select state" />
+                            <SelectValue placeholder="Bayelsa" />
                           </SelectTrigger>
                           <SelectContent>
                             {getAvailableStates().map((state) => (
@@ -659,6 +751,35 @@ export default function PaymentPage() {
                           </SelectContent>
                         </Select>
                       </div>
+                    </div>
+
+                    {/* Landmark Selection - Always shown since only Bayelsa is available */}
+                    <div>
+                      <Label htmlFor="deliveryLandmark" className="text-sm font-medium text-gray-700">
+                        Choose Closest Landmark <span className="text-red-500">*</span>
+                      </Label>
+                        <Select
+                          value={selectedLandmark}
+                          onValueChange={(value) =>
+                            !isPaymentLocked && setSelectedLandmark(value)
+                          }
+                          disabled={isPaymentLocked}
+                          required
+                        >
+                          <SelectTrigger className="mt-1 bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11 w-full disabled:opacity-50 disabled:cursor-not-allowed">
+                            <SelectValue placeholder="Select closest landmark" />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-[300px]">
+                            {getAvailableLandmarks().map((landmark) => (
+                              <SelectItem key={landmark} value={landmark}>
+                                {landmark}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      {landmarkError && (
+                        <p className="text-xs text-red-600 mt-1">{landmarkError}</p>
+                      )}
                     </div>
 
                     <div>
@@ -679,26 +800,31 @@ export default function PaymentPage() {
                       />
                     </div>
 
-                    {calculatingDelivery && deliveryDetails.state && (
+                    {calculatingDelivery && selectedLandmark && (
                       <div className="flex items-center gap-2 text-sm text-blue-600">
                         <Loader2 className="animate-spin h-4 w-4" />
-                        <span>Calculating delivery charge...</span>
+                        <span>Calculating delivery fee...</span>
                       </div>
                     )}
 
-                    {!calculatingDelivery && deliveryCharge > 0 && deliveryDetails.state && (
+                    {!calculatingDelivery && deliveryCharge > 0 && selectedLandmark && (
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                         <p className="text-sm text-blue-800">
-                          <strong>Delivery Zone:</strong> {deliveryZone}
-                        </p>
-                        <p className="text-sm text-blue-800 mt-1">
-                          <strong>Delivery Charge:</strong> ₦{deliveryCharge.toLocaleString("en-NG", { minimumFractionDigits: 2 })}
+                          <strong>Delivery Fee:</strong> ₦{deliveryCharge.toLocaleString("en-NG", { minimumFractionDigits: 2 })}
                         </p>
                         {estimatedDeliveryTime && (
                           <p className="text-xs text-blue-600 mt-1">
                             Estimated delivery time: {estimatedDeliveryTime}
                           </p>
                         )}
+                      </div>
+                    )}
+
+                    {!selectedLandmark && !calculatingDelivery && (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                        <p className="text-sm text-yellow-800">
+                          Please select the closest landmark to you.
+                        </p>
                       </div>
                     )}
 
@@ -732,7 +858,7 @@ export default function PaymentPage() {
                           <div className="relative w-10 h-10 rounded-full overflow-hidden">
                             <Image
                               src={group.vendor.image_url}
-                              alt={group.vendor.name}
+                              alt={group.vendor.name || "Vendor"}
                               fill
                               className="object-cover"
                             />
@@ -754,9 +880,24 @@ export default function PaymentPage() {
                       {/* Items */}
                       <div className="space-y-3">
                         {group.items.map((item, index) => {
-                          const itemId = isDirectOrder ? item.product_id : (item as any).id;
-                          const menuItem = isDirectOrder ? item.menu_items : (item as any).menu_items;
-                          const price = isDirectOrder ? item.total_price : (item as any).price;
+                          interface CartItem {
+                            id?: string;
+                            product_id?: string;
+                            menu_items?: {
+                              id: string;
+                              title: string;
+                              image_url: string;
+                              price: number;
+                            };
+                            price?: number;
+                            total_price?: number;
+                            quantity: number;
+                            [key: string]: unknown;
+                          }
+                          const cartItem = item as CartItem;
+                          const itemId = isDirectOrder ? cartItem.product_id : cartItem.id;
+                          const menuItem: { id: string; title: string; image_url: string; price: number } | undefined = isDirectOrder ? cartItem.menu_items : cartItem.menu_items;
+                          const price = isDirectOrder ? cartItem.total_price : cartItem.price;
                           const quantity = item.quantity;
                           
                           return (
@@ -782,7 +923,7 @@ export default function PaymentPage() {
                                   Quantity: {quantity}
                                 </p>
                                 <p className="text-indigo-600 font-bold">
-                                  ₦{(price * quantity).toLocaleString("en-NG", { minimumFractionDigits: 2 })}
+                                  ₦{((price ?? 0) * quantity).toLocaleString("en-NG", { minimumFractionDigits: 2 })}
                                 </p>
                               </div>
                             </div>
@@ -825,27 +966,22 @@ export default function PaymentPage() {
                     </span>
                   </div>
 
-                  {/* Delivery Charge */}
+                  {/* Delivery Fee */}
                   {deliveryCharge > 0 ? (
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">
-                        Delivery Charge {deliveryZone ? `(${deliveryZone})` : ""}
+                        Delivery Fee
                       </span>
                       <span className="font-medium">
                         ₦{deliveryCharge.toLocaleString("en-NG", { minimumFractionDigits: 2 })}
                       </span>
                     </div>
-                  ) : deliveryDetails.state ? (
+                  ) : (
                     <div className="flex justify-between text-sm text-gray-400">
-                      <span>Delivery Charge</span>
+                      <span>Delivery Fee</span>
                       <span className="font-medium">
                         {calculatingDelivery ? "Calculating..." : "₦0.00"}
                       </span>
-                    </div>
-                  ) : (
-                    <div className="flex justify-between text-sm text-gray-400">
-                      <span>Delivery Charge</span>
-                      <span className="font-medium">Select state</span>
                     </div>
                   )}
                   
@@ -857,14 +993,6 @@ export default function PaymentPage() {
                     </span>
                   </div>
 
-                  {/* Platform Commission (informational, not charged to user) */}
-                  <div className="flex justify-between text-xs text-gray-500 border-t pt-2">
-                    <span>Platform Commission (10%)</span>
-                    <span>
-                      ₦{commissionAmount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  
                   {/* Total */}
                   <div className="border-t pt-4">
                     <div className="flex justify-between items-center mb-2">
@@ -882,12 +1010,26 @@ export default function PaymentPage() {
                       </p>
                     )}
                   </div>
+                  <p className="text-xs text-gray-500 text-center">
+                    Payments are currently in TEST MODE and are awaiting approval. No real money will be charged.
+                  </p>
 
                   <Button
                     className="w-full rounded-full px-8 py-6 bg-green-600 text-white font-bold text-lg shadow-lg hover:bg-green-700 disabled:opacity-50"
-                    onClick={handlePayWithPaystack}
-                    disabled={loading}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log("🔵 Button clicked, calling handlePayWithPaystack");
+                      if (typeof handlePayWithPaystack === 'function') {
+                        handlePayWithPaystack();
+                      } else {
+                        console.error("❌ handlePayWithPaystack is not a function:", typeof handlePayWithPaystack);
+                        alert("Payment handler is not available. Please refresh the page.");
+                      }
+                    }}
+                    disabled={loading || itemsToDisplay.length === 0}
                     size="lg"
+                    type="button"
                   >
                     {loading ? (
                       <>
@@ -897,7 +1039,7 @@ export default function PaymentPage() {
                     ) : (
                       <>
                         <CreditCard className="h-5 w-5 mr-2" />
-                        Pay with Paystack
+                        {itemsToDisplay.length === 0 ? "No items to purchase" : "Pay with Paystack"}
                       </>
                     )}
                   </Button>

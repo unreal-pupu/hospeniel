@@ -9,16 +9,36 @@ import { supabase } from "@/lib/supabaseClient";
 import { useCart } from "../../context/CartContex";
 import {
   getAuthenticatedUserEmail,
-  initiatePaystackPayment,
 } from "../../../lib/paystack";
 import Script from "next/script";
 import { generateVendorSchema, generateBreadcrumbSchema } from "@/lib/seo";
+
+interface MenuItem {
+  id: string;
+  title: string;
+  price: number;
+  image_url: string | null;
+  description?: string | null;
+  availability?: boolean;
+  [key: string]: unknown;
+}
+
+interface VendorData {
+  id: string;
+  name?: string | null;
+  business_name?: string | null;
+  description?: string | null;
+  image_url?: string | null;
+  menu_items?: MenuItem[];
+  products?: MenuItem[];
+  [key: string]: unknown;
+}
 
 export default function VendorProfile() {
   const params = useParams();
   const router = useRouter();
   const vendorId = Number(params.id);
-  const [vendor, setVendor] = useState<any>(null);
+  const [vendor, setVendor] = useState<VendorData | null>(null);
   const [loading, setLoading] = useState(true);
   const { addToCart } = useCart();
 
@@ -56,7 +76,7 @@ export default function VendorProfile() {
   }, [vendorId]);
 
   // ✅ Handle Paystack Payment (Fixed)
-  const handlePay = async (product: any) => {
+  const handlePay = async (product: MenuItem) => {
     try {
       // Verify user is authenticated
       const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -96,8 +116,8 @@ export default function VendorProfile() {
 
       const vendorAuthId = vendor.profile_id; // This is the auth.users(id) UUID
 
-      // Verify vendor_id is a valid UUID
-      if (!vendorAuthId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      // Verify vendor_id is a string and a valid UUID
+      if (typeof vendorAuthId !== 'string' || !vendorAuthId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
         console.error("Invalid vendor_id:", vendorAuthId);
         alert("Invalid vendor information. Please try again.");
         return;
@@ -159,23 +179,50 @@ export default function VendorProfile() {
       // 3️⃣ Initialize Paystack Payment
       const reference = `order_${order.id}_${Date.now()}`;
 
-      const handler = (window as any).PaystackPop.setup({
+      interface WindowWithPaystack extends Window {
+        PaystackPop?: {
+          setup: (options: {
+            key: string;
+            email: string;
+            amount: number;
+            currency?: string | undefined;
+            ref?: string | undefined;
+            callback: (response: {
+              reference: string;
+              status: string;
+              transaction?: string | undefined;
+            }) => void;
+            onClose?: (() => void) | undefined;
+          }) => {
+            openIframe: () => void;
+          };
+        };
+      }
+      const handler = (window as WindowWithPaystack).PaystackPop?.setup({
         key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY!,
         email: userEmail,
         amount: product.price * 100, // Convert to kobo
         currency: "NGN",
         ref: reference,
-        callback: async (response: any) => {
+        callback: (response) => {
           // 4️⃣ Payment Success → Update order status (Note: orders table doesn't have payment_reference field)
           // Status should be one of: 'Pending', 'Accepted', 'Completed', 'Cancelled'
           // We'll keep it as 'Pending' since payment doesn't mean the vendor has accepted it
           // You may want to add a payment_reference column to orders table if needed
-          await supabase
-            .from("orders")
-            .update({
-              status: "Pending", // Keep as Pending - vendor still needs to accept
-            })
-            .eq("id", order.id);
+          // Handle async operation without making callback async
+          (async () => {
+            try {
+              await supabase
+                .from("orders")
+                .update({
+                  status: "Pending", // Keep as Pending - vendor still needs to accept
+                })
+                .eq("id", order.id);
+              console.log("Order updated after payment:", response);
+            } catch (error) {
+              console.error("Error updating order after payment:", error);
+            }
+          })();
 
           alert("Payment successful! 🎉 Your order has been placed.");
         },
@@ -184,10 +231,11 @@ export default function VendorProfile() {
         },
       });
 
-      handler.openIframe();
-    } catch (error: any) {
+      handler?.openIframe();
+    } catch (error) {
       console.error("💥 Payment Error:", error);
-      alert(`An error occurred while processing your payment: ${error.message || "Unknown error"}`);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      alert(`An error occurred while processing your payment: ${errorMessage}`);
     }
   };
 
@@ -206,13 +254,13 @@ export default function VendorProfile() {
 
   // Generate structured data for vendor
   const vendorStructuredData = vendor ? generateVendorSchema({
-    name: vendor.business_name || vendor.name,
-    business_name: vendor.business_name || vendor.name,
-    description: vendor.description || vendor.tagline,
-    image_url: vendor.logo_url || vendor.image_url,
-    location: vendor.location,
-    category: vendor.category,
-    address: vendor.address,
+    name: vendor.business_name ?? vendor.name ?? undefined,
+    business_name: vendor.business_name ?? vendor.name ?? undefined,
+    description: typeof vendor.description === "string" ? vendor.description : typeof vendor.tagline === "string" ? vendor.tagline : undefined,
+    image_url: typeof vendor.logo_url === "string" ? vendor.logo_url : typeof vendor.image_url === "string" ? vendor.image_url : undefined,
+    location: typeof vendor.location === "string" ? vendor.location : undefined,
+    category: typeof vendor.category === "string" ? vendor.category : undefined,
+    address: typeof vendor.address === "string" ? vendor.address : undefined,
   }) : null;
 
   // Generate breadcrumb schema
@@ -245,7 +293,13 @@ export default function VendorProfile() {
         <div className="flex flex-col md:flex-row items-center gap-6 mb-12">
           <div className="w-32 h-32 relative rounded-full overflow-hidden shadow-md">
             <Image
-              src={vendor.logo_url || vendor.image_url || "/fallback.jpg"}
+              src={
+                typeof vendor.logo_url === "string"
+                  ? vendor.logo_url
+                  : typeof vendor.image_url === "string"
+                  ? vendor.image_url
+                  : "/fallback.jpg"
+              }
               alt={vendor.business_name || vendor.name || "Vendor"}
               fill
               className="object-cover"
@@ -255,8 +309,14 @@ export default function VendorProfile() {
             <h1 className="text-3xl md:text-4xl font-bold text-gray-900">
               {vendor.business_name || vendor.name}
             </h1>
-            <p className="text-lg text-gray-600">{vendor.tagline || vendor.description}</p>
-            {vendor.category && (
+            <p className="text-lg text-gray-600">
+              {typeof vendor.tagline === "string"
+                ? vendor.tagline
+                : typeof vendor.description === "string"
+                ? vendor.description
+                : ""}
+            </p>
+            {typeof vendor.category === "string" && vendor.category.length > 0 && (
               <span className="inline-block bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-sm font-medium">
                 {vendor.category}
               </span>
@@ -270,7 +330,15 @@ export default function VendorProfile() {
       </h2>
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {(vendor.menu_items || vendor.products || []).map((product: any) => (
+        {(vendor.menu_items || vendor.products || []).map((product: MenuItem) => {
+          const productName =
+            typeof product.name === "string"
+              ? product.name
+              : typeof product.title === "string"
+              ? product.title
+              : "Menu Item";
+
+          return (
           <Card
             key={product.id}
             className="rounded-xl shadow-md hover:shadow-lg transition"
@@ -278,14 +346,14 @@ export default function VendorProfile() {
             <div className="relative w-full h-48">
               <Image
                 src={product.image_url || "/default-food.jpg"}
-                alt={product.name}
+                alt={productName}
                 fill
                 className="object-cover rounded-t-xl"
               />
             </div>
             <CardContent className="p-4 space-y-2">
               <h3 className="text-lg font-semibold text-gray-900">
-                {product.name || product.title}
+                {productName}
               </h3>
               <p className="text-gray-700 font-medium">₦{product.price}</p>
 
@@ -295,12 +363,13 @@ export default function VendorProfile() {
                   onClick={async () => {
                     try {
                       // Get vendor's profile_id (auth.users id) for the cart item
-                      const vendorAuthId = vendor?.profile_id;
+                      const vendorAuthId =
+                        typeof vendor?.profile_id === "string" ? vendor.profile_id : null;
                       if (!vendorAuthId) {
                         alert("Unable to add item to cart: vendor information missing.");
                         return;
                       }
-                      await addToCart(product.id, vendorAuthId, 1);
+                      await addToCart(String(product.id), vendorAuthId, 1);
                       // Show toast notification
                       const toast = document.createElement("div");
                       toast.className = "fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50";
@@ -311,9 +380,10 @@ export default function VendorProfile() {
                           document.body.removeChild(toast);
                         }
                       }, 3000);
-                    } catch (error: any) {
+                    } catch (error) {
                       console.error("Error adding to cart:", error);
-                      alert(error.message || "Failed to add item to cart. Please try again.");
+                      const errorMessage = error instanceof Error ? error.message : "Failed to add item to cart. Please try again.";
+                      alert(errorMessage);
                     }
                   }}
                 >
@@ -330,7 +400,8 @@ export default function VendorProfile() {
               </div>
             </CardContent>
           </Card>
-        ))}
+        );
+        })}
       </div>
     </section>
     </>

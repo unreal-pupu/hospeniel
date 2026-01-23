@@ -23,6 +23,7 @@ interface ServiceRequestDialogProps {
   vendorName: string;
   isPremium: boolean;
   subscriptionPlan?: string;
+  isChefOrHomeCook?: boolean; // New prop to identify chefs/home cooks
 }
 
 export default function ServiceRequestDialog({
@@ -32,6 +33,7 @@ export default function ServiceRequestDialog({
   vendorName,
   isPremium,
   subscriptionPlan,
+  isChefOrHomeCook = false,
 }: ServiceRequestDialogProps) {
   const [message, setMessage] = useState("");
   const [contactInfo, setContactInfo] = useState("");
@@ -121,9 +123,10 @@ export default function ServiceRequestDialog({
         setSuccess(false);
         onOpenChange(false);
       }, 2000);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Error submitting service request:", err);
-      setError(err.message || "An unexpected error occurred. Please try again.");
+      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred. Please try again.";
+      setError(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -139,9 +142,11 @@ export default function ServiceRequestDialog({
     }
   };
 
-  const isProfessional = subscriptionPlan === "professional" || isPremium;
+  // Chefs and Home Cooks can always receive service requests
+  // Regular vendors need Professional plan
+  const isProfessional = subscriptionPlan === "professional" || isPremium || isChefOrHomeCook;
   
-  if (!isProfessional) {
+  if (!isProfessional && !isChefOrHomeCook) {
     return (
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent className="max-w-md">
@@ -178,7 +183,9 @@ export default function ServiceRequestDialog({
         <DialogHeader>
           <DialogTitle>Request Service from {vendorName}</DialogTitle>
           <DialogDescription>
-            Send a message to request catering, events, or other services
+            {isChefOrHomeCook 
+              ? "Send a message to request cooking services, meal preparation, or catering"
+              : "Send a message to request catering, events, or other services"}
           </DialogDescription>
         </DialogHeader>
 
@@ -209,14 +216,18 @@ export default function ServiceRequestDialog({
                 id="message"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder="Describe the service you need (e.g., catering for 50 people, outdoor event setup, etc.)"
+                placeholder={isChefOrHomeCook 
+                  ? "Describe the service you need (e.g., meal for 10 people on Saturday, cooking for a party, special dietary requirements, etc.)"
+                  : "Describe the service you need (e.g., catering for 50 people, outdoor event setup, etc.)"}
                 rows={6}
                 className="mt-1"
                 required
                 disabled={submitting}
               />
               <p className="text-xs text-gray-500 mt-1">
-                Include details about your event, date, number of guests, and any special requirements.
+                {isChefOrHomeCook
+                  ? "Include details about your meal needs, date, number of people, location, and any special dietary requirements."
+                  : "Include details about your event, date, number of guests, and any special requirements."}
               </p>
             </div>
 

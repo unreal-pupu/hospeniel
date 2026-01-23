@@ -9,7 +9,7 @@ export default function PrivacyPolicyPage() {
       {/* Header */}
       <div className="max-w-4xl mx-auto text-center mb-12">
         <h1 className="text-4xl font-bold text-indigo-700 mb-4">
-          Hospineil Privacy Policy
+          Hospeniel Privacy Policy
         </h1>
         <p className="text-gray-600 text-lg">
           Last updated: <span className="font-medium">October 9, 2025</span>
@@ -23,7 +23,7 @@ export default function PrivacyPolicyPage() {
             1. Introduction
           </h2>
           <p>
-            At <strong>Hospineil</strong>, we value your privacy and are
+            At <strong>Hospeniel</strong>, we value your privacy and are
             committed to protecting your personal information. This Privacy
             Policy explains how we collect, use, and protect your information
             when you use our website, mobile app, or services.
@@ -133,7 +133,7 @@ export default function PrivacyPolicyPage() {
             8. Updates to This Policy
           </h2>
           <p>
-            Hospineil may update this Privacy Policy occasionally to reflect
+            Hospeniel may update this Privacy Policy occasionally to reflect
             changes in our practices. Updates will be posted on this page with a
             revised “Last Updated” date.
           </p>
@@ -151,10 +151,10 @@ export default function PrivacyPolicyPage() {
             <li>
               📧 Email:{" "}
               <a
-                href="mailto:support@hospineil.com"
+                href="mailto:support@hospeniel.com"
                 className="text-indigo-600 hover:underline"
               >
-                support@hospineil.com
+                support@hospeniel.com
               </a>
             </li>
             <li>📍 Address: 45 Healthway Avenue, Lagos, Nigeria</li>

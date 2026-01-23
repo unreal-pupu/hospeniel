@@ -77,10 +77,11 @@ export async function POST(req: Request) {
       },
       { status: 200 }
     );
-  } catch (err: any) {
+  } catch (err) {
     console.error("🔥 Login route crashed:", err);
+    const errorMessage = err instanceof Error ? err.message : "Login failed";
     return NextResponse.json(
-      { success: false, error: err.message || "Login failed" },
+      { success: false, error: errorMessage },
       { status: 500 }
     );
   }

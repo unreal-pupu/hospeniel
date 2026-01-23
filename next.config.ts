@@ -8,11 +8,12 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       {
         protocol: "https",
-        hostname: "*.supabase.co",
+        hostname: "tayevkfixaxvfcvndetv.supabase.co",
         pathname: "/storage/v1/object/public/**",
       },
     ],
     formats: ["image/avif", "image/webp"],
+    qualities: [60, 75, 80, 85, 90, 95, 100],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
     minimumCacheTTL: 60,
@@ -45,9 +46,6 @@ const nextConfig: NextConfig = {
       exclude: ["error", "warn"],
     } : false,
   },
-  
-  // Performance optimizations
-  swcMinify: true,
   
   // Compression
   compress: true,

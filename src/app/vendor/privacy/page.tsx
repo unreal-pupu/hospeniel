@@ -1,18 +1,18 @@
 "use client";
-import { MdEmail, MdLocationOn, MdPhone } from "react-icons/md";
+import { MdEmail, MdPhone } from "react-icons/md";
 
 export default function PrivacyPolicyPage() {
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-6 flex justify-center">
       <div className="max-w-4xl bg-white shadow-md rounded-2xl p-10 leading-relaxed">
-        <h1 className="text-4xl font-bold text-indigo-700 mb-6 text-center">Hospineil Privacy Policy</h1>
+        <h1 className="text-4xl font-bold text-indigo-700 mb-6 text-center">Hospeniel Privacy Policy</h1>
         <p className="text-gray-600 mb-8 text-center italic">
           Effective Date: October 9, 2025
         </p>
 
         <section className="space-y-6 text-gray-700">
           <p>
-            At <strong>Hospineil</strong>, your privacy is our top priority. This Privacy Policy explains how we collect, use, disclose, and protect your personal information when you use our website, mobile application, and related services (collectively, the “Platform”).
+            At <strong>Hospeniel</strong>, your privacy is our top priority. This Privacy Policy explains how we collect, use, disclose, and protect your personal information when you use our website, mobile application, and related services (collectively, the “Platform”).
           </p>
 
           <h2 className="text-2xl font-semibold text-indigo-600">1. Information We Collect</h2>
@@ -93,7 +93,7 @@ export default function PrivacyPolicyPage() {
 
           <h2 className="text-2xl font-semibold text-indigo-600">9. Children’s Privacy</h2>
           <p>
-            Hospineil does not knowingly collect or solicit personal information from anyone under the age of 16. If we learn that a child under 16 has provided us with personal data, we will promptly delete it.
+            Hospeniel does not knowingly collect or solicit personal information from anyone under the age of 16. If we learn that a child under 16 has provided us with personal data, we will promptly delete it.
           </p>
 
           <h2 className="text-2xl font-semibold text-indigo-600">10. Changes to This Policy</h2>
@@ -108,21 +108,17 @@ export default function PrivacyPolicyPage() {
 
           <div className="mt-4 space-y-2">
             <div className="flex items-center gap-3">
-              <MdLocationOn className="text-indigo-600 text-2xl" />
-              <p>123 Vendor Street, Lagos, Nigeria</p>
-            </div>
-            <div className="flex items-center gap-3">
               <MdPhone className="text-indigo-600 text-2xl" />
-              <p>+234 800 123 4567</p>
+              <p>+234 8162813032</p>
             </div>
             <div className="flex items-center gap-3">
               <MdEmail className="text-indigo-600 text-2xl" />
-              <p>privacy@hospineil.com</p>
+              <p>privacy@hospeniel.com</p>
             </div>
           </div>
 
           <p className="mt-8 text-gray-600 text-center text-sm">
-            © {new Date().getFullYear()} Hospineil. All rights reserved.
+            © {new Date().getFullYear()} Hospeniel. All rights reserved.
           </p>
         </section>
       </div>

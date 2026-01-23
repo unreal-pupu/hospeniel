@@ -10,7 +10,22 @@ export async function GET() {
     const envLocalPath = join(projectRoot, ".env.local");
     const envPath = join(projectRoot, ".env");
     
-    const results: any = {
+    interface Results {
+      projectRoot: string;
+      envLocalPath: string;
+      envPath: string;
+      files: {
+        envLocalExists: boolean;
+        envExists: boolean;
+      };
+      envLocalContent: unknown;
+      envContent: unknown;
+      envLocalError?: string;
+      envError?: string;
+      [key: string]: unknown;
+    }
+    
+    const results: Results = {
       projectRoot,
       envLocalPath,
       envPath,
@@ -60,9 +75,9 @@ export async function GET() {
           filePreview: envLocalContent.substring(0, Math.min(200, envLocalContent.length)),
         };
       }
-    } catch (error: any) {
+    } catch (error) {
       results.files.envLocalExists = false;
-      results.envLocalError = error.message;
+      results.envLocalError = error instanceof Error ? error.message : "Unknown error";
     }
     
     try {
@@ -72,9 +87,9 @@ export async function GET() {
       results.envContent = {
         filePreview: envContent.substring(0, Math.min(200, envContent.length)),
       };
-    } catch (error: any) {
+    } catch (error) {
       results.files.envExists = false;
-      results.envError = error.message;
+      results.envError = error instanceof Error ? error.message : "Unknown error";
     }
     
     // Also check what process.env has
@@ -111,13 +126,15 @@ export async function GET() {
       },
       { status: 200 }
     );
-  } catch (error: any) {
+  } catch (error) {
     console.error("❌ Error in test-env-file endpoint:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const errorStack = error instanceof Error ? error.stack : undefined;
     return NextResponse.json(
       {
         success: false,
-        error: error.message,
-        stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+        error: errorMessage,
+        stack: process.env.NODE_ENV === "development" ? errorStack : undefined,
       },
       { status: 500 }
     );

@@ -25,6 +25,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false); // Track if login is in progress
+  const [approvalMessage, setApprovalMessage] = useState<string | null>(null);
 
   // ✅ Check if user is already logged in - VERY STRICT validation to prevent false redirects
   // Only redirect if we're 100% certain there's a valid, authenticated session
@@ -45,7 +46,13 @@ export default function LoginPage() {
         // Check URL parameters for force login
         const urlParams = new URLSearchParams(window.location.search);
         const forceLogin = urlParams.get('force') === 'true' || urlParams.get('logout') === 'true';
-        const redirectParam = urlParams.get('redirect'); // Store redirect parameter if present
+        const approvalParam = urlParams.get('approval');
+        if (approvalParam === "pending") {
+          setApprovalMessage("Your account is awaiting admin approval.");
+        } else if (approvalParam === "rejected") {
+          setApprovalMessage("Your account application has been rejected. Please contact support.");
+        }
+        // Store redirect parameter if present (used in redirect logic below)
         
         if (forceLogin) {
           console.log("🔵 Force login detected - clearing any existing session");
@@ -209,7 +216,7 @@ export default function LoginPage() {
         console.log("🔵 Fetching user profile...");
         const { data: profile, error: profileError } = await supabase
           .from("profiles")
-          .select("role, is_admin")
+          .select("role, is_admin, rider_approval_status, approval_status")
           .eq("id", userData.user.id)
           .single();
 
@@ -242,52 +249,69 @@ export default function LoginPage() {
 
         if (!isMounted || redirectExecuted) return;
 
-        // ✅ STEP 7: Check if user is admin FIRST (highest priority)
-        const isAdmin = profile.is_admin === true;
+        // ✅ STEP 7: Read role ONLY from profiles.role column
         const role = profile.role;
-        console.log("🔵 User profile:", { role, is_admin: isAdmin });
+        console.log("🔵 User profile - role from profiles.role:", role);
         
-        // ✅ STEP 8: Determine redirect path based on admin status and role
-        let redirectPath = "/explore"; // Default for regular users
-        
-        if (isAdmin) {
-          // Admin users always go to admin dashboard (ignore redirect param for security)
-          redirectPath = "/admin";
-          console.log("✅ User is admin - redirecting to admin dashboard");
-        } else if (role === "vendor") {
-          // Vendor users go to vendor dashboard
-          redirectPath = "/vendor/dashboard";
-          console.log("✅ User is vendor - redirecting to vendor dashboard");
-        } else if (role === "user") {
-          // Regular users go to explore page (or redirect param/returnUrl if valid)
-          // Check sessionStorage for returnUrl first (set when user tries to checkout)
-          let redirectPathFromStorage: string | null = null;
-          if (typeof window !== "undefined") {
-            redirectPathFromStorage = sessionStorage.getItem("returnUrl");
-            if (redirectPathFromStorage) {
-              sessionStorage.removeItem("returnUrl");
+        // ✅ STEP 7.5: Check rider approval status before redirecting
+        if (role === "rider") {
+          const approvalStatus = profile.rider_approval_status;
+          console.log("🔵 Rider approval status:", approvalStatus);
+          
+          if (approvalStatus !== "approved") {
+            console.log("❌ Rider not approved - blocking access");
+            if (isMounted) {
+              setCheckingSession(false);
             }
+            // Show appropriate message based on status
+            if (approvalStatus === "pending") {
+              alert("Your rider account is pending approval. Please wait for admin approval before accessing the portal.");
+            } else if (approvalStatus === "rejected") {
+              alert("Your rider account application has been rejected. Please contact support for more information.");
+            } else {
+              alert("Your rider account status is not verified. Please contact support.");
+            }
+            return; // Don't redirect - show login form
           }
-          
-          // Only use redirect param/returnUrl for non-admin users and if it's a safe path
-          const urlParams = new URLSearchParams(window.location.search);
-          const redirectParam = urlParams.get('redirect') || redirectPathFromStorage;
-          
-          if (redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('/admin') && !redirectParam.startsWith('/vendor')) {
-            redirectPath = redirectParam;
-            console.log("✅ Using redirect parameter:", redirectPath);
-          } else {
-            redirectPath = "/explore";
-            console.log("✅ User is regular user - redirecting to explore page");
-          }
-        } else {
-          // Invalid role - show login form
-          console.log("❌ Invalid role:", role, "- showing login form");
+          console.log("✅ Rider is approved - allowing access to portal");
+        }
+
+      if (role === "vendor") {
+        const approvalStatus = profile.approval_status;
+        console.log("🔵 Vendor approval status:", approvalStatus);
+
+        if (approvalStatus !== "approved") {
+          console.log("❌ Vendor not approved - blocking access");
+          await supabase.auth.signOut();
+          localStorage.removeItem('hospineil-auth');
           if (isMounted) {
+            setApprovalMessage("Your account is awaiting admin approval.");
             setCheckingSession(false);
           }
           return;
         }
+        console.log("✅ Vendor is approved - allowing access");
+      }
+        
+        // ✅ STEP 8: Determine redirect path based on role (using centralized logic)
+        // Check sessionStorage for returnUrl first (set when user tries to checkout)
+        let redirectPathFromStorage: string | null = null;
+        if (typeof window !== "undefined") {
+          redirectPathFromStorage = sessionStorage.getItem("returnUrl");
+          if (redirectPathFromStorage) {
+            sessionStorage.removeItem("returnUrl");
+          }
+        }
+        
+        // Check for redirect parameter in URL (reuse urlParams from line 46)
+        const redirectParam = urlParams.get('redirect') || redirectPathFromStorage;
+        
+        // Use centralized role-based routing
+        const { getRoleBasedRedirect } = await import("@/lib/roleRouting");
+        const redirectResult = getRoleBasedRedirect(role, redirectParam);
+        const redirectPath = redirectResult.path;
+        
+        console.log("✅", redirectResult.reason);
 
         // ✅ STEP 9: Final check - all validations passed, safe to redirect
         // BUT - only redirect if we're absolutely sure
@@ -398,7 +422,7 @@ export default function LoginPage() {
       console.log("🔵 Fetching user profile...");
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("role, is_admin")
+        .select("role, is_admin, rider_approval_status, approval_status")
         .eq("id", user.id)
         .single();
 
@@ -426,52 +450,69 @@ export default function LoginPage() {
         return;
       }
 
+      // ✅ CRITICAL: Read role ONLY from profiles.role column
       const role = profile.role;
-      const isAdmin = profile.is_admin === true;
-      console.log("✅ Profile loaded, role:", role, "is_admin:", isAdmin);
+      console.log("✅ Profile loaded, role from profiles.role:", role);
 
-      // Step 4: Determine redirect path based on admin status and role
-      let redirectPath = "/explore"; // Default for regular users
-      
-      if (isAdmin) {
-        // Admin users always go to admin dashboard (ignore redirect param for security)
-        redirectPath = "/admin";
-        console.log("✅ User is admin - redirecting to admin dashboard");
-      } else if (role === "vendor") {
-        // Vendor users go to vendor dashboard
-        redirectPath = "/vendor/dashboard";
-        console.log("✅ User is vendor - redirecting to vendor dashboard");
-      } else if (role === "user") {
-        // Regular users go to explore page (or redirect param/returnUrl if valid)
-        // Check sessionStorage for returnUrl first (set when user tries to checkout)
-        let redirectPathFromStorage: string | null = null;
-        if (typeof window !== "undefined") {
-          redirectPathFromStorage = sessionStorage.getItem("returnUrl");
-          if (redirectPathFromStorage) {
-            sessionStorage.removeItem("returnUrl");
+      // ✅ CRITICAL: Check rider approval status before redirecting
+      if (role === "rider") {
+        const approvalStatus = profile.rider_approval_status;
+        console.log("🔵 Rider approval status:", approvalStatus);
+        
+        if (approvalStatus !== "approved") {
+          console.log("❌ Rider not approved - blocking login");
+          setLoading(false);
+          setIsLoggingIn(false);
+          
+          // Show appropriate message based on status
+          if (approvalStatus === "pending") {
+            alert("Your rider account is pending approval. Please wait for admin approval before accessing the portal.");
+          } else if (approvalStatus === "rejected") {
+            alert("Your rider account application has been rejected. Please contact support for more information.");
+          } else {
+            alert("Your rider account status is not verified. Please contact support.");
           }
+          return; // Don't redirect - stay on login page
         }
-        
-        // Check for redirect parameter in URL (e.g., from protected pages)
-        const urlParams = new URLSearchParams(window.location.search);
-        const redirectParam = urlParams.get('redirect') || redirectPathFromStorage;
-        
-        // Only use redirect param if it's a safe path (not admin/vendor routes)
-        if (redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('/admin') && !redirectParam.startsWith('/vendor')) {
-          redirectPath = redirectParam;
-          console.log("✅ Using redirect parameter:", redirectPath);
-        } else {
-          redirectPath = "/explore";
-          console.log("✅ User is regular user - redirecting to explore page");
-        }
-      } else {
-        // Invalid role
-        console.error("❌ Invalid role:", role);
-        setLoading(false);
-        setIsLoggingIn(false);
-        alert("Invalid user role. Please contact support.");
-        return;
+        console.log("✅ Rider is approved - allowing login");
       }
+
+      if (role === "vendor") {
+        const approvalStatus = profile.approval_status;
+        console.log("🔵 Vendor approval status:", approvalStatus);
+
+        if (approvalStatus !== "approved") {
+          console.log("❌ Vendor not approved - blocking login");
+          await supabase.auth.signOut();
+          localStorage.removeItem('hospineil-auth');
+          setLoading(false);
+          setIsLoggingIn(false);
+          setApprovalMessage("Your account is awaiting admin approval.");
+          return; // Don't redirect - stay on login page
+        }
+        console.log("✅ Vendor is approved - allowing login");
+      }
+
+      // Step 4: Determine redirect path based on role (using centralized logic)
+      // Check sessionStorage for returnUrl first (set when user tries to checkout)
+      let redirectPathFromStorage: string | null = null;
+      if (typeof window !== "undefined") {
+        redirectPathFromStorage = sessionStorage.getItem("returnUrl");
+        if (redirectPathFromStorage) {
+          sessionStorage.removeItem("returnUrl");
+        }
+      }
+      
+      // Check for redirect parameter in URL (e.g., from protected pages)
+      const urlParams = new URLSearchParams(window.location.search);
+      const redirectParam = urlParams.get('redirect') || redirectPathFromStorage;
+      
+      // Use centralized role-based routing
+      const { getRoleBasedRedirect } = await import("@/lib/roleRouting");
+      const redirectResult = getRoleBasedRedirect(role, redirectParam);
+      const redirectPath = redirectResult.path;
+      
+      console.log("✅", redirectResult.reason);
 
       console.log("✅ Login successful! Redirecting to:", redirectPath);
 
@@ -506,18 +547,19 @@ export default function LoginPage() {
       console.log("🔵 Executing redirect to:", redirectPath);
       
       // For vendor or admin login, ensure we do a full page reload to clear any cached state
-      if (role === "vendor" || isAdmin) {
-        console.log(`🔵 ${isAdmin ? "Admin" : "Vendor"} login - doing full page reload`);
+      if (role === "vendor" || role === "admin") {
+        console.log(`🔵 ${role === "admin" ? "Admin" : "Vendor"} login - doing full page reload`);
         window.location.replace(redirectPath);
       } else {
         window.location.href = redirectPath;
       }
 
-    } catch (err: any) {
+    } catch (err) {
       console.error("❌ Unexpected login error:", err);
       setLoading(false);
       setIsLoggingIn(false);
-      alert(`An unexpected error occurred: ${err.message || "Please try again."}`);
+      const errorMessage = err instanceof Error ? err.message : "Please try again.";
+      alert(`An unexpected error occurred: ${errorMessage}`);
     }
   };
 
@@ -546,6 +588,11 @@ export default function LoginPage() {
         </CardHeader>
 
         <CardContent>
+          {approvalMessage && (
+            <div className="mb-4 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+              {approvalMessage}
+            </div>
+          )}
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email" className="font-body">Email</Label>
@@ -637,7 +684,7 @@ export default function LoginPage() {
 
         <CardFooter className="flex justify-center">
           <p className="text-sm text-gray-600 font-body">
-            Don't have an account?{" "}
+            Don&apos;t have an account?{" "}
             <Link href="/register" className="text-hospineil-primary hover:text-hospineil-accent transition-colors duration-300">
               Register
             </Link>

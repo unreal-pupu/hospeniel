@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import Image from "next/image";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Clock,
   CheckCircle,
@@ -19,6 +21,9 @@ import {
   DollarSign,
   User,
   Filter,
+  MessageSquare,
+  ChefHat,
+  Store,
 } from "lucide-react";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -63,9 +68,33 @@ interface Order {
   };
 }
 
+interface ServiceRequest {
+  id: string;
+  user_id: string;
+  vendor_id: string;
+  message: string;
+  contact_info: string | null;
+  status: "New" | "Viewed" | "Responded" | "Price_Confirmed" | "Paid" | "Completed" | "Cancelled";
+  final_price: number | null;
+  price_confirmed: boolean;
+  payment_reference: string | null;
+  payment_method: string | null;
+  payment_status: "pending" | "paid" | "failed" | "refunded" | null;
+  amount_paid: number | null;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+  vendor?: {
+    id: string;
+    name: string;
+    category: string | null;
+  } | null;
+}
+
 export default function OrdersPage() {
   const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -74,42 +103,219 @@ export default function OrdersPage() {
     type: "success" | "info" | "warning";
   } | null>(null);
   const previousStatuses = useRef<Map<string, string>>(new Map());
-  const channelRef = useRef<any>(null);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
-  useEffect(() => {
-    const initialize = async () => {
-      await fetchOrders();
-      await setupRealtimeSubscription();
-    };
-
-    initialize();
-
-    return () => {
-      // Cleanup: unsubscribe from real-time updates
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-      }
-    };
+  // Declare showNotification first (no dependencies)
+  const showNotification = useCallback((
+    message: string,
+    type: "success" | "info" | "warning" = "info"
+  ) => {
+    setNotification({ message, type });
+    setTimeout(() => {
+      setNotification(null);
+    }, 5000);
   }, []);
 
-  useEffect(() => {
-    filterOrders();
-  }, [statusFilter, orders]);
+  // Declare fetchOrders (depends on router)
+  const fetchOrders = useCallback(async () => {
+    try {
+      setLoading(true);
 
-  const setupRealtimeSubscription = async () => {
+      // Get authenticated user
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        alert("Please log in to view your orders.");
+        router.push("/loginpage");
+        return;
+      }
+
+      // Fetch orders for the current user
+      const { data: ordersData, error: ordersError } = await supabase
+        .from("orders")
+        .select(`
+          *,
+          menu_items (
+            id,
+            title,
+            image_url,
+            price
+          )
+        `)
+        .eq("user_id", user.id)
+        .or("order_type.is.null,order_type.eq.menu")
+        .order("created_at", { ascending: false });
+
+      if (ordersError) {
+        console.error("Error fetching orders:", ordersError);
+        setOrders([]);
+      }
+
+      // Fetch paid service requests for the current user
+      // Show all service requests that have been paid (status = 'Paid' or 'Completed')
+      // Also include requests with payment_reference set (even if status hasn't updated yet)
+      const { data: serviceRequestsData, error: serviceRequestsError } = await supabase
+        .from("service_requests")
+        .select("id, user_id, vendor_id, message, contact_info, status, final_price, price_confirmed, payment_reference, payment_method, payment_status, amount_paid, paid_at, created_at, updated_at")
+        .eq("user_id", user.id)
+        .or("payment_status.eq.paid,status.eq.Paid,status.eq.Completed,payment_reference.not.is.null")
+        .order("created_at", { ascending: false });
+
+      if (serviceRequestsError) {
+        console.error("Error fetching service requests:", serviceRequestsError);
+        setServiceRequests([]);
+      } else if (serviceRequestsData && serviceRequestsData.length > 0) {
+        // Fetch vendor profiles for service requests
+        const vendorIds = [...new Set(serviceRequestsData.map(r => r.vendor_id).filter(Boolean))];
+        const { data: vendorProfiles } = await supabase
+          .from("profiles")
+          .select("id, name, category")
+          .in("id", vendorIds);
+
+        const vendorMap = new Map(vendorProfiles?.map(p => [p.id, p]) || []);
+        const requestsWithVendors = serviceRequestsData.map(req => ({
+          ...req,
+          vendor: vendorMap.get(req.vendor_id) || null
+        }));
+        setServiceRequests(requestsWithVendors);
+      } else {
+        setServiceRequests([]);
+      }
+
+      if (!ordersData || ordersData.length === 0) {
+        setOrders([]);
+        setFilteredOrders([]);
+        setLoading(false);
+        return;
+      }
+
+      // Get unique vendor IDs
+      interface OrderData {
+        id: string;
+        user_id: string;
+        vendor_id: string;
+        product_id: string;
+        quantity: number;
+        total_price: number;
+        status: string;
+        payment_reference?: string | null;
+        created_at: string;
+        updated_at: string;
+        delivery_address_line_1?: string | null;
+        delivery_city?: string | null;
+        delivery_state?: string | null;
+        delivery_postal_code?: string | null;
+        delivery_phone_number?: string | null;
+        delivery_charge?: number | null;
+        menu_items?: {
+          id: string;
+          title: string;
+          image_url: string;
+          price: number;
+        };
+        [key: string]: unknown;
+      }
+      interface VendorData {
+        id: string;
+        name: string;
+        image_url: string | null;
+        location: string | null;
+        profile_id: string;
+      }
+      
+      const vendorIds = [...new Set(ordersData.map((order: OrderData) => order.vendor_id))];
+
+      // Fetch vendor information
+      const { data: vendorsData, error: vendorsError } = await supabase
+        .from("vendors")
+        .select("id, name, image_url, location, profile_id")
+        .in("profile_id", vendorIds);
+
+      if (vendorsError) {
+        console.error("Error fetching vendors:", vendorsError);
+      }
+
+      // Create a map of vendor_id (auth.users id) to vendor data
+      const vendorsMap = new Map<string, VendorData>();
+      if (vendorsData) {
+        vendorsData.forEach((vendor: VendorData) => {
+          vendorsMap.set(vendor.profile_id, vendor);
+        });
+      }
+
+      // Combine orders with vendor information
+      const ordersWithVendors: Order[] = ordersData.map((order: OrderData) => {
+        const vendor = vendorsMap.get(order.vendor_id);
+        // Store previous status for comparison
+        previousStatuses.current.set(order.id, order.status);
+        return {
+          id: order.id,
+          user_id: order.user_id,
+          vendor_id: order.vendor_id,
+          product_id: order.product_id,
+          quantity: order.quantity,
+          total_price: order.total_price,
+          status: order.status as Order["status"],
+          payment_reference: order.payment_reference || undefined,
+          created_at: order.created_at,
+          updated_at: order.updated_at,
+          delivery_address_line_1: order.delivery_address_line_1 || undefined,
+          delivery_city: order.delivery_city || undefined,
+          delivery_state: order.delivery_state || undefined,
+          delivery_postal_code: order.delivery_postal_code || undefined,
+          delivery_phone_number: order.delivery_phone_number || undefined,
+          delivery_charge: order.delivery_charge || undefined,
+          menu_items: order.menu_items,
+          vendors: vendor
+            ? {
+                id: vendor.id,
+                name: vendor.name,
+                image_url: vendor.image_url || "",
+                location: vendor.location || undefined,
+              }
+            : undefined,
+        };
+      });
+
+      setOrders(ordersWithVendors);
+      setFilteredOrders(ordersWithVendors);
+    } catch (error) {
+      console.error("Error fetching orders:", error);
+      setOrders([]);
+      setFilteredOrders([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [router]);
+
+  // Declare setupRealtimeSubscription (depends on fetchOrders and showNotification)
+  const setupRealtimeSubscription = useCallback(async () => {
     // Get authenticated user first
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (!user) {
-      return;
+      return null;
     }
 
     // Set up real-time subscription for order status changes
-    const channel = supabase
-      .channel("user-orders-changes")
-      .on(
+    // TypeScript overload resolution issue - using type assertion to match postgres_changes overload
+    const channel = (supabase.channel("user-orders-changes") as {
+      on: <T = { eventType: string; new?: Order; old?: Order }>(
+        event: "postgres_changes",
+        config: {
+          event: string;
+          schema: string;
+          table: string;
+          filter?: string;
+        },
+        callback: (payload: T) => void
+      ) => RealtimeChannel;
+    }).on(
         "postgres_changes",
         {
           event: "*",
@@ -117,7 +323,7 @@ export default function OrdersPage() {
           table: "orders",
           filter: `user_id=eq.${user.id}`,
         },
-        (payload: any) => {
+        (payload: { eventType: string; new?: Order; old?: Order }) => {
           console.log("Order change detected:", payload);
 
           if (payload.eventType === "UPDATE") {
@@ -162,7 +368,7 @@ export default function OrdersPage() {
             console.log("📦 New order data:", payload.new);
             // Small delay to ensure database is ready
             setTimeout(() => {
-              fetchOrders();
+              void fetchOrders();
             }, 500);
             showNotification("New order placed!", "success");
           }
@@ -173,104 +379,44 @@ export default function OrdersPage() {
       });
 
     channelRef.current = channel;
-  };
 
-  const fetchOrders = async () => {
-    try {
-      setLoading(true);
-
-      // Get authenticated user
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError || !user) {
-        alert("Please log in to view your orders.");
-        router.push("/loginpage");
-        return;
-      }
-
-      // Fetch orders for the current user
-      const { data: ordersData, error: ordersError } = await supabase
-        .from("orders")
-        .select(`
-          *,
-          menu_items (
-            id,
-            title,
-            image_url,
-            price
-          )
-        `)
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (ordersError) {
-        console.error("Error fetching orders:", ordersError);
-        setOrders([]);
-        setLoading(false);
-        return;
-      }
-
-      if (!ordersData || ordersData.length === 0) {
-        setOrders([]);
-        setFilteredOrders([]);
-        setLoading(false);
-        return;
-      }
-
-      // Get unique vendor IDs
-      const vendorIds = [...new Set(ordersData.map((order: any) => order.vendor_id))];
-
-      // Fetch vendor information
-      const { data: vendorsData, error: vendorsError } = await supabase
-        .from("vendors")
-        .select("id, name, image_url, location, profile_id")
-        .in("profile_id", vendorIds);
-
-      if (vendorsError) {
-        console.error("Error fetching vendors:", vendorsError);
-      }
-
-      // Create a map of vendor_id (auth.users id) to vendor data
-      const vendorsMap = new Map();
-      if (vendorsData) {
-        vendorsData.forEach((vendor: any) => {
-          vendorsMap.set(vendor.profile_id, vendor);
-        });
-      }
-
-      // Combine orders with vendor information
-      const ordersWithVendors = ordersData.map((order: any) => {
-        const vendor = vendorsMap.get(order.vendor_id);
-        // Store previous status for comparison
-        previousStatuses.current.set(order.id, order.status);
-        return {
-          ...order,
-          vendors: vendor
-            ? {
-                id: vendor.id,
-                name: vendor.name,
-                image_url: vendor.image_url,
-                location: vendor.location,
-              }
-            : undefined,
-        };
+    // Set up real-time subscription for service requests
+    const serviceRequestsChannel = supabase
+      .channel("user-service-requests-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "service_requests",
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          console.log("🔄 Service request change detected:", payload);
+          // Refetch service requests when they change
+          setTimeout(() => {
+            void fetchOrders();
+          }, 500);
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          console.log("✅ Successfully subscribed to service_requests real-time updates");
+        } else if (status === "CHANNEL_ERROR") {
+          console.error("❌ Error subscribing to service_requests real-time updates");
+        }
       });
 
-      setOrders(ordersWithVendors);
-      setFilteredOrders(ordersWithVendors);
-    } catch (error) {
-      console.error("Error fetching orders:", error);
-      setOrders([]);
-      setFilteredOrders([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+      }
+      supabase.removeChannel(serviceRequestsChannel);
+    };
+  }, [fetchOrders, showNotification]);
 
-  const filterOrders = () => {
+  // Declare filterOrders (depends on orders and statusFilter)
+  const filterOrders = useCallback(() => {
     let filtered = [...orders];
 
     // Filter by status
@@ -279,17 +425,30 @@ export default function OrdersPage() {
     }
 
     setFilteredOrders(filtered);
-  };
+  }, [orders, statusFilter]);
 
-  const showNotification = (
-    message: string,
-    type: "success" | "info" | "warning" = "info"
-  ) => {
-    setNotification({ message, type });
-    setTimeout(() => {
-      setNotification(null);
-    }, 5000);
-  };
+  // useEffect hooks after all function declarations
+  useEffect(() => {
+    let cleanupRealtime: (() => void) | null = null;
+    const initialize = async () => {
+      await fetchOrders();
+      cleanupRealtime = await setupRealtimeSubscription();
+    };
+
+    initialize();
+
+    return () => {
+      if (cleanupRealtime) {
+        cleanupRealtime();
+      } else if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+      }
+    };
+  }, [fetchOrders, setupRealtimeSubscription]);
+
+  useEffect(() => {
+    filterOrders();
+  }, [statusFilter, orders, filterOrders]);
 
   const getStatusBadge = (status: string) => {
     const baseClasses =
@@ -442,8 +601,80 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        {/* Orders List */}
-        {filteredOrders.length === 0 ? (
+        {/* Service Requests Section */}
+        {serviceRequests.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">Service Requests</h2>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {serviceRequests.map((request) => (
+                <Card key={request.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          {request.vendor?.category === "chef" || request.vendor?.category === "home_cook" ? (
+                            <ChefHat className="h-5 w-5 text-indigo-600" />
+                          ) : (
+                            <Store className="h-5 w-5 text-indigo-600" />
+                          )}
+                          <h3 className="text-lg font-semibold text-gray-900">
+                            {request.vendor?.name || "Unknown Vendor"}
+                          </h3>
+                          <Badge
+                            variant="outline"
+                            className={request.payment_status === "paid" || request.status === "Paid" ? "bg-green-100 text-green-800" : "bg-blue-100 text-blue-800"}
+                          >
+                            {request.payment_status === "paid" ? "Paid" : request.status}
+                          </Badge>
+                          {request.vendor?.category && (
+                            <Badge variant="outline" className="bg-indigo-100 text-indigo-800">
+                              {request.vendor.category === "chef" ? "Chef" : request.vendor.category === "home_cook" ? "Home Cook" : "Premium Vendor"}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-gray-600 mb-3 text-sm line-clamp-2">{request.message}</p>
+                        {(request.amount_paid ?? request.final_price) && (
+                          <div className="flex items-center gap-2 text-sm text-gray-700 mb-2">
+                            <DollarSign className="h-4 w-4" />
+                            <span className="font-semibold">
+                              ₦{(request.amount_paid ?? request.final_price ?? 0).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+                          <div className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            <span>{dayjs(request.created_at).format("MMM D, YYYY")}</span>
+                          </div>
+                          {request.paid_at && (
+                            <div className="flex items-center gap-1">
+                              <CheckCircle className="h-3 w-3" />
+                              <span>Paid {dayjs(request.paid_at).fromNow()}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => router.push(`/explore/service-responses`)}
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                    >
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      View Conversation
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Regular Orders Section */}
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Menu Orders</h2>
+          {filteredOrders.length === 0 ? (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
             <ShoppingBag className="mx-auto h-16 w-16 text-gray-400 mb-4" />
             <h3 className="text-xl font-semibold text-gray-900 mb-2">
@@ -505,6 +736,7 @@ export default function OrdersPage() {
                             const target = e.target as HTMLImageElement;
                             target.style.display = "none";
                           }}
+                          unoptimized
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center bg-gray-100">
@@ -603,6 +835,7 @@ export default function OrdersPage() {
             ))}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

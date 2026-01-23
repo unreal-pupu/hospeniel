@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { FiSearch, FiStar } from "react-icons/fi";
-import Image from "next/image";
+import Image, { type StaticImageData } from "next/image";
 import Link from "next/link";
 
 import CHEF7 from "../../../public/CHEF7.jpg";
@@ -20,7 +20,7 @@ interface Vendor {
   category: "Chef" | "Restaurant" | "Baker" | "Pastry";
   tagline: string;
   rating: number;
-  image: any; // 👈 because Next.js imported images are objects, not strings
+  image: string | { src: string; height: number; width: number; blurDataURL?: string } | StaticImageData;
 }
 
 // Vendor data

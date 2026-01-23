@@ -33,9 +33,6 @@ export default function Navbar() {
     };
   }, []);
 
-  // ✅ Hide Navbar completely on vendor and admin pages
-  if (pathname.startsWith("/vendor") || pathname.startsWith("/admin")) return null;
-
   const isLandingPage = pathname === "/";
   const isExplorePage = pathname === "/explore";
   const isLoginPage = pathname === "/loginpage";
@@ -61,7 +58,7 @@ export default function Navbar() {
     if (!isLandingPage) return;
 
     const handleScroll = () => {
-      const sections = ["home", "features", "pricing", "listing", "testimonials", "faq", "contact"];
+    const sections = ["home", "features", "pricing", "listing", "testimonials", "faq"];
       const scrollPosition = window.scrollY + 100; // Offset for fixed navbar
 
       for (let i = sections.length - 1; i >= 0; i--) {
@@ -84,6 +81,9 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [isLandingPage]);
 
+  // ✅ Hide Navbar completely on vendor and admin pages
+  if (pathname.startsWith("/vendor") || pathname.startsWith("/admin")) return null;
+
   // ✅ Navigation links for landing page
   const landingPageLinks = [
     { id: "home", label: "Home" },
@@ -92,7 +92,6 @@ export default function Navbar() {
     { id: "listing", label: "Listing" },
     { id: "testimonials", label: "Testimonials" },
     { id: "faq", label: "FAQ" },
-    { id: "contact", label: "Contact" },
   ];
 
   return (

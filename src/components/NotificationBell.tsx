@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { Bell } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 
 interface Notification {
   id: string;
@@ -28,7 +27,7 @@ export default function NotificationBell({ userType, notificationsPageUrl }: Not
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Fetch notifications
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -52,7 +51,7 @@ export default function NotificationBell({ userType, notificationsPageUrl }: Not
     } finally {
       setLoading(false);
     }
-  };
+  }, [userType]);
 
   // Subscribe to real-time notifications
   useEffect(() => {
@@ -94,7 +93,7 @@ export default function NotificationBell({ userType, notificationsPageUrl }: Not
         supabase.removeChannel(channel);
       }
     };
-  }, [userType]);
+  }, [userType, fetchNotifications]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -128,7 +127,16 @@ export default function NotificationBell({ userType, notificationsPageUrl }: Not
   const getTypeColor = (type: string) => {
     switch (type) {
       case "order_update":
+      case "order_accepted":
+      case "order_rejected":
+      case "order_completed":
+      case "order_cancelled":
+      case "order_status_update":
         return "bg-blue-100 text-blue-800";
+      case "new_order":
+        return "bg-indigo-100 text-indigo-800";
+      case "new_task":
+        return "bg-yellow-100 text-yellow-800";
       case "payment":
         return "bg-green-100 text-green-800";
       case "system":

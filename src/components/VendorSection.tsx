@@ -15,25 +15,25 @@ const vendorPoints: VendorPoint[] = [
     icon: <FaStore className="w-6 h-6" />,
     title: "Reach More Customers",
     description:
-      "List your business where users are already looking for top-rated places to eat, drink, and stay.",
+      "Connect with food lovers in your area and beyond. Our marketplace puts your offerings in front of thousands of hungry customers, helping you grow your sales effortlessly.",
   },
   {
     icon: <FaChartLine className="w-6 h-6" />,
     title: "Boost Your Visibility",
     description:
-      "Appear in searches, get featured in categories, and grow your reputation with reviews.",
+      "Get featured on our Explore page and priority listings to stand out from the competition. Increase engagement, attract new customers, and make your brand unforgettable.",
   },
   {
     icon: <FaRocket className="w-6 h-6" />,
-    title: "Promote with Ease",
+    title: "Promote With Ease",
     description:
-      "Run special offers, discounts, and track engagement with your listing.",
+      "Showcase your dishes, baked goods, or specialties with just a few clicks. Upload menus, highlight your best items, and let our platform handle the promotion for you.",
   },
   {
     icon: <FaUsers className="w-6 h-6" />,
     title: "Join a Growing Network",
     description:
-      "Be part of a thriving community of trusted vendors across cities.",
+      "Be part of a community of top food vendors, chefs, bakers, and pastry sellers. Collaborate, learn, and expand your business while gaining credibility and trust among customers.",
   },
 ];
 
@@ -43,12 +43,8 @@ const VendorSection: React.FC = () => {
       <div className="text-center mb-12">
         <h2 className="text-3xl font-bold font-header">Become a Listed Vendor</h2>
       <p className="mt-4 text-lg text-gray-800 font-body">
-      Are you a <span className="font-semibold text-hospineil-primary">Food Vendor</span>, 
-     <span className="font-semibold text-hospineil-accent"> Chef</span>, 
-     <span className="font-semibold text-hospineil-primary"> Baker</span>, or 
-     <span className="font-semibold text-hospineil-accent"> Pastry Expert</span>?  
-     Get discovered by thousands of users actively searching for your services.
-</p>
+        Join our vibrant marketplace and showcase your culinary talents! Whether you’re a chef, home cook, baker, or pastry seller, our platform helps you gain visibility, reach more customers, and grow your business. Get listed, share your creations, and let hungry customers find you easily!
+      </p>
     
       </div>
 

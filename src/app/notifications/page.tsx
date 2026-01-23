@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -205,7 +205,7 @@ export default function NotificationsPage() {
           <CardContent className="py-12 text-center">
             <p className="text-gray-500 text-lg">No notifications yet</p>
             <p className="text-gray-400 text-sm mt-2">
-              You'll see notifications about your orders and payments here
+              You&apos;ll see notifications about your orders and payments here
             </p>
           </CardContent>
         </Card>

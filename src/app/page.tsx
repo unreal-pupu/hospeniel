@@ -15,7 +15,7 @@ const VendorShowcase = dynamic(() => import("@/components/VendorShowcase"), {
   loading: () => <div className="min-h-[400px] bg-hospineil-light-bg" />,
 });
 
-const Campaign = dynamic(() => import("@/components/Campaign"), {
+const HomeCookChefPromo = dynamic(() => import("@/components/HomeCookChefPromo"), {
   loading: () => <div className="min-h-[200px] bg-gradient-to-r from-hospineil-primary to-hospineil-accent" />,
 });
 
@@ -37,10 +37,6 @@ const JoinUsSection = dynamic(() => import("@/components/JoinUsSection"), {
 
 const FAQ = dynamic(() => import("@/components/FAQ"), {
   loading: () => <div className="min-h-[400px] bg-hospineil-base-bg" />,
-});
-
-const ContactForm = dynamic(() => import("@/components/ContactForm"), {
-  loading: () => <div className="min-h-[500px] bg-hospineil-light-bg" />,
 });
 
 export const metadata = getLandingPageMetadata();
@@ -66,18 +62,18 @@ export default function Home() {
    <Suspense fallback={<div className="min-h-[400px] bg-hospineil-base-bg" />}>
      <HowItWorks/>
    </Suspense>
+   <Suspense fallback={<div className="min-h-[200px] bg-gradient-to-r from-hospineil-primary to-hospineil-accent" />}>
+     <HomeCookChefPromo/>
+   </Suspense>
    <Suspense fallback={<div className="min-h-[400px] bg-hospineil-light-bg" />}>
      <VendorShowcase/>
-   </Suspense>
-   <Suspense fallback={<div className="min-h-[200px] bg-gradient-to-r from-hospineil-primary to-hospineil-accent" />}>
-     <Campaign/>
-   </Suspense>
-   <Suspense fallback={<div className="min-h-[600px] bg-hospineil-base-bg" />}>
-     <Pricing/>
    </Suspense>
    <Suspense fallback={<div className="min-h-[400px] bg-hospineil-base-bg" />}>
      <VendorSection/>
    </Suspense>
+  <Suspense fallback={<div className="min-h-[600px] bg-hospineil-base-bg" />}>
+    <Pricing/>
+  </Suspense>
    <Suspense fallback={<div className="min-h-[400px] bg-hospineil-light-bg" />}>
      <CustomerReviews/>
    </Suspense>
@@ -86,9 +82,6 @@ export default function Home() {
    </Suspense>
    <Suspense fallback={<div className="min-h-[400px] bg-hospineil-base-bg" />}>
      <FAQ/>
-   </Suspense>
-   <Suspense fallback={<div className="min-h-[500px] bg-hospineil-light-bg" />}>
-     <ContactForm/>
    </Suspense>
    </>
   );

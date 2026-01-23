@@ -90,7 +90,7 @@ export default function ResetPasswordPage() {
             setHasValidSession(false);
           }
         }
-      } catch (err: any) {
+      } catch (err) {
         console.error("Error checking reset session:", err);
         setSessionError("An error occurred while verifying your reset link. Please try again.");
         setHasValidSession(false);
@@ -168,7 +168,7 @@ export default function ResetPasswordPage() {
           router.push("/loginpage?passwordReset=success");
         }, 2000);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Error resetting password:", err);
       setMessage("An unexpected error occurred. Please try again.");
       setMessageType("error");
