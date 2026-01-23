@@ -1,13 +1,7 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdminClient } from "@/lib/supabase";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY!;
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
 
 interface PaymentAuditLogInput {
   paystack_reference: string;
@@ -35,7 +29,10 @@ interface DeliveryDetailsPayload {
   special_instructions?: string;
 }
 
-async function logPaymentAuditEntry(entry: PaymentAuditLogInput) {
+async function logPaymentAuditEntry(
+  entry: PaymentAuditLogInput,
+  supabaseAdmin: ReturnType<typeof getSupabaseAdminClient>
+) {
   try {
     const { error } = await supabaseAdmin
       .from("payment_audit_logs")
@@ -59,6 +56,7 @@ async function logPaymentAuditEntry(entry: PaymentAuditLogInput) {
 export async function POST(req: Request) {
   let requestBody: unknown = null;
   try {
+    const supabaseAdmin = getSupabaseAdminClient();
     requestBody = await req.json();
     const { reference, pending_orders, delivery_details, service_request_id } = requestBody as {
       reference?: string;
@@ -114,7 +112,8 @@ export async function POST(req: Request) {
       has_pending_orders: Array.isArray(resolvedPendingOrders) && resolvedPendingOrders.length > 0,
     });
 
-    await logPaymentAuditEntry({
+    await logPaymentAuditEntry(
+      {
       paystack_reference: reference,
       service_request_id: service_request_id ?? null,
       verification_status: "request_received",
@@ -123,7 +122,9 @@ export async function POST(req: Request) {
         service_request_id,
         has_pending_orders: Array.isArray(resolvedPendingOrders) && resolvedPendingOrders.length > 0,
       },
-    });
+      },
+      supabaseAdmin
+    );
 
     // Verify payment with Paystack
     const trimmedKey = paystackSecretKey.trim();
@@ -141,12 +142,15 @@ export async function POST(req: Request) {
     const verifyData = await verifyResponse.json();
 
     if (!verifyResponse.ok || !verifyData.status || verifyData.data.status !== "success") {
-      await logPaymentAuditEntry({
+      await logPaymentAuditEntry(
+        {
         paystack_reference: reference,
         service_request_id: service_request_id ?? null,
         verification_status: "verify_failed",
         paystack_response: verifyData,
-      });
+        },
+        supabaseAdmin
+      );
       return NextResponse.json(
         { 
           success: false,
@@ -159,11 +163,14 @@ export async function POST(req: Request) {
 
     const transactionData = verifyData.data;
 
-    await logPaymentAuditEntry({
+    await logPaymentAuditEntry(
+      {
       paystack_reference: reference,
       verification_status: "verified_response",
       paystack_response: verifyData,
-    });
+      },
+      supabaseAdmin
+    );
 
   // Lightweight payout validation (non-blocking)
   try {
@@ -183,7 +190,8 @@ export async function POST(req: Request) {
     const expectedGrossTotal = foodAmount + deliveryFee + vatAmount;
     const hasMismatch = Math.abs(expectedGrossTotal - grossAmount) > 0.01;
 
-    await logPaymentAuditEntry({
+    await logPaymentAuditEntry(
+      {
       paystack_reference: reference,
       service_request_id: service_request_id ?? null,
       vendor_id:
@@ -202,7 +210,9 @@ export async function POST(req: Request) {
         paystack_fee: paystackFeeKobo / 100,
         has_mismatch: hasMismatch,
       },
-    });
+      },
+      supabaseAdmin
+    );
   } catch (auditError) {
     console.error("⚠️ Payout validation log failed (non-blocking):", auditError);
   }
@@ -657,14 +667,17 @@ export async function POST(req: Request) {
         console.error("❌ Error loading service request before update:", existingServiceRequestError);
       }
       
-      await logPaymentAuditEntry({
+      await logPaymentAuditEntry(
+        {
         paystack_reference: reference,
         service_request_id: resolvedServiceRequestId,
         user_id: existingServiceRequest?.user_id ?? null,
         vendor_id: existingServiceRequest?.vendor_id ?? null,
         verification_status: "before_service_request_update",
         paystack_response: verifyData,
-      });
+        },
+        supabaseAdmin
+      );
 
       const updatePayload = {
         status: "Paid",
@@ -713,24 +726,30 @@ export async function POST(req: Request) {
       }
 
       if (!resolvedRequest) {
-        await logPaymentAuditEntry({
+        await logPaymentAuditEntry(
+          {
           paystack_reference: reference,
           service_request_id: resolvedServiceRequestId,
           verification_status: "service_request_update_failed",
           paystack_response: verifyData,
-        });
+          },
+          supabaseAdmin
+        );
       } else {
         const wasAlreadyPaid = existingServiceRequest?.payment_status === "paid";
         console.log("✅ Service request payment processed successfully");
 
-        await logPaymentAuditEntry({
+        await logPaymentAuditEntry(
+          {
           paystack_reference: reference,
           service_request_id: resolvedRequest.id,
           user_id: resolvedRequest.user_id ?? null,
           vendor_id: resolvedRequest.vendor_id ?? null,
           verification_status: "after_service_request_update",
           paystack_response: verifyData,
-        });
+          },
+          supabaseAdmin
+        );
         
         // Get customer name for notification
         let customerName = "a customer";

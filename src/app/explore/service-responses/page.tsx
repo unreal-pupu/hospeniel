@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import type { RealtimePostgresChangesPayload, REALTIME_SUBSCRIBE_STATES } from "@supabase/supabase-js";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -45,10 +46,10 @@ interface ServiceRequest {
   paid_at?: string | null;
   completed_at?: string | null;
   vendor?: {
-    name: string;
+    name: string | null;
     category: string | null;
-    is_premium: boolean;
-    subscription_plan: string;
+    is_premium?: boolean | null;
+    subscription_plan?: string | null;
   } | null;
 }
 
@@ -61,9 +62,23 @@ interface ServiceRequestReply {
   read_at: string | null;
   created_at: string;
   sender?: {
-    name: string;
-    email: string;
-  };
+    name: string | null;
+    email: string | null;
+  } | null;
+}
+
+interface SenderProfileRow {
+  id: string;
+  name: string | null;
+  email: string | null;
+}
+
+interface VendorProfileRow {
+  id: string;
+  name: string | null;
+  category: string | null;
+  is_premium?: boolean | null;
+  subscription_plan?: string | null;
 }
 
 export default function ServiceResponsesPage() {
@@ -147,7 +162,10 @@ export default function ServiceResponsesPage() {
       }
 
       // Step 2: Fetch vendor profiles
-      const vendorIds = [...new Set(requestsOnly.map(r => r.vendor_id).filter(Boolean))];
+      const requestRows: ServiceRequest[] = requestsOnly ?? [];
+      const vendorIds = [
+        ...new Set(requestRows.map((r: ServiceRequest) => r.vendor_id).filter(Boolean)),
+      ];
       const { data: vendorProfiles, error: vendorError } = await supabase
         .from("profiles")
         .select("id, name, category, is_premium, subscription_plan")
@@ -159,9 +177,10 @@ export default function ServiceResponsesPage() {
 
       // Step 3: Combine data
       // requestsOnly already contains all fields (final_price, price_confirmed, etc.) from the select statement
-      const vendorMap = new Map(vendorProfiles?.map(p => [p.id, p]) || []);
+      const vendorRows: VendorProfileRow[] = vendorProfiles ?? [];
+      const vendorMap = new Map(vendorRows.map((p: VendorProfileRow) => [p.id, p]));
 
-      const requestsWithVendors = requestsOnly.map(req => ({
+      const requestsWithVendors = requestRows.map((req: ServiceRequest) => ({
         ...req,
         vendor: vendorMap.get(req.vendor_id) || null
       }));
@@ -296,7 +315,10 @@ export default function ServiceResponsesPage() {
       }
 
       // Fetch sender profiles
-      const senderIds = [...new Set(repliesData.map(r => r.sender_id).filter(Boolean))];
+      const replyRows: ServiceRequestReply[] = repliesData ?? [];
+      const senderIds = [
+        ...new Set(replyRows.map((r: ServiceRequestReply) => r.sender_id).filter(Boolean)),
+      ];
       const { data: profilesData, error: profilesError } = await supabase
         .from("profiles")
         .select("id, name, email")
@@ -306,10 +328,11 @@ export default function ServiceResponsesPage() {
         console.warn("⚠️ Error fetching profiles (non-critical):", profilesError);
       }
 
-      const profilesMap = new Map(profilesData?.map(p => [p.id, p]) || []);
+      const senderProfiles: SenderProfileRow[] = profilesData ?? [];
+      const profilesMap = new Map(senderProfiles.map((p: SenderProfileRow) => [p.id, p]));
 
       // Combine replies with profiles
-      const repliesWithProfiles = repliesData.map(reply => ({
+      const repliesWithProfiles = replyRows.map((reply: ServiceRequestReply) => ({
         ...reply,
         sender: profilesMap.get(reply.sender_id) || null
       }));
@@ -366,12 +389,12 @@ export default function ServiceResponsesPage() {
           schema: "public",
           table: "service_requests",
         },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
           console.log("🔄 Real-time update received for service requests:", payload);
           fetchServiceRequests();
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
         if (status === "SUBSCRIBED") {
           console.log("✅ Successfully subscribed to service_requests real-time updates");
         } else if (status === "CHANNEL_ERROR") {
@@ -389,7 +412,7 @@ export default function ServiceResponsesPage() {
           schema: "public",
           table: "service_request_replies",
         },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
           console.log("🔄 Real-time update received for replies:", payload);
           if (payload.new && 'service_request_id' in payload.new) {
             const requestId = payload.new.service_request_id as string;
@@ -400,7 +423,7 @@ export default function ServiceResponsesPage() {
           }
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
         if (status === "SUBSCRIBED") {
           console.log("✅ Successfully subscribed to service_request_replies real-time updates");
         } else if (status === "CHANNEL_ERROR") {

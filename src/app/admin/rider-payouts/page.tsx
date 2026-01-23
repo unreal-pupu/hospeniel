@@ -112,8 +112,9 @@ export default function AdminRiderPayoutsPage() {
     }
 
     const paymentMap = new Map<string, RiderPaymentMeta>();
-    (paymentRows || []).forEach((row) => {
-      const detail = row as RiderPaymentDetail;
+    const rows: RiderPaymentDetail[] = paymentRows ?? [];
+    rows.forEach((row: RiderPaymentDetail) => {
+      const detail = row;
       paymentMap.set(detail.rider_id, {
         accountName: detail.account_name || "N/A",
         bankName: detail.bank_name || "N/A",
@@ -156,8 +157,9 @@ export default function AdminRiderPayoutsPage() {
         if (deliveriesError) throw deliveriesError;
 
         const counts = new Map<string, number>();
-        (deliveredTasks || []).forEach((task) => {
-          const row = task as DeliveryTaskRow;
+        const tasks: DeliveryTaskRow[] = deliveredTasks ?? [];
+        tasks.forEach((task: DeliveryTaskRow) => {
+          const row = task;
           counts.set(row.rider_id, (counts.get(row.rider_id) || 0) + 1);
         });
 

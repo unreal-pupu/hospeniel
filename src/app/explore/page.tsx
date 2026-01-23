@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   MessageSquare,
 } from "lucide-react";
+import type { RealtimePostgresChangesPayload, REALTIME_SUBSCRIBE_STATES } from "@supabase/supabase-js";
 import ServiceRequestDialog from "@/components/ServiceRequestDialog";
 import { throttle, debounce, ThrottleDelays } from "@/lib/clientThrottle";
 import SEOHead from "@/components/SEOHead";
@@ -56,6 +57,32 @@ interface MenuItem {
   };
 }
 
+interface MenuItemRow {
+  vendor_id: string | null;
+}
+
+interface ProfileRow {
+  id: string;
+  name: string | null;
+  location: string | null;
+  role: string | null;
+  category: string | null;
+  is_premium?: boolean | null;
+  subscription_plan?: string | null;
+}
+
+interface VendorRow {
+  id?: string | null;
+  name?: string | null;
+  business_name?: string | null;
+  image_url?: string | null;
+  location?: string | null;
+  profile_id?: string | null;
+  description?: string | null;
+  category?: string | null;
+  is_premium?: boolean | null;
+  subscription_plan?: string | null;
+}
 interface UserProfile {
   name: string;
   avatar_url: string;
@@ -206,7 +233,10 @@ export default function ExplorePage() {
       console.log(`Found ${menuData.length} menu items`);
 
       // Get unique vendor IDs (these are auth.users.id values)
-      const vendorIds = [...new Set(menuData.map(item => item.vendor_id).filter(Boolean))];
+      const menuItems: MenuItem[] = menuData ?? [];
+      const vendorIds = [
+        ...new Set(menuItems.map((item) => item.vendor_id).filter((id): id is string => Boolean(id))),
+      ];
       console.log(`Found ${vendorIds.length} unique vendor IDs:`, vendorIds);
 
       if (vendorIds.length === 0) {
@@ -233,7 +263,10 @@ export default function ExplorePage() {
         .in("id", vendorIds);
       
       // Filter to vendors in memory (but we fetched all to catch missing roles)
-      const vendorProfiles = profilesData?.filter(p => p.role === "vendor") || [];
+      const profileRows: ProfileRow[] = profilesData ?? [];
+      const vendorProfiles = profileRows.filter(
+        (p: ProfileRow): p is ProfileRow => p.role === "vendor"
+      );
       console.log(`Found ${profilesData?.length || 0} total profiles, ${vendorProfiles.length} with role='vendor'`);
 
       if (profilesError) {
@@ -249,9 +282,10 @@ export default function ExplorePage() {
       console.log(`Found ${profilesData?.length || 0} profiles:`, profilesData);
 
       // Create a map of profile_id (auth.users.id) to vendor data
-      const vendorMap = new Map();
-      if (vendorsData && vendorsData.length > 0) {
-        vendorsData.forEach(vendor => {
+      const vendorMap = new Map<string, VendorRow>();
+      const vendorRows: VendorRow[] = vendorsData ?? [];
+      if (vendorRows.length > 0) {
+        vendorRows.forEach((vendor: VendorRow) => {
           if (vendor.profile_id) {
             vendorMap.set(vendor.profile_id, vendor);
             console.log(`Mapped vendor: profile_id=${vendor.profile_id}, business_name=${vendor.business_name || 'none'}, name=${vendor.name || 'none'}, location=${vendor.location || 'none'}`);
@@ -261,9 +295,9 @@ export default function ExplorePage() {
 
       // Create a map of profile_id to profile data (PRIMARY SOURCE for vendor names)
       // Use ALL profiles (not just vendors) to catch any missing role assignments
-      const profileMap = new Map();
-      if (profilesData && profilesData.length > 0) {
-        profilesData.forEach(profile => {
+      const profileMap = new Map<string, ProfileRow>();
+      if (profileRows.length > 0) {
+        profileRows.forEach((profile: ProfileRow) => {
           if (profile.id) {
             profileMap.set(profile.id, profile);
             const roleInfo = profile.role === "vendor" ? "vendor" : `role=${profile.role || 'null'}`;
@@ -284,9 +318,10 @@ export default function ExplorePage() {
           .select("id, name, location, role, category, is_premium, subscription_plan")
           .in("id", missingProfileIds);
         
-        if (missingProfilesData && missingProfilesData.length > 0) {
+        const missingProfiles: ProfileRow[] = missingProfilesData ?? [];
+        if (missingProfiles.length > 0) {
           console.log(`✅ Found ${missingProfilesData.length} missing profiles via direct fetch`);
-          missingProfilesData.forEach(profile => {
+          missingProfiles.forEach((profile: ProfileRow) => {
             if (profile.id) {
               profileMap.set(profile.id, profile);
               const roleInfo = profile.role === "vendor" ? "vendor" : `role=${profile.role || 'null'}`;
@@ -304,8 +339,8 @@ export default function ExplorePage() {
 
       // Combine menu items with vendor information
       // Filter out items that are not available (handle both boolean and text)
-      const itemsWithVendors = menuData
-        .filter(item => {
+      const itemsWithVendors = menuItems
+        .filter((item: MenuItem) => {
           // Only show available items
           // Handle both boolean (true/false) and text ('available'/'out_of_stock') formats
           const isAvailable = item.availability === true || 
@@ -313,7 +348,7 @@ export default function ExplorePage() {
                               item.availability === "Available";
           return isAvailable;
         })
-        .map(item => {
+        .map((item: MenuItem) => {
           const vendor = vendorMap.get(item.vendor_id);
           const profile = profileMap.get(item.vendor_id); // Get profile for location fallback
           
@@ -467,7 +502,7 @@ export default function ExplorePage() {
           schema: "public",
           table: "menu_items",
         },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
           console.log("Menu items changed:", payload.eventType, payload);
           // Use debounced handler to prevent too many refetches
           if (typeof debouncedFetchMenuItems === 'function') {
@@ -475,7 +510,7 @@ export default function ExplorePage() {
           }
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
         if (status === "SUBSCRIBED") {
           console.log("✅ Successfully subscribed to menu_items changes");
         } else if (status === "CHANNEL_ERROR") {
@@ -493,13 +528,13 @@ export default function ExplorePage() {
           schema: "public",
           table: "vendor_service_profiles",
         },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
           console.log("Service profile changed:", payload.eventType, payload);
           // Immediately refetch for updates (no debounce for real-time)
           fetchServiceProfileVendors();
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
         if (status === "SUBSCRIBED") {
           console.log("✅ Successfully subscribed to vendor_service_profiles changes");
         } else if (status === "CHANNEL_ERROR") {
@@ -518,13 +553,13 @@ export default function ExplorePage() {
           table: "profiles",
           filter: "category=in.(chef,home_cook)",
         },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
           console.log("Profile category/role changed for chef/home_cook:", payload);
           // Refetch service profile vendors when profile updates
           fetchServiceProfileVendors();
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
         if (status === "SUBSCRIBED") {
           console.log("✅ Successfully subscribed to profiles changes for service vendors");
         } else if (status === "CHANNEL_ERROR") {

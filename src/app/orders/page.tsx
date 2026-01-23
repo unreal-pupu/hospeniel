@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
-import type { RealtimeChannel } from "@supabase/supabase-js";
+import type { RealtimeChannel, RealtimePostgresChangesPayload, REALTIME_SUBSCRIBE_STATES } from "@supabase/supabase-js";
 import Image from "next/image";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -86,9 +86,15 @@ interface ServiceRequest {
   updated_at: string;
   vendor?: {
     id: string;
-    name: string;
+    name: string | null;
     category: string | null;
   } | null;
+}
+
+interface VendorProfileRow {
+  id: string;
+  name: string | null;
+  category: string | null;
 }
 
 export default function OrdersPage() {
@@ -169,14 +175,18 @@ export default function OrdersPage() {
         setServiceRequests([]);
       } else if (serviceRequestsData && serviceRequestsData.length > 0) {
         // Fetch vendor profiles for service requests
-        const vendorIds = [...new Set(serviceRequestsData.map(r => r.vendor_id).filter(Boolean))];
+        const requestRows: ServiceRequest[] = serviceRequestsData ?? [];
+        const vendorIds = [
+          ...new Set(requestRows.map((r: ServiceRequest) => r.vendor_id).filter(Boolean)),
+        ];
         const { data: vendorProfiles } = await supabase
           .from("profiles")
           .select("id, name, category")
           .in("id", vendorIds);
 
-        const vendorMap = new Map(vendorProfiles?.map(p => [p.id, p]) || []);
-        const requestsWithVendors = serviceRequestsData.map(req => ({
+        const vendorRows: VendorProfileRow[] = vendorProfiles ?? [];
+        const vendorMap = new Map(vendorRows.map((p: VendorProfileRow) => [p.id, p]));
+        const requestsWithVendors = requestRows.map((req: ServiceRequest) => ({
           ...req,
           vendor: vendorMap.get(req.vendor_id) || null
         }));
@@ -374,7 +384,7 @@ export default function OrdersPage() {
           }
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
         console.log("Realtime subscription status:", status);
       });
 
@@ -391,7 +401,7 @@ export default function OrdersPage() {
           table: "service_requests",
           filter: `user_id=eq.${user.id}`,
         },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
           console.log("🔄 Service request change detected:", payload);
           // Refetch service requests when they change
           setTimeout(() => {
@@ -399,7 +409,7 @@ export default function OrdersPage() {
           }, 500);
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
         if (status === "SUBSCRIBED") {
           console.log("✅ Successfully subscribed to service_requests real-time updates");
         } else if (status === "CHANNEL_ERROR") {

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import type { RealtimePostgresChangesPayload, REALTIME_SUBSCRIBE_STATES } from "@supabase/supabase-js";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -44,8 +45,8 @@ interface ServiceRequest {
   paid_at?: string | null;
   completed_at?: string | null;
   profiles?: {
-    name: string;
-    email: string;
+    name: string | null;
+    email: string | null;
   } | null;
 }
 
@@ -58,9 +59,15 @@ interface ServiceRequestReply {
   read_at: string | null;
   created_at: string;
   profiles?: {
-    name: string;
-    email: string;
+    name: string | null;
+    email: string | null;
   } | null;
+}
+
+interface ProfileRow {
+  id: string;
+  name: string | null;
+  email: string | null;
 }
 
 export default function ServiceRequestsPage() {
@@ -110,7 +117,10 @@ export default function ServiceRequestsPage() {
       }
 
       // Step 2: Manually fetch profiles for each request
-      const userIds = [...new Set(requestsOnly.map(r => r.user_id).filter(Boolean))];
+      const requestRows: ServiceRequest[] = requestsOnly ?? [];
+      const userIds = [
+        ...new Set(requestRows.map((r: ServiceRequest) => r.user_id).filter(Boolean)),
+      ];
       const { data: profilesData, error: profilesError } = await supabase
         .from("profiles")
         .select("id, name, email")
@@ -121,9 +131,10 @@ export default function ServiceRequestsPage() {
       }
 
       // Step 3: Combine data
-      const profilesMap = new Map(profilesData?.map(p => [p.id, p]) || []);
+      const profileRows: ProfileRow[] = profilesData ?? [];
+      const profilesMap = new Map(profileRows.map((p: ProfileRow) => [p.id, p]));
 
-      const requestsWithProfiles = requestsOnly.map(req => ({
+      const requestsWithProfiles = requestRows.map((req: ServiceRequest) => ({
         ...req,
         profiles: profilesMap.get(req.user_id) || null
       }));
@@ -163,16 +174,20 @@ export default function ServiceRequestsPage() {
       }
 
       // Fetch profiles for reply senders
-      const senderIds = [...new Set(repliesData.map(r => r.sender_id).filter(Boolean))];
+      const replyRows: ServiceRequestReply[] = repliesData ?? [];
+      const senderIds = [
+        ...new Set(replyRows.map((r: ServiceRequestReply) => r.sender_id).filter(Boolean)),
+      ];
       const { data: profilesData } = await supabase
         .from("profiles")
         .select("id, name, email")
         .in("id", senderIds);
 
-      const profilesMap = new Map(profilesData?.map(p => [p.id, p]) || []);
+      const profileRows: ProfileRow[] = profilesData ?? [];
+      const profilesMap = new Map(profileRows.map((p: ProfileRow) => [p.id, p]));
 
       // Combine replies with profiles
-      const repliesWithProfiles = repliesData.map(reply => ({
+      const repliesWithProfiles = replyRows.map((reply: ServiceRequestReply) => ({
         ...reply,
         profiles: profilesMap.get(reply.sender_id) || null
       }));
@@ -273,12 +288,12 @@ export default function ServiceRequestsPage() {
             table: "service_requests",
             filter: `vendor_id=eq.${user.id}`,
           },
-          (payload) => {
+          (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
             console.log("🔄 Real-time update received for service requests:", payload);
             fetchServiceRequests();
           }
         )
-        .subscribe((status) => {
+        .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
           if (status === "SUBSCRIBED") {
             console.log("✅ Successfully subscribed to service_requests real-time updates");
           } else if (status === "CHANNEL_ERROR") {
@@ -308,7 +323,7 @@ export default function ServiceRequestsPage() {
             schema: "public",
             table: "service_request_replies",
           },
-          (payload) => {
+          (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
             console.log("🔄 Real-time update received for replies:", payload);
             // Refresh replies for the affected request if it's currently selected
             if (payload.new && 'service_request_id' in payload.new) {
@@ -324,7 +339,7 @@ export default function ServiceRequestsPage() {
             }
           }
         )
-        .subscribe((status) => {
+        .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
           if (status === "SUBSCRIBED") {
             console.log("✅ Successfully subscribed to service_request_replies real-time updates");
           } else if (status === "CHANNEL_ERROR") {

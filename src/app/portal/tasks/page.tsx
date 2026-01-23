@@ -89,6 +89,12 @@ interface VendorProfileRow {
   phone_number: string | null;
 }
 
+interface CustomerProfileRow {
+  id: string;
+  name: string | null;
+  phone_number: string | null;
+}
+
 interface VendorRow {
   id?: string | null;
   profile_id?: string | null;
@@ -370,7 +376,9 @@ export default function RiderTasksPage() {
       // Relationship: orders.user_id → profiles.id
       const customerProfilesMap = new Map<string, { name: string | null; phone: string | null }>();
       if (allCustomerUserIds.length > 0) {
-        const uniqueCustomerIds = [...new Set(allCustomerUserIds)];
+        const uniqueCustomerIds = [...new Set(allCustomerUserIds)].filter(
+          (id): id is string => Boolean(id)
+        );
         console.log("🔍 Fetching customer profiles from profiles table for user IDs:", uniqueCustomerIds);
         
         const { data: customerProfiles, error: customerProfilesError } = await supabase
@@ -381,9 +389,10 @@ export default function RiderTasksPage() {
         if (customerProfilesError) {
           console.error("❌ Error fetching customer profiles from profiles table:", customerProfilesError);
         } else {
-          console.log("✅ Customer profiles fetched from profiles table:", customerProfiles?.length || 0);
-          if (customerProfiles && customerProfiles.length > 0) {
-            customerProfiles.forEach((profile) => {
+          const customerProfileRows: CustomerProfileRow[] = customerProfiles ?? [];
+          console.log("✅ Customer profiles fetched from profiles table:", customerProfileRows.length);
+          if (customerProfileRows.length > 0) {
+            customerProfileRows.forEach((profile: CustomerProfileRow) => {
               // Store customer name from profiles table (orders.user_id → profiles.id)
               // Trim whitespace and use null if empty, fallback to "Customer" happens in mapping
               const customerName = profile.name?.trim() || null;
@@ -400,7 +409,7 @@ export default function RiderTasksPage() {
           }
           
           // Log any missing profiles
-          const fetchedIds = new Set(customerProfiles?.map(p => p.id) || []);
+          const fetchedIds = new Set(customerProfileRows.map((p: CustomerProfileRow) => p.id));
           const missingIds = uniqueCustomerIds.filter(id => !fetchedIds.has(id));
           if (missingIds.length > 0) {
             console.warn("⚠️ Customer profiles not found for user IDs:", missingIds);

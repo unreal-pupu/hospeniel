@@ -44,8 +44,9 @@ export default function NotificationBell({ userType, notificationsPageUrl }: Not
         return;
       }
 
-      setNotifications(data || []);
-      setUnreadCount(data?.filter((n) => !n.read).length || 0);
+      const notificationRows: Notification[] = data ?? [];
+      setNotifications(notificationRows);
+      setUnreadCount(notificationRows.filter((n: Notification) => !n.read).length);
     } catch (error) {
       console.error("Error fetching notifications:", error);
     } finally {

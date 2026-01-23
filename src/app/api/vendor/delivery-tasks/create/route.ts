@@ -1,23 +1,16 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdminClient } from "@/lib/supabase";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 
-if (!supabaseUrl || !serviceRoleKey) {
-  console.error("❌ Missing Supabase environment variables");
-  throw new Error("Supabase configuration is missing");
+if (!serviceRoleKey) {
+  throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
 }
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { 
-    autoRefreshToken: false, 
-    persistSession: false,
-  },
-});
 
 export async function POST(req: Request) {
   try {
+    const supabaseAdmin = getSupabaseAdminClient();
     const body = await req.json();
     const { orderId, vendorId } = body;
 
@@ -142,7 +135,7 @@ export async function POST(req: Request) {
     // Create delivery task using service role (bypasses RLS)
     console.log("🔄 Creating delivery task with service role...");
     console.log("🔄 Service role key present:", !!serviceRoleKey);
-    console.log("🔄 Supabase URL:", supabaseUrl);
+    console.log("🔄 Supabase URL present:", !!supabaseUrl);
     console.log("📍 Vendor location:", vendorLocation);
     console.log("📍 Vendor location sources:", {
       order_delivery_zone: order.delivery_zone || null,

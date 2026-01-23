@@ -5,15 +5,8 @@
  */
 
 import { Metadata } from "next";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdminClient } from "@/lib/supabase";
 import { getVendorPageMetadata } from "@/lib/seo";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
 
 export async function generateMetadata({
   params,
@@ -21,6 +14,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   try {
+    const supabaseAdmin = getSupabaseAdminClient();
     const { id: vendorId } = await params;
     
     // Try parsing as number first (legacy), then as UUID

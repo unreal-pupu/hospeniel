@@ -1,13 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdminClient } from "@/lib/supabase";
 import { checkRateLimit, RateLimitConfigs } from "@/lib/rateLimiter";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
 
 interface SupportMessageRow {
   id: string;
@@ -22,6 +15,7 @@ interface SupportMessageRow {
 // GET /api/support/messages - Get messages (filtered by user role)
 export async function GET(req: Request) {
   try {
+    const supabaseAdmin = getSupabaseAdminClient();
     // Get authenticated user
     const authHeader = req.headers.get("authorization");
     if (!authHeader) {
@@ -205,6 +199,7 @@ export async function GET(req: Request) {
 
 // POST /api/support/messages - Create new message
 export async function POST(req: Request) {
+  const supabaseAdmin = getSupabaseAdminClient();
   // Rate limiting
   const rateLimitResult = checkRateLimit(
     "/api/support/messages",

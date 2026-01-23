@@ -184,7 +184,8 @@ export default function MenuPage() {
       const vendorSubscriptionPlan = profileData?.subscription_plan || vendorData?.subscription_plan || "free_trial";
 
       // Attach vendor information to each menu item
-      const itemsWithVendor = (menuData || []).map(item => ({
+      const menuItems: MenuItem[] = menuData ?? [];
+      const itemsWithVendor = menuItems.map((item: MenuItem) => ({
         ...item,
         vendors: {
           id: vendorData?.id || profileData?.id || null,

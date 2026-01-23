@@ -1,16 +1,9 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-// Create admin client (service key = full DB access, bypasses RLS)
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
+import { getSupabaseAdminClient } from "@/lib/supabase";
 
 export async function POST(req: Request) {
   try {
+    const supabaseAdmin = getSupabaseAdminClient();
     const body = await req.json();
     const { userId, subscriptionPlan, paymentReference } = body;
 

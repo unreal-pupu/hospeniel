@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "../../../lib/supabaseClient";
+import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { 
   Clock, 
   CheckCircle, 
@@ -52,10 +53,12 @@ interface Order {
   status: "Pending" | "Accepted" | "Confirmed" | "Rejected" | "Completed" | "Cancelled" | "Paid";
   created_at: string;
   updated_at: string;
+  delivery_address?: string | null;
   delivery_address_line_1?: string | null;
   delivery_city?: string | null;
   delivery_state?: string | null;
   delivery_postal_code?: string | null;
+  delivery_phone?: string | null;
   delivery_phone_number?: string | null;
   delivery_charge?: number | null;
   payment_reference?: string | null;
@@ -174,8 +177,10 @@ export default function OrdersPage() {
         return;
       }
 
+      const orderRows: Order[] = ordersData ?? [];
+
       // Get unique user IDs
-      const userIds = [...new Set(ordersData.map((order) => order.user_id))];
+      const userIds = [...new Set(orderRows.map((order: Order) => order.user_id))];
 
       // Fetch user profiles and settings
       const [profilesResult, settingsResult] = await Promise.all([
@@ -198,22 +203,31 @@ export default function OrdersPage() {
         user_id: string;
         avatar_url: string | null;
       }
+
+interface DeliveryTaskRow {
+  id: string;
+  order_id: string;
+  status: string;
+  rider_id: string | null;
+}
       const profilesMap = new Map<string, Profile>();
-      if (profilesResult.data) {
-        profilesResult.data.forEach((profile) => {
+      const profileRows: Profile[] = profilesResult.data ?? [];
+      if (profileRows.length > 0) {
+        profileRows.forEach((profile: Profile) => {
           profilesMap.set(profile.id, profile);
         });
       }
 
       const settingsMap = new Map<string, UserSetting>();
-      if (settingsResult.data) {
-        settingsResult.data.forEach((setting) => {
+      const settingsRows: UserSetting[] = settingsResult.data ?? [];
+      if (settingsRows.length > 0) {
+        settingsRows.forEach((setting: UserSetting) => {
           settingsMap.set(setting.user_id, setting);
         });
       }
 
       // Fetch delivery tasks for these orders
-      const orderIds = ordersData.map((o) => o.id);
+      const orderIds = orderRows.map((o: Order) => o.id);
       const { data: deliveryTasks } = await supabase
         .from("delivery_tasks")
         .select("id, order_id, status, rider_id")
@@ -221,8 +235,9 @@ export default function OrdersPage() {
 
       // Create map of order_id -> delivery_task
       const deliveryTaskMap = new Map<string, { id: string; status: string; rider_id: string | null }>();
-      if (deliveryTasks) {
-        deliveryTasks.forEach((task) => {
+      const deliveryTaskRows: DeliveryTaskRow[] = deliveryTasks ?? [];
+      if (deliveryTaskRows.length > 0) {
+        deliveryTaskRows.forEach((task: DeliveryTaskRow) => {
           deliveryTaskMap.set(task.order_id, {
             id: task.id,
             status: task.status,
@@ -232,7 +247,7 @@ export default function OrdersPage() {
       }
 
       // Combine orders with user data - explicitly map all required Order fields
-      const ordersWithUsers: OrderWithUser[] = ordersData.map((order) => {
+      const ordersWithUsers: OrderWithUser[] = orderRows.map((order: Order) => {
         const menuItem = Array.isArray(order.menu_items)
           ? order.menu_items[0]
           : order.menu_items;
@@ -381,7 +396,7 @@ export default function OrdersPage() {
           schema: "public", 
           table: "orders"
         },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
           console.log("🔄 Vendor Orders: Order change detected:", payload);
           console.log("📦 Event type:", payload.eventType);
           // Small delay to ensure database is ready, then refetch

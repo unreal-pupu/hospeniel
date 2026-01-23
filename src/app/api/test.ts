@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+import { getSupabaseAdminClient } from "@/lib/supabase";
 
 export async function POST(req: NextRequest) {
   try {
+    const supabaseAdmin = getSupabaseAdminClient();
     const { name, address, contact, password, role } = await req.json();
 
     if (!name || !contact || !password || !role) {

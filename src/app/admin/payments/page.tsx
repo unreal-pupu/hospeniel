@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -70,7 +71,7 @@ export default function AdminPaymentsPage() {
           schema: "public",
           table: "payments",
         },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<any>) => {
           console.log("🔄 Admin Payments: Change detected:", payload);
           // Small delay to ensure database is ready
           setTimeout(() => {

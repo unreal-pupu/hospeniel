@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from "react";
+import type { REALTIME_SUBSCRIBE_STATES } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 
 export type CartItem = {
@@ -412,7 +413,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
             }
           }
         )
-        .subscribe((status) => {
+        .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
           if (status === "SUBSCRIBED") {
             console.log("Cart realtime subscription active");
           } else if (status === "CHANNEL_ERROR") {

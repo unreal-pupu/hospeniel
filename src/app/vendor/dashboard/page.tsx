@@ -8,8 +8,12 @@ import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { RefreshCw, Loader2, Info } from "lucide-react";
-import type { User } from "@supabase/supabase-js";
-import type { RealtimeChannel } from "@supabase/supabase-js";
+import type {
+  User,
+  RealtimeChannel,
+  RealtimePostgresChangesPayload,
+  REALTIME_SUBSCRIBE_STATES,
+} from "@supabase/supabase-js";
 import { getRoleBasedRedirect } from "@/lib/roleRouting";
 import dynamic from "next/dynamic";
 
@@ -487,7 +491,7 @@ const VendorDashboard: React.FC = () => {
               table: "orders",
               filter: `vendor_id=eq.${vendorIdForQueries}`,
             },
-            (payload) => {
+            (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
               console.log("🔄 Vendor Dashboard: Order change detected:", payload);
               // Refetch orders when changes occur
               const windowWithVendorDashboard = window as WindowWithVendorDashboard;
@@ -496,7 +500,7 @@ const VendorDashboard: React.FC = () => {
               }
             }
           )
-          .subscribe((status) => {
+          .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
             console.log("🔵 Vendor Dashboard: Subscription status:", status);
             if (status === "SUBSCRIBED") {
               console.log("✅ Vendor Dashboard: Real-time subscription active");

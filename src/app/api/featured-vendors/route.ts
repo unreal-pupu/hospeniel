@@ -1,15 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdminClient } from "@/lib/supabase";
 import { checkRateLimit, RateLimitConfigs } from "@/lib/rateLimiter";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-// Create a client with service role key for public access (bypasses RLS)
-// This is safe for public data like featured vendors
-const supabase = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
 
 function hasCompletedServiceProfile(profile: {
   image_url: string | null;
@@ -38,6 +29,7 @@ function normalizeCategory(category: string | null | undefined) {
 }
 
 export async function GET(req: Request) {
+  const supabase = getSupabaseAdminClient();
   // Rate limiting: 50 requests per minute per IP (search/explore limit)
   const rateLimitResult = checkRateLimit(
     "/api/featured-vendors",

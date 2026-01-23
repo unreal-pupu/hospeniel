@@ -1,12 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
+import { getSupabaseAdminClient } from "@/lib/supabase";
 
 /**
  * PUT /api/admin/update-delivery/:orderId
@@ -26,6 +19,7 @@ export async function PUT(
   { params }: { params: Promise<{ orderId: string }> }
 ) {
   try {
+    const supabaseAdmin = getSupabaseAdminClient();
     const { orderId } = await params;
     const body = await req.json();
 

@@ -1,7 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // This disables all dev indicators (including the floating Next.js logo)
-  devIndicators: false,
+  devIndicators: {
+    buildActivity: false,
+  },
 
   images: {
     remotePatterns: [

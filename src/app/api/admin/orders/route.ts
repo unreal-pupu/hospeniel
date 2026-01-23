@@ -1,19 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-// Create service role client that bypasses RLS
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { 
-    autoRefreshToken: false, 
-    persistSession: false 
-  },
-  db: {
-    schema: 'public'
-  }
-});
+import { getSupabaseAdminClient } from "@/lib/supabase";
 
 interface OrderWithDetails {
   id: string;
@@ -55,6 +41,7 @@ interface OrderWithDetails {
 // GET /api/admin/orders - Get all orders with vendor and user information
 export async function GET(req: Request) {
   try {
+    const supabaseAdmin = getSupabaseAdminClient();
     // Get authenticated user
     const authHeader = req.headers.get("authorization");
     if (!authHeader) {

@@ -12,6 +12,11 @@ interface TaskStats {
   total: number;
 }
 
+interface DeliveryTaskRow {
+  id: string;
+  status: string;
+}
+
 export default function RiderDashboard() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<TaskStats>({
@@ -43,10 +48,16 @@ export default function RiderDashboard() {
         .select("id, status")
         .eq("rider_id", user.id);
 
-      const pending = pendingTasks?.length || 0;
-      const inProgress = assignedTasks?.filter((t) => t.status === "Assigned" || t.status === "PickedUp").length || 0;
-      const completed = assignedTasks?.filter((t) => t.status === "Delivered").length || 0;
-      const total = (assignedTasks?.length || 0) + pending;
+      const pendingRows: DeliveryTaskRow[] = pendingTasks ?? [];
+      const assignedRows: DeliveryTaskRow[] = assignedTasks ?? [];
+      const pending = pendingRows.length;
+      const inProgress =
+        assignedRows.filter(
+          (t: DeliveryTaskRow) => t.status === "Assigned" || t.status === "PickedUp"
+        ).length || 0;
+      const completed =
+        assignedRows.filter((t: DeliveryTaskRow) => t.status === "Delivered").length || 0;
+      const total = assignedRows.length + pending;
 
       setStats({
         pending,

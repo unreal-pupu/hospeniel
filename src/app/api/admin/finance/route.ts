@@ -1,16 +1,9 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-// Create admin client (service key = full DB access)
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { autoRefreshToken: false, persistSession: false },
-});
+import { getSupabaseAdminClient } from "@/lib/supabase";
 
 export async function GET() {
   try {
+    const supabaseAdmin = getSupabaseAdminClient();
     // TODO: Add admin authentication check here
     // For now, this endpoint is accessible - add proper admin role check in production
 

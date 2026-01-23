@@ -66,6 +66,12 @@ interface BookingRequest {
   customer_phone?: string;
 }
 
+interface CustomerProfileRow {
+  id: string;
+  name: string | null;
+  phone_number: string | null;
+}
+
 interface AvailabilitySlot {
   id?: string;
   date: string;
@@ -457,19 +463,21 @@ export default function CookChefDashboard({ vendor }: { vendor: VendorProfile | 
       }
       
       // Fetch customer profiles separately
-      const userIds = [...new Set((data || []).map((request) => request.user_id))];
+      const requestRows: BookingRequest[] = data ?? [];
+      const userIds = [...new Set(requestRows.map((request: BookingRequest) => request.user_id))];
       const { data: profiles } = await supabase
         .from('profiles')
         .select('id, name, phone_number')
         .in('id', userIds);
       
       // Create a map of user_id to profile
+      const profileRows: CustomerProfileRow[] = profiles ?? [];
       const profileMap = new Map(
-        (profiles || []).map((profile) => [profile.id, profile])
+        profileRows.map((profile: CustomerProfileRow) => [profile.id, profile])
       );
       
       // Transform data to include customer info
-      const transformed = (data || []).map((request) => {
+      const transformed = requestRows.map((request: BookingRequest) => {
         const profile = profileMap.get(request.user_id);
         return {
           ...request,
