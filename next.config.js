@@ -1,9 +1,8 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   // This disables all dev indicators (including the floating Next.js logo)
   devIndicators: false,
-  
+
   images: {
     remotePatterns: [
       {
@@ -18,40 +17,43 @@ const nextConfig: NextConfig = {
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
     minimumCacheTTL: 60,
   },
-  
+
   // Improve compatibility with React 19 and Next.js 15
   reactStrictMode: true,
-  
+
   // Suppress hydration warnings for known safe cases
   onDemandEntries: {
     maxInactiveAge: 25 * 1000,
     pagesBufferLength: 2,
   },
-  
+
   // Experimental features for better stability and performance
   experimental: {
     // Optimize package imports to reduce bundle size
     optimizePackageImports: [
-      "lucide-react", 
-      "@radix-ui/react-select", 
+      "lucide-react",
+      "@radix-ui/react-select",
       "@radix-ui/react-dialog",
       "react-icons",
-      "framer-motion"
+      "framer-motion",
     ],
   },
-  
+
   // Compiler optimizations
   compiler: {
-    removeConsole: process.env.NODE_ENV === "production" ? {
-      exclude: ["error", "warn"],
-    } : false,
+    removeConsole:
+      process.env.NODE_ENV === "production"
+        ? {
+            exclude: ["error", "warn"],
+          }
+        : false,
   },
-  
+
   // Compression
   compress: true,
-  
+
   // Ensure proper handling of client components
   transpilePackages: [],
 };
 
-export default nextConfig;
+module.exports = nextConfig;
