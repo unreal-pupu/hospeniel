@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+
 async function ensureAdmin(req: Request) {
   const supabaseAdmin = getSupabaseAdminClient();
   const authHeader = req.headers.get("authorization");

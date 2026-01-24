@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { POST as verifyPayment } from "@/app/api/payment/verify/route";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: Request) {
   const secret = process.env.PAYSTACK_SECRET_KEY;
   if (!secret) {

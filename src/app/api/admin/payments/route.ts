@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+
 interface PaymentWithDetails {
   id: string;
   user_id: string;

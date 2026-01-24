@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+
 interface OrderRow {
   id: string;
   vendor_id: string;

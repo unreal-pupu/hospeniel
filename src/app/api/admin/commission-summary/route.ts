@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+
 const COMMISSION_RATE = 0.10;
 
 async function ensureAdmin(req: Request) {

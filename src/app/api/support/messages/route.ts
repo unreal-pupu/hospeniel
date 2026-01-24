@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { checkRateLimit, RateLimitConfigs } from "@/lib/rateLimiter";
 
+export const dynamic = "force-dynamic";
+
 interface SupportMessageRow {
   id: string;
   sender_id: string;

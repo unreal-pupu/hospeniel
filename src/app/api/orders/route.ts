@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { checkRateLimit, RateLimitConfigs } from "@/lib/rateLimiter";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: Request) {
   const supabaseAdmin = getSupabaseAdminClient();
   // Rate limiting: 10 checkout/payment requests per minute per IP

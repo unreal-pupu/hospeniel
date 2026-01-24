@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+
 function bucketByMonth<T extends { created_at?: string | null }>(
   items: T[],
   valueFn: (item: T) => number,
