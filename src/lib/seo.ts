@@ -19,7 +19,7 @@ export interface SEOConfig {
 }
 
 const defaultSiteName = "Hospeniel";
-const defaultSiteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://hospineil.com";
+const defaultSiteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://www.hospeniel.com";
 const defaultImage = `${defaultSiteUrl}/og-image.jpg`; // You'll need to create this image
 
 /**

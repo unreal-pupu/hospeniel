@@ -159,7 +159,7 @@ export async function PUT(
 
       // Calculate delivery charge
       const calculateResponse = await fetch(
-        `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/delivery/calculate`,
+        `${process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || "https://www.hospeniel.com"}/api/delivery/calculate`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

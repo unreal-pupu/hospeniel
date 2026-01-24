@@ -10,7 +10,7 @@ import SupabaseProvider from "../../src/providers/SupabaseProvider"; // ✅ defa
 // The CSS variables --font-poppins and --font-inter are set in globals.css
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://hospineil.com"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://www.hospeniel.com"),
   title: {
     default: "Hospeniel - Discover Vendors, Chefs & Bakers",
     template: "%s | Hospeniel",
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://hospineil.com",
+    url: process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://www.hospeniel.com",
     siteName: "Hospeniel",
     title: "Hospeniel - Discover Vendors, Chefs & Bakers",
     description: "Hospeniel helps users find and order from food vendors, chefs, and bakers in their area.",

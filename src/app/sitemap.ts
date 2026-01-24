@@ -3,7 +3,7 @@ import { getSupabaseAdminClient } from "@/lib/supabase";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const supabaseAdmin = getSupabaseAdminClient();
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://hospineil.com";
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://www.hospeniel.com";
 
   // Static pages
   const staticPages: MetadataRoute.Sitemap = [

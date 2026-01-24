@@ -29,7 +29,7 @@ export function getBaseUrl(): string {
   }
   
   // Server-side: use environment variable or default
-  return process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+  return process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || "https://www.hospeniel.com";
 }
 
 

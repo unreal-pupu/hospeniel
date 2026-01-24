@@ -132,7 +132,7 @@ export async function POST(req: Request) {
       : `pay_${vendor_id}_${Date.now()}`;
 
     // Prepare callback URL for Paystack redirect
-    const baseCallbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/payment-success`;
+    const baseCallbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://www.hospeniel.com'}/payment-success`;
     const serviceRequestId = typeof metadata?.service_request_id === "string" ? metadata.service_request_id : undefined;
     const callbackUrl = serviceRequestId
       ? `${baseCallbackUrl}?reference=${paymentReference}&service_request_id=${serviceRequestId}`

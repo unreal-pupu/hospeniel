@@ -58,7 +58,11 @@ export async function POST(req: Request) {
       ? data.metadata.service_request_id
       : undefined;
 
-  const verifyRequest = new Request("http://localhost/api/paystack/verify", {
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    "https://www.hospeniel.com";
+  const verifyRequest = new Request(`${baseUrl}/api/paystack/verify`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
