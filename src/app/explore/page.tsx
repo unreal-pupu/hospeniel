@@ -1096,7 +1096,7 @@ export default function ExplorePage() {
                       </div>
 
                       {/* Vendor Info */}
-                      <div className="p-5">
+                      <div className="p-5 pt-4 flex flex-col h-full">
                         <div className="flex items-center justify-between mb-2">
                           <h3 className="text-lg font-bold text-gray-800 font-header">
                             {vendor.name}
@@ -1249,16 +1249,16 @@ export default function ExplorePage() {
                   {filteredMenuItems.map((item) => (
                     <div
                       key={item.id}
-                      className="bg-hospineil-light-bg rounded-2xl shadow-md hover:shadow-lg transition-all overflow-hidden border border-gray-200 group"
+                      className="bg-white rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:scale-[1.01] border border-gray-100 hover:border-hospineil-accent/30 group flex flex-col"
                     >
                       {/* Product Image */}
-                      <div className="relative h-48 overflow-hidden">
+                      <div className="relative w-full h-64 sm:h-60 overflow-hidden bg-gray-100">
                         {item.image_url ? (
                           <Image
                             src={item.image_url}
                             alt={item.title}
                             fill
-                            className="object-cover group-hover:scale-110 transition-transform duration-300"
+                            className="object-cover transition-transform duration-300 group-hover:scale-105"
                             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                             onError={(e) => {
                               const target = e.target as HTMLImageElement;
@@ -1271,6 +1271,7 @@ export default function ExplorePage() {
                             <UtensilsCrossed className="h-12 w-12 text-gray-400" />
                           </div>
                         )}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/25 via-black/0 to-black/0" />
                         {/* Availability Badge */}
                         <div className="absolute top-3 right-3">
                           <span
@@ -1289,10 +1290,10 @@ export default function ExplorePage() {
                       <div className="p-5">
                         {/* Vendor Name - Prominent Display - Always show if vendor data exists */}
                         {item.vendors ? (
-                          <div className="mb-3 pb-3 -mx-5 px-5 bg-hospineil-accent rounded-t-2xl">
+                          <div className="mb-3 pb-3 border-b border-gray-100">
                             <div className="flex items-center gap-2 mb-1">
                               {item.vendors.image_url ? (
-                                <div className="relative w-8 h-8 rounded-full overflow-hidden border-2 border-white/30">
+                                <div className="relative w-8 h-8 rounded-full overflow-hidden border border-gray-200">
                                   <Image
                                     src={item.vendors.image_url}
                                     alt={item.vendors.name || "Vendor"}
@@ -1306,23 +1307,23 @@ export default function ExplorePage() {
                                   />
                                 </div>
                               ) : (
-                                <div className="w-8 h-8 rounded-full bg-white/20 border-2 border-white/30 flex items-center justify-center">
-                                  <UtensilsCrossed className="w-4 h-4 text-white" />
+                                <div className="w-8 h-8 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center">
+                                  <UtensilsCrossed className="w-4 h-4 text-gray-400" />
                                 </div>
                               )}
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-white truncate font-header">
+                                <p className="text-sm font-semibold text-gray-800 truncate font-header">
                                   {/* CRITICAL: Display vendor name from profiles.name - never show placeholder if name exists */}
                                   {item.vendors.name && 
                                    item.vendors.name !== "Vendor Name Not Available"
                                     ? item.vendors.name 
                                     : "Vendor"}
                                   {item.vendors.category && (
-                                    <span className="text-white/80 font-normal"> – {getCategoryLabel(item.vendors.category)}</span>
+                                    <span className="text-gray-500 font-normal"> – {getCategoryLabel(item.vendors.category)}</span>
                                   )}
                                 </p>
                                 {item.vendors.location && (
-                                  <p className="text-xs text-white/90 flex items-center gap-1 font-body">
+                                  <p className="text-xs text-gray-500 flex items-center gap-1 font-body">
                                     <span>📍</span>
                                     <span>{item.vendors.location}</span>
                                   </p>
@@ -1347,12 +1348,12 @@ export default function ExplorePage() {
                         </h3>
 
                         {/* Description */}
-                        <p className="text-gray-600 text-sm mb-3 line-clamp-2 font-body">
+                        <p className="text-gray-600 text-sm mb-2 line-clamp-2 font-body">
                           {item.description || "No description available"}
                         </p>
 
                         {/* Price and Buttons */}
-                        <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center justify-between mb-3">
                           <p className="text-hospineil-primary font-bold text-xl font-header">
                             ₦{item.price.toLocaleString("en-NG", { minimumFractionDigits: 2 })}
                           </p>
@@ -1444,16 +1445,17 @@ export default function ExplorePage() {
                   {menuItems.map((item) => (
                     <div
                       key={item.id}
-                      className="bg-hospineil-light-bg rounded-2xl shadow-md hover:shadow-lg transition-all overflow-hidden border border-gray-200 group"
+                      className="bg-white rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:scale-[1.01] border border-gray-100 hover:border-hospineil-accent/30 group flex flex-col"
                     >
-                      <div className="relative h-48 overflow-hidden">
+                      <div className="relative w-full h-64 sm:h-60 overflow-hidden bg-gray-100">
                         <Image
                           src={item.image_url || "/placeholder-image.png"}
                           alt={item.title}
                           fill
-                          className="object-cover"
+                          className="object-cover transition-transform duration-300 group-hover:scale-105"
                           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                         />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/25 via-black/0 to-black/0" />
                         <div className="absolute top-3 right-3">
                           <span
                             className={`px-3 py-1 rounded-full text-xs font-semibold shadow-md ${
@@ -1466,13 +1468,13 @@ export default function ExplorePage() {
                           </span>
                         </div>
                       </div>
-                      <div className="p-5">
+                      <div className="p-5 pt-4 flex flex-col h-full">
                         {/* Vendor Name - Prominent Display (for selected vendor view) - Always show if vendor data exists */}
                         {item.vendors ? (
-                          <div className="mb-3 pb-3 -mx-5 px-5 bg-hospineil-accent rounded-t-2xl">
+                          <div className="mb-3 pb-3 border-b border-gray-100">
                             <div className="flex items-center gap-2 mb-1">
                               {item.vendors.image_url ? (
-                                <div className="relative w-8 h-8 rounded-full overflow-hidden border-2 border-white/30">
+                                <div className="relative w-8 h-8 rounded-full overflow-hidden border border-gray-200">
                                   <Image
                                     src={item.vendors.image_url}
                                     alt={item.vendors.name || "Vendor"}
@@ -1486,19 +1488,19 @@ export default function ExplorePage() {
                                   />
                                 </div>
                               ) : (
-                                <div className="w-8 h-8 rounded-full bg-white/20 border-2 border-white/30 flex items-center justify-center">
-                                  <UtensilsCrossed className="w-4 h-4 text-white" />
+                                <div className="w-8 h-8 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center">
+                                  <UtensilsCrossed className="w-4 h-4 text-gray-400" />
                                 </div>
                               )}
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-white truncate font-header">
+                                <p className="text-sm font-semibold text-gray-800 truncate font-header">
                                   {item.vendors.name || "Vendor"}
                                   {item.vendors.category && (
-                                    <span className="text-white/80 font-normal"> – {getCategoryLabel(item.vendors.category)}</span>
+                                    <span className="text-gray-500 font-normal"> – {getCategoryLabel(item.vendors.category)}</span>
                                   )}
                                 </p>
                                 {item.vendors.location && (
-                                  <p className="text-xs text-white/90 flex items-center gap-1 font-body">
+                                  <p className="text-xs text-gray-500 flex items-center gap-1 font-body">
                                     <span>📍</span>
                                     <span>{item.vendors.location}</span>
                                   </p>
@@ -1520,10 +1522,10 @@ export default function ExplorePage() {
                         <h3 className="text-lg font-semibold text-gray-800 mb-2 font-header">
                           {item.title}
                         </h3>
-                        <p className="text-gray-600 text-sm mb-3 line-clamp-2 font-body">
+                        <p className="text-gray-600 text-sm mb-2 line-clamp-2 font-body">
                           {item.description}
                         </p>
-                        <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center justify-between mb-3">
                           <p className="text-hospineil-primary font-bold text-xl font-header">
                             ₦{item.price.toLocaleString("en-NG", { minimumFractionDigits: 2 })}
                           </p>

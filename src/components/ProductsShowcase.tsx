@@ -195,15 +195,15 @@ export default function ProductsShowcase() {
           {menuItems.map((item) => (
             <Card
               key={item.id}
-              className="bg-white rounded-2xl shadow-md hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-200 flex flex-col"
+              className="bg-white rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:scale-[1.01] border border-gray-100 hover:border-hospineil-accent/30 flex flex-col group"
             >
-              <div className="relative w-full h-48 bg-gray-100">
+              <div className="relative w-full h-64 sm:h-60 bg-gray-100 overflow-hidden">
                 {item.image_url ? (
                   <Image
                     src={item.image_url}
                     alt={item.title}
                     fill
-                    className="object-cover"
+                    className="object-cover transition-transform duration-300 group-hover:scale-105"
                     sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                     loading="lazy"
                     quality={85}
@@ -216,9 +216,10 @@ export default function ProductsShowcase() {
                     <span className="text-gray-400 text-sm">No Image</span>
                   </div>
                 )}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-black/0 to-black/0" />
               </div>
               
-              <CardContent className="p-4 flex flex-col flex-grow">
+              <CardContent className="p-5 pt-4 flex flex-col flex-grow">
                 <div className="mb-2">
                   {item.vendors?.name && (
                     <p className="text-xs text-gray-500 font-body mb-1">
@@ -228,13 +229,13 @@ export default function ProductsShowcase() {
                   <h3 className="text-lg font-semibold text-gray-800 mb-2 line-clamp-2 font-header">
                     {item.title}
                   </h3>
-                  <p className="text-sm text-gray-600 line-clamp-2 mb-3 font-body">
+                  <p className="text-sm text-gray-600 line-clamp-2 mb-2 font-body">
                     {item.description || "Delicious meal"}
                   </p>
                 </div>
 
                 <div className="mt-auto">
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center justify-between mb-2">
                     <span className="text-2xl font-bold text-hospineil-primary font-header">
                       ₦{item.price.toLocaleString("en-NG", { minimumFractionDigits: 2 })}
                     </span>
