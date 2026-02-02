@@ -87,7 +87,7 @@ const VendorSection: React.FC = () => {
 
       <div className="text-center mt-12">
         <button
-          onClick={() => window.location.href = "/register"}
+          onClick={() => window.location.href = "/pricing"}
           className="flex items-center justify-center px-8 py-3 bg-hospineil-accent text-hospineil-light-bg font-medium rounded-full font-button shadow-lg transition-all duration-300 ease-in-out transform hover:scale-105 hover:shadow-xl hover:bg-hospineil-accent-hover focus:ring-2 focus:ring-hospineil-primary focus:ring-offset-2"
         >
           Sign Up

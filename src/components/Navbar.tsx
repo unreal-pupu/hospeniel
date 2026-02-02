@@ -88,7 +88,7 @@ export default function Navbar() {
   const landingPageLinks = [
     { id: "home", label: "Home" },
     { id: "features", label: "Features" },
-    { id: "pricing", label: "Pricing" },
+    // { id: "pricing", label: "Pricing" },
     { id: "listing", label: "Listing" },
     { id: "testimonials", label: "Testimonials" },
     { id: "faq", label: "FAQ" },

@@ -19,9 +19,9 @@ const HomeCookChefPromo = dynamic(() => import("@/components/HomeCookChefPromo")
   loading: () => <div className="min-h-[200px] bg-gradient-to-r from-hospineil-primary to-hospineil-accent" />,
 });
 
-const Pricing = dynamic(() => import("@/components/Pricing"), {
-  loading: () => <div className="min-h-[600px] bg-hospineil-base-bg" />,
-});
+// const Pricing = dynamic(() => import("@/components/Pricing"), {
+//   loading: () => <div className="min-h-[600px] bg-hospineil-base-bg" />,
+// });
 
 const VendorSection = dynamic(() => import("@/components/VendorSection"), {
   loading: () => <div className="min-h-[400px] bg-hospineil-base-bg" />,
@@ -71,9 +71,9 @@ export default function Home() {
    <Suspense fallback={<div className="min-h-[400px] bg-hospineil-base-bg" />}>
      <VendorSection/>
    </Suspense>
-  <Suspense fallback={<div className="min-h-[600px] bg-hospineil-base-bg" />}>
+  {/* <Suspense fallback={<div className="min-h-[600px] bg-hospineil-base-bg" />}>
     <Pricing/>
-  </Suspense>
+  </Suspense> */}
    <Suspense fallback={<div className="min-h-[400px] bg-hospineil-light-bg" />}>
      <CustomerReviews/>
    </Suspense>

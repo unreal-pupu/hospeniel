@@ -69,6 +69,16 @@ export default function Footer() {
 >
   Acceptable Use Policy
 </Link>
+
+              </li>
+              <li>
+                  <Link
+  href="/pricing"
+  className="text-gray-600 hover:text-hospineil-primary font-body transition-colors duration-200 text-left"
+>
+  Pricing
+</Link>
+
               </li>
             </ul>
           </div>
@@ -83,6 +93,12 @@ export default function Footer() {
   className="text-gray-600 hover:text-hospineil-primary font-body transition-colors duration-200 text-left"
 >
   Refund Policy
+</Link>
+               <Link
+  href="/pricing"
+  className="text-gray-600 hover:text-hospineil-primary font-body transition-colors duration-200 text-left"
+>
+  Pricing
 </Link>
               </li>
             </ul>
