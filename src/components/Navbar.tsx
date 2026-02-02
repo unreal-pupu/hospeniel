@@ -58,7 +58,7 @@ export default function Navbar() {
     if (!isLandingPage) return;
 
     const handleScroll = () => {
-    const sections = ["home", "features", "pricing", "listing", "testimonials", "faq"];
+    const sections = ["home", "features", "pricing", "listing", "testimonials", "acceptableusepolicy", "faq"];
       const scrollPosition = window.scrollY + 100; // Offset for fixed navbar
 
       for (let i = sections.length - 1; i >= 0; i--) {

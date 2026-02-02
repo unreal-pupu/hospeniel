@@ -55,20 +55,20 @@ export default function Footer() {
             <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4 sm:mb-5 font-header">Explore</h3>
             <ul className="space-y-3 text-sm sm:text-base">
               <li>
-                <button
-                  onClick={() => scrollToSection("features")}
-                  className="text-gray-600 hover:text-hospineil-primary font-body transition-colors duration-200 text-left"
-                >
-                  Features
-                </button>
+                         <Link
+  href="/terms-and-conditions"
+  className="text-gray-600 hover:text-hospineil-primary font-body transition-colors duration-200 text-left"
+>
+  Terms and Conditions
+</Link>
               </li>
               <li>
-                <button
-                  onClick={() => scrollToSection("features")}
-                  className="text-gray-600 hover:text-hospineil-primary font-body transition-colors duration-200 text-left"
-                >
-                  How It Works
-                </button>
+                <Link
+  href="/AcceptableUsePolicy"
+  className="text-gray-600 hover:text-hospineil-primary font-body transition-colors duration-200 text-left"
+>
+  Acceptable Use Policy
+</Link>
               </li>
             </ul>
           </div>
@@ -78,12 +78,12 @@ export default function Footer() {
             <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4 sm:mb-5 font-header">Support</h3>
             <ul className="space-y-3 text-sm sm:text-base">
               <li>
-                <button
-                  onClick={() => scrollToSection("faq")}
-                  className="text-gray-600 hover:text-hospineil-primary font-body transition-colors duration-200 text-left"
-                >
-                  FAQ
-                </button>
+               <Link
+  href="/refund-policy"
+  className="text-gray-600 hover:text-hospineil-primary font-body transition-colors duration-200 text-left"
+>
+  Refund Policy
+</Link>
               </li>
             </ul>
           </div>
