@@ -41,14 +41,20 @@ export default function Footer() {
           
           {/* Brand Section */}
           <div className="sm:col-span-2 lg:col-span-1">
-            <h2 className="text-2xl sm:text-3xl font-logo font-semibold tracking-tight mb-4">
-              <span className="text-hospineil-primary">Hospe</span>
-              <span className="italic text-hospineil-accent">niel</span>
-            </h2>
-            <p className="text-sm sm:text-base text-gray-600 font-body leading-relaxed max-w-sm">
-              Discover food vendors and professional chefs for hire, creative bakers and delightful pastry vendors near you.
-            </p>
-          </div>
+  {/* Logo */}
+  <div className="mb-4">
+    <img
+      src="/Hospi.jpeg"            // your logo in public folder
+      alt="Hospeniel"
+      className="h-20 w-auto"     // adjust height as needed
+    />
+  </div>
+
+  {/* Description */}
+  <p className="text-sm sm:text-base text-gray-600 font-body leading-relaxed max-w-sm">
+    Discover food vendors and professional chefs for hire, creative bakers and delightful pastry vendors near you.
+  </p>
+</div>
 
           {/* Explore Section */}
           <div>
