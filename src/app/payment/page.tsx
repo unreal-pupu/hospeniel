@@ -1010,9 +1010,7 @@ export default function PaymentPage() {
                       </p>
                     )}
                   </div>
-                  <p className="text-xs text-gray-500 text-center">
-                    Payments are currently in TEST MODE and are awaiting approval. No real money will be charged.
-                  </p>
+                 
 
                   <Button
                     className="w-full rounded-full px-8 py-6 bg-green-600 text-white font-bold text-lg shadow-lg hover:bg-green-700 disabled:opacity-50"

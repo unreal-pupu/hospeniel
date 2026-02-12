@@ -1384,9 +1384,7 @@ export default function ExplorePage() {
                               {placingOrder ? "Placing..." : (item.availability === true || item.availability === "available") ? "Order Now" : "Out of Stock"}
                             </button>
                           </div>
-                          <p className="text-xs text-gray-500 text-center">
-                            Payments are currently in TEST MODE and are awaiting approval. No real money will be charged.
-                          </p>
+                          
                           {/* Contact Vendor Button - Only for Premium Vendors (is_premium = true) */}
                           {item.vendors && item.vendor_id && item.vendors.is_premium === true && (
                             <button
