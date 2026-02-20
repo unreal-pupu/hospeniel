@@ -110,9 +110,9 @@ export default function Navbar() {
   }}
 >
   <Image
-    src="/Hospi.jpeg"
+    src="/Hos2.jpeg"
     alt="Hospeniel"
-    width={120}  // adjust width
+    width={160}  // adjust width
     height={40}  // adjust height
     priority
   />

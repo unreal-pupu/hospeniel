@@ -44,15 +44,18 @@ export default function Footer() {
   {/* Logo */}
   <div className="mb-4">
     <img
-      src="/Hospi.jpeg"            // your logo in public folder
+      src="/Hos2.jpeg"            // your logo in public folder
       alt="Hospeniel"
-      className="h-20 w-auto"     // adjust height as needed
+      className="h-40 w-auto"     // adjust height as needed
     />
   </div>
 
   {/* Description */}
   <p className="text-sm sm:text-base text-gray-600 font-body leading-relaxed max-w-sm">
-    Discover food vendors and professional chefs for hire, creative bakers and delightful pastry vendors near you.
+    Sell Your Food Online with Ease <br />
+Are you a Food vendor, Chef, Home cook, Baker, or pastry expert?
+List your menu, receive orders, and grow your business with our platform.
+Become a Partner
   </p>
 </div>
 
