@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 // Paystack Bank List API endpoint
-const PAYSTACK_BANKS_URL = "https://api.paystack.co/bank";
+const PAYSTACK_BANKS_URL = "https://api.paystack.co/bank?country=nigeria";
 
 // Fallback bank list including Moniepoint and other popular Nigerian banks
 const FALLBACK_BANKS = [

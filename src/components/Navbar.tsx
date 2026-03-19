@@ -99,24 +99,26 @@ export default function Navbar() {
     <nav className="bg-[#ffffff] shadow-sm fixed top-0 left-0 right-0 z-50">
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
         {/* Logo */}
-     <Link
-  href="/"
-  className="inline-block hover:opacity-80 transition-opacity duration-300"
-  onClick={(e) => {
-    if (isLandingPage) {
-      e.preventDefault();
-      scrollToSection("home");
-    }
-  }}
->
-  <Image
-    src="/Hos2.jpeg"
-    alt="Hospeniel"
-    width={160}  // adjust width
-    height={40}  // adjust height
-    priority
-  />
-</Link>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/"
+            className="inline-block hover:opacity-80 transition-opacity duration-300"
+            onClick={(e) => {
+              if (isLandingPage) {
+                e.preventDefault();
+                scrollToSection("home");
+              }
+            }}
+          >
+            <Image
+              src="/new.jpeg"
+              alt="Hospeniel"
+              width={160}  // adjust width
+              height={20}  // adjust height
+              priority
+            />
+          </Link>
+        </div>
 
 
         {/* Landing page: show section links + Login + Signup */}

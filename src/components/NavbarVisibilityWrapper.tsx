@@ -9,6 +9,7 @@ export default function NavbarVisibilityWrapper({ children }: { children: React.
   const pathname = usePathname();
   const isVendorPage = pathname?.startsWith("/vendor");
   const isAdminPage = pathname?.startsWith("/admin");
+  const isExplorePage = pathname?.startsWith("/explore");
 
   return (
     <>
@@ -16,7 +17,11 @@ export default function NavbarVisibilityWrapper({ children }: { children: React.
 
       <main
         className={`min-h-screen ${
-          isVendorPage || isAdminPage ? "p-0" : "pt-24 p-6"
+          isVendorPage || isAdminPage
+            ? "p-0"
+            : isExplorePage
+            ? "pt-32 p-6"
+            : "pt-28 p-6"
         } ${isVendorPage || isAdminPage ? "bg-gray-50" : "bg-white"}`}
         style={{ 
           overflowX: 'hidden',

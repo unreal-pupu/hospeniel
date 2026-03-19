@@ -30,8 +30,7 @@ export default function AdminUsersPage() {
       const { data, error } = await supabase
         .from("profiles")
         .select("*")
-        .neq("role", "vendor")
-        .neq("is_admin", true)
+        .eq("role", "user")
         .order("created_at", { ascending: false });
 
       if (error) throw error;

@@ -40,21 +40,42 @@ export default function SettingsPage() {
       // Explicitly type the user to match Supabase User type
       setUser(user as User);
 
-      const { data, error } = await supabase
-        .from("user_settings")
-        .select("username, phone, gender, notifications, avatar_url")
-        .eq("user_id", user.id)
-        .single();
+      const [
+        { data: settingsData, error: settingsError },
+        { data: profileData, error: profileError },
+      ] = await Promise.all([
+        supabase
+          .from("user_settings")
+          .select("username, phone, gender, notifications, avatar_url")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("profiles")
+          .select("name, phone_number")
+          .eq("id", user.id)
+          .maybeSingle(),
+      ]);
 
-      if (!error && data) {
-        setProfile({
-          username: data.username || "",
-          phone: data.phone || "",
-          gender: data.gender || "",
-          notifications: data.notifications ?? true,
-          avatar_url: data.avatar_url || "",
-        });
+      if (settingsError) {
+        console.warn("Settings fetch error:", settingsError);
       }
+      if (profileError) {
+        console.warn("Profile fetch error:", profileError);
+      }
+
+      const fallbackUsername =
+        settingsData?.username ||
+        profileData?.name ||
+        user.email?.split("@")[0] ||
+        "";
+
+      setProfile({
+        username: fallbackUsername || "",
+        phone: settingsData?.phone || profileData?.phone_number || "",
+        gender: settingsData?.gender || "",
+        notifications: settingsData?.notifications ?? true,
+        avatar_url: settingsData?.avatar_url || "",
+      });
 
       setLoading(false);
     };

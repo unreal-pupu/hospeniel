@@ -19,6 +19,15 @@ interface Vendor {
   is_premium: boolean;
   approval_status: "pending" | "approved" | "rejected" | null;
   created_at: string;
+  verified?: boolean;
+}
+
+interface VendorPurchasedTool {
+  id: string;
+  tool_name: string;
+  status: string;
+  purchase_date: string;
+  expiry_date: string;
 }
 
 export default function AdminVendorsPage() {
@@ -28,10 +37,44 @@ export default function AdminVendorsPage() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
   const [updatingApproval, setUpdatingApproval] = useState<string | null>(null);
+  const [updatingVerification, setUpdatingVerification] = useState<string | null>(null);
+  const [toolsByVendorId, setToolsByVendorId] = useState<Record<string, VendorPurchasedTool[]>>({});
 
   useEffect(() => {
     fetchVendors();
   }, []);
+
+  const fetchPremiumToolsForVendors = async (vendorIds: string[]) => {
+    if (vendorIds.length === 0) {
+      setToolsByVendorId({});
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from("vendor_purchased_tools")
+        .select("id, vendor_id, tool_name, status, purchase_date, expiry_date")
+        .in("vendor_id", vendorIds)
+        .order("expiry_date", { ascending: false });
+
+      if (error) {
+        console.error("Error fetching vendor premium tools:", error);
+        setToolsByVendorId({});
+        return;
+      }
+
+      const rows = (data || []) as (VendorPurchasedTool & { vendor_id: string })[];
+      const byVendor: Record<string, VendorPurchasedTool[]> = {};
+      for (const row of rows) {
+        const { vendor_id, ...tool } = row;
+        if (!byVendor[vendor_id]) byVendor[vendor_id] = [];
+        byVendor[vendor_id].push(tool);
+      }
+      setToolsByVendorId(byVendor);
+    } catch (err) {
+      console.error("Error building premium tools map:", err);
+      setToolsByVendorId({});
+    }
+  };
 
   const fetchVendors = async () => {
     try {
@@ -42,7 +85,15 @@ export default function AdminVendorsPage() {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setVendors(data || []);
+      const vendorProfiles = (data || []) as Vendor[];
+
+      const merged = vendorProfiles.map((vendor) => ({
+        ...vendor,
+        verified: vendor.verified ?? false,
+      }));
+
+      setVendors(merged);
+      await fetchPremiumToolsForVendors(merged.map((v) => v.id));
     } catch (error) {
       console.error("Error fetching vendors:", error);
     } finally {
@@ -110,12 +161,113 @@ export default function AdminVendorsPage() {
     }
   };
 
+  const updateVerificationStatus = async (vendor: Vendor, verified: boolean) => {
+    setUpdatingVerification(vendor.id);
+    try {
+      console.log("[Admin Vendors] Updating verification", {
+        profileId: vendor.id,
+        verified,
+      });
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .update({ verified })
+        .eq("id", vendor.id)
+        .select("id, verified");
+
+      if (error) {
+        console.error("[Admin Vendors] Verification update failed", {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        alert("No vendor profile found to update verification status.");
+        console.warn("[Admin Vendors] Verification update returned no rows", {
+          profileId: vendor.id,
+          verified,
+        });
+        return;
+      }
+
+      if (data.length > 1) {
+        console.warn("[Admin Vendors] Verification update returned multiple rows", {
+          rows: data.map((row: { id: string }) => row.id),
+          profileId: vendor.id,
+        });
+      }
+
+      setVendors((prev) =>
+        prev.map((item) =>
+          item.id === vendor.id ? { ...item, verified: data[0]?.verified ?? verified } : item
+        )
+      );
+      alert(`Vendor verification ${verified ? "enabled" : "removed"} successfully.`);
+    } catch (error) {
+      console.error("Error updating vendor verification:", error);
+      alert("Failed to update vendor verification");
+    } finally {
+      setUpdatingVerification(null);
+    }
+  };
+
   const getCategoryLabel = (category: string | null) => {
     if (!category) return "N/A";
     return category
       .split("_")
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
       .join(" ");
+  };
+
+  const formatToolDateRange = (purchaseDate: string, expiryDate: string) => {
+    const p = new Date(purchaseDate);
+    const e = new Date(expiryDate);
+    const fmt = (d: Date) =>
+      d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    return `${fmt(p)} → ${fmt(e)}`;
+  };
+
+  const isToolActive = (expiryDateIso: string) =>
+    new Date(expiryDateIso).getTime() > Date.now();
+
+  const renderPremiumToolsCell = (vendorId: string) => {
+    const tools = toolsByVendorId[vendorId];
+    if (!tools || tools.length === 0) {
+      return (
+        <span className="text-gray-500 text-sm italic">No active tools</span>
+      );
+    }
+    return (
+      <div className="flex flex-col gap-1.5 max-w-[220px]">
+        {tools.map((tool) => {
+          const active = isToolActive(tool.expiry_date);
+          return (
+            <div
+              key={tool.id}
+              className="flex flex-wrap items-center gap-1.5 text-xs"
+            >
+              <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-800 font-medium truncate max-w-[120px]">
+                {tool.tool_name}
+              </span>
+              <span
+                className={`shrink-0 px-2 py-0.5 rounded-full font-semibold ${
+                  active ? "bg-emerald-100 text-emerald-800" : "bg-gray-200 text-gray-600"
+                }`}
+              >
+                {active ? "Active" : "Expired"}
+              </span>
+              <span className="text-gray-500 shrink-0">
+                {formatToolDateRange(tool.purchase_date, tool.expiry_date)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   const getStatusBadge = (status: string | null) => {
@@ -228,20 +380,30 @@ export default function AdminVendorsPage() {
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Location</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Plan</th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Premium Tools</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredVendors.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-8 text-gray-500">
+                    <td colSpan={8} className="text-center py-8 text-gray-500">
                       No vendors found
                     </td>
                   </tr>
                 ) : (
                   filteredVendors.map((vendor) => (
                     <tr key={vendor.id} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4">{vendor.name || "N/A"}</td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <span>{vendor.name || "N/A"}</span>
+                          {vendor.verified && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
+                              Verified
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="py-3 px-4">{vendor.email}</td>
                       <td className="py-3 px-4">
                         <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs">
@@ -262,6 +424,9 @@ export default function AdminVendorsPage() {
                         >
                           {vendor.subscription_plan || "free_trial"}
                         </span>
+                      </td>
+                      <td className="py-3 px-4 align-top">
+                        {renderPremiumToolsCell(vendor.id)}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex flex-wrap items-center gap-2">
@@ -312,6 +477,21 @@ export default function AdminVendorsPage() {
                               <SelectItem value="professional">Professional</SelectItem>
                             </SelectContent>
                           </Select>
+                          <Button
+                            size="sm"
+                            variant={vendor.verified ? "outline" : "default"}
+                            onClick={() => updateVerificationStatus(vendor, !vendor.verified)}
+                            disabled={updatingVerification === vendor.id}
+                            className={vendor.verified ? "border-blue-500 text-blue-600" : "bg-blue-600 hover:bg-blue-700 text-white"}
+                          >
+                            {updatingVerification === vendor.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : vendor.verified ? (
+                              "Remove Verification"
+                            ) : (
+                              "Verify Vendor"
+                            )}
+                          </Button>
                         </div>
                       </td>
                     </tr>

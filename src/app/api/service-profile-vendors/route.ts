@@ -58,7 +58,7 @@ export async function GET(req: Request) {
     // Step 1: Fetch chef/home cook profiles (profiles is source of truth)
     const { data: profilesData, error: profilesError } = await supabase
       .from("profiles")
-      .select("id, name, category, location, role")
+      .select("id, name, category, location, role, verified")
       .eq("role", "vendor")
       .in("category", ["chef", "home_cook"]);
 
@@ -120,6 +120,7 @@ export async function GET(req: Request) {
           base_price: serviceProfile?.base_price || 0,
           service_mode: serviceProfile?.service_mode || [],
           bio: serviceProfile?.bio || null,
+          verified: profile.verified ?? false,
         };
       })
       .filter((vendor): vendor is NonNullable<typeof vendor> => vendor !== null);

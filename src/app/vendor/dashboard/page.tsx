@@ -1,7 +1,5 @@
 "use client";
 
-"use client";
-
 import { useEffect, useState, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,6 +14,7 @@ import type {
 } from "@supabase/supabase-js";
 import { getRoleBasedRedirect } from "@/lib/roleRouting";
 import dynamic from "next/dynamic";
+import { VendorPremiumToolsSection } from "@/components/vendor-premium-tools-section";
 
 const CookChefDashboard = dynamic(() => import('@/components/CookChefDashboard'), {
   loading: () => (
@@ -63,6 +62,13 @@ const calculateCommission = (amount: number): number => {
 const calculateNetEarnings = (amount: number): number => {
   return amount - calculateCommission(amount);
 };
+
+function isValidUuid(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+}
 
 const VendorDashboard: React.FC = () => {
   const router = useRouter();
@@ -702,6 +708,12 @@ const VendorDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {isValidUuid(displayVendor.id) && (
+        <div className="mb-8">
+          <VendorPremiumToolsSection vendorId={displayVendor.id} />
+        </div>
+      )}
 
       {/* Payout + Commission Notice */}
       <div className="mb-6 p-4 bg-amber-50 border-2 border-amber-300 rounded-lg">

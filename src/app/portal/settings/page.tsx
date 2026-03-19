@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Loader2, Save, CheckCircle } from "lucide-react";
+import Image from "next/image";
 
 interface RiderProfile {
   name: string;
@@ -36,17 +37,25 @@ export default function RiderSettingsPage() {
 
   const fetchProfile = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) {
+        console.error("Auth error:", userError);
+      }
+      if (!user) {
+        setMessage({ type: "error", text: "Please log in to access settings." });
+        return;
+      }
 
       // Fetch profile data (avatar_url is in user_settings, not profiles)
       const { data, error } = await supabase
         .from("profiles")
         .select("name, email, phone_number, address, is_available")
         .eq("id", user.id)
-        .single();
+        .maybeSingle();
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
 
       // Optionally fetch avatar from user_settings (don't block if it fails)
       let avatarUrl: string | null = null;
@@ -63,16 +72,16 @@ export default function RiderSettingsPage() {
       }
 
       setProfile({
-        name: data.name || "",
-        email: data.email || "",
-        phone_number: data.phone_number || null,
-        address: data.address || "",
+        name: data?.name || user.user_metadata?.full_name || "",
+        email: data?.email || user.email || "",
+        phone_number: data?.phone_number || null,
+        address: data?.address || "",
         avatar_url: avatarUrl,
-        is_available: data.is_available ?? true,
+        is_available: data?.is_available ?? true,
       });
     } catch (error) {
       console.error("Error fetching profile:", error);
-      alert("Failed to load profile");
+      setMessage({ type: "error", text: "Failed to load settings. Please try again." });
     } finally {
       setLoading(false);
     }
@@ -138,6 +147,28 @@ export default function RiderSettingsPage() {
       )}
 
       <form onSubmit={handleSave}>
+        <Card>
+          <CardHeader>
+            <CardTitle>Profile Image</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4">
+              <div className="relative h-20 w-20 rounded-full overflow-hidden bg-gray-100 border border-gray-200">
+                <Image
+                  src={profile.avatar_url || "/default-avatar.png"}
+                  alt="Rider profile"
+                  fill
+                  className="object-cover"
+                  sizes="80px"
+                />
+              </div>
+              <p className="text-sm text-gray-500">
+                Profile image updates are managed from your account settings.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Personal Information</CardTitle>

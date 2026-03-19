@@ -17,6 +17,8 @@ export interface Landmark {
   fee: number;
 }
 
+const DELIVERY_FEE_SURCHARGE = 200;
+
 // Landmark-based delivery zones for Bayelsa
 export const BAYELSA_LANDMARKS: Landmark[] = [
   // Zone 1 - ₦1,500
@@ -65,7 +67,8 @@ export function getDeliveryFeeByLandmark(landmark: string): number {
   const landmarkData = BAYELSA_LANDMARKS.find(
     (l) => l.name.toLowerCase() === normalizedLandmark.toLowerCase()
   );
-  return landmarkData?.fee || 0;
+  if (!landmarkData?.fee) return 0;
+  return landmarkData.fee + DELIVERY_FEE_SURCHARGE;
 }
 
 /**
@@ -128,7 +131,8 @@ export function getDeliveryFeeByState(state: string): number {
   const zone = DELIVERY_ZONES.find(
     (z) => z.state.toLowerCase() === normalizedState.toLowerCase()
   );
-  return zone?.fee || 0;
+  if (!zone?.fee) return 0;
+  return zone.fee + DELIVERY_FEE_SURCHARGE;
 }
 
 /**
@@ -153,3 +157,13 @@ export function getDeliveryZoneByState(state: string): DeliveryZone | null {
 export function getAvailableStates(): string[] {
   return ["Bayelsa"];
 }
+
+/**
+ * Get delivery zones as options for registration forms
+ * Returns zone names: "Zone 1", "Zone 2", "Zone 3", "Zone 4"
+ * @returns Array of zone names
+ */
+export function getDeliveryZonesForRegistration(): string[] {
+  return ["Zone 1", "Zone 2", "Zone 3", "Zone 4"];
+}
+

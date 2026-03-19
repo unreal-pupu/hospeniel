@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import NavbarVisibilityWrapper from "@/components/NavbarVisibilityWrapper";
-import CopyProtection from "@/components/CopyProtection";
+import EnableInspection from "@/components/EnableInspection";
 import { CartProvider } from "../app/context/CartContex";
 import SupabaseProvider from "../../src/providers/SupabaseProvider"; // ✅ default import
 
@@ -72,8 +72,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        {/* Copy Protection - Disables text selection, right-click, and keyboard shortcuts */}
-        <CopyProtection />
+        <EnableInspection />
         {/* ✅ Supabase wraps everything so session is available globally */}
         <SupabaseProvider>
           <CartProvider>

@@ -7,6 +7,7 @@ interface InitializePaymentRequest {
   food_amount?: number; // Food subtotal in Naira
   delivery_fee?: number; // Delivery fee in Naira
   vat_amount?: number; // VAT on food in Naira
+  service_charge?: number; // Service charge in Naira
   vendor_id: string; // Vendor's profile_id (auth.users.id)
   order_id?: string;
   payment_id?: string;
@@ -25,6 +26,7 @@ export async function POST(req: Request) {
       food_amount,
       delivery_fee,
       vat_amount,
+      service_charge,
       vendor_id,
       order_id,
       payment_id,
@@ -106,19 +108,25 @@ export async function POST(req: Request) {
       typeof delivery_fee === "number"
         ? delivery_fee
         : deliveryFeeFromDetails;
+    const resolvedServiceCharge =
+      typeof service_charge === "number"
+        ? service_charge
+        : typeof metadata?.service_charge === "number"
+        ? metadata.service_charge
+        : 0;
     const resolvedFoodAmount =
       typeof food_amount === "number"
         ? food_amount
-        : Math.max(amount - (resolvedDeliveryFee || 0), 0);
+        : Math.max(amount - (resolvedDeliveryFee || 0) - resolvedServiceCharge, 0);
     const resolvedVatAmount =
       typeof vat_amount === "number"
         ? vat_amount
-        : Math.max(amount - resolvedFoodAmount - (resolvedDeliveryFee || 0), 0);
+        : Math.max(amount - resolvedFoodAmount - (resolvedDeliveryFee || 0) - resolvedServiceCharge, 0);
 
     // Commission is 10% of food amount only
     const COMMISSION_RATE = 0.10;
     const commissionAmount = resolvedFoodAmount * COMMISSION_RATE;
-    const platformShareAmount = commissionAmount + (resolvedDeliveryFee || 0) + resolvedVatAmount;
+    const platformShareAmount = commissionAmount + (resolvedDeliveryFee || 0) + resolvedVatAmount + resolvedServiceCharge;
     
     // Convert amount to kobo (Paystack uses kobo as the smallest currency unit)
     const amountInKobo = Math.round(amount * 100);
@@ -167,6 +175,7 @@ export async function POST(req: Request) {
         food_amount: resolvedFoodAmount,
         delivery_fee: resolvedDeliveryFee || 0,
         vat_amount: resolvedVatAmount,
+        service_charge: resolvedServiceCharge,
         commission_amount: commissionAmount, // 10% of food amount
         platform_share_amount: platformShareAmount,
         transaction_charge_kobo: transactionChargeInKobo, // Platform share in kobo
@@ -263,4 +272,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
 

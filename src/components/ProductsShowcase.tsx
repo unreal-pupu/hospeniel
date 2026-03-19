@@ -8,6 +8,7 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ShoppingCart, Loader2 } from "lucide-react";
+import VerifiedBadge from "@/components/VerifiedBadge";
 
 interface MenuItem {
   id: string;
@@ -22,10 +23,11 @@ interface MenuItem {
     name: string;
     image_url: string | null;
     location?: string | null;
+    verified?: boolean;
   };
 }
 
-export default function ProductsShowcase() {
+function ProductsShowcase() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [addingToCart, setAddingToCart] = useState<string | null>(null);
@@ -88,13 +90,13 @@ export default function ProductsShowcase() {
         // Fetch vendor information
         const { data: vendorsData } = await supabase
           .from("vendors")
-          .select("id, name, business_name, image_url, location, profile_id")
+          .select("id, name, business_name, image_url, location, profile_id, verified")
           .in("profile_id", vendorIds);
 
         // Also fetch profiles for vendor names
         const { data: profilesData } = await supabase
           .from("profiles")
-          .select("id, name, location")
+          .select("id, name, location, verified")
           .in("id", vendorIds)
           .eq("role", "vendor");
 
@@ -109,6 +111,7 @@ export default function ProductsShowcase() {
                 name: profile?.name || vendor.business_name || vendor.name || "Vendor",
                 image_url: vendor.image_url,
                 location: vendor.location || profile?.location,
+                verified: profile?.verified ?? vendor.verified ?? false,
               });
             }
           });
@@ -184,7 +187,7 @@ export default function ProductsShowcase() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold text-hospineil-primary font-header mb-4">
-            Featured Products
+            Trending / Popular Meals
           </h2>
           <p className="text-lg text-gray-600 font-body max-w-2xl mx-auto">
             Discover delicious meals, treats, and culinary delights from our amazing vendors
@@ -222,8 +225,11 @@ export default function ProductsShowcase() {
               <CardContent className="p-5 pt-4 flex flex-col flex-grow">
                 <div className="mb-2">
                   {item.vendors?.name && (
-                    <p className="text-xs text-gray-500 font-body mb-1">
-                      {item.vendors.name}
+                    <p className="text-xs text-gray-500 font-body mb-1 flex items-center gap-1">
+                      <span>{item.vendors.name}</span>
+                      {item.vendors.verified && (
+                        <VerifiedBadge verified={item.vendors.verified} className="h-3 w-3 text-blue-600" />
+                      )}
                     </p>
                   )}
                   <h3 className="text-lg font-semibold text-gray-800 mb-2 line-clamp-2 font-header">
@@ -278,3 +284,5 @@ export default function ProductsShowcase() {
   );
 }
 
+export { ProductsShowcase };
+export default ProductsShowcase;

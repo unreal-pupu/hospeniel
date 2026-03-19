@@ -6,14 +6,16 @@ import { supabase } from "@/lib/supabaseClient";
 import { loadPaystackScript, getAuthenticatedUserEmail } from "@/lib/paystack";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
-  CheckCircle,
-  Crown,
   Loader2,
-  AlertCircle,
+  Star,
+  MapPin,
+  Megaphone,
+  BadgeCheck,
+  Share2,
+  BarChart3,
 } from "lucide-react";
-import { FiCheck } from "react-icons/fi";
+import { getExpectedToolPriceKobo, type VendorToolBilling } from "@/lib/vendor-premium-tools-catalog";
 
 interface SubscriptionPlan {
   name: string;
@@ -78,12 +80,37 @@ const PLANS: SubscriptionPlan[] = [
   },
 ];
 
+const PREMIUM_TOOLS = [
+  {
+    title: "Featured Placement",
+    description: "Appear at the top of home page and explore pages for maximum visibility.",
+    icon: Star,
+  },
+  {
+    title: "Priority Location Boost",
+    description: "Top listing when customers use the filter by location (your exact location).",
+    icon: MapPin,
+  },
+  {
+    title: "Sponsored Banners",
+    description: "Highlight your offers with homepage promotional banners.",
+    icon: Megaphone,
+  },
+  {
+    title: "Analytical Marketing",
+    description: "View sales trends and customer insights to understand how your products perform.",
+    icon: BarChart3,
+  },
+];
+
 export default function SubscriptionPage() {
   const router = useRouter();
   const [currentPlan, setCurrentPlan] = useState<string>("free_trial");
   const [loading, setLoading] = useState(true);
   const [upgrading, setUpgrading] = useState<string | null>(null);
   const [planBillingPeriod, setPlanBillingPeriod] = useState<Record<string, boolean>>({});
+  const [isYearlyPricing, setIsYearlyPricing] = useState(false);
+  const [toolCheckout, setToolCheckout] = useState<string | null>(null);
 
   const fetchCurrentPlan = useCallback(async () => {
     try {
@@ -251,6 +278,152 @@ export default function SubscriptionPage() {
     }
   };
 
+  const activatePremiumToolAfterPayment = async (
+    userId: string,
+    paymentReference: string,
+    toolTitle: string
+  ) => {
+    const maxAttempts = 8;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const statusResponse = await fetch("/api/vendor-tools/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, paymentReference, toolName: toolTitle }),
+      });
+      const statusData = await statusResponse.json();
+      if (statusResponse.ok && statusData?.success) {
+        const isActive = Boolean(statusData.data?.featureActive);
+        if (isActive) {
+          alert(`Payment successful! ${toolTitle} is now active on your dashboard.`);
+          return;
+        }
+      }
+
+      // Fallback verifier (not primary path): reconcile payment if webhook is delayed/failed
+      const fallbackResponse = await fetch("/api/vendor-tools/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, paymentReference }),
+      });
+      const fallbackData = await fallbackResponse.json();
+      if (fallbackResponse.ok && fallbackData?.success) {
+        const already = fallbackData.alreadyActivated ? " (already recorded)" : "";
+        alert(`Payment successful! ${toolTitle} is now active${already}.`);
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    throw new Error("Payment confirmed but activation is still pending reconciliation.");
+  };
+
+  const handleToolCheckout = async (
+    toolTitle: string,
+    billing: VendorToolBilling
+  ) => {
+    setToolCheckout(toolTitle);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        alert("Please log in to activate a premium tool.");
+        setToolCheckout(null);
+        return;
+      }
+
+      const paystackPublicKey = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
+      if (!paystackPublicKey) {
+        console.error("❌ Paystack public key not configured");
+        alert("Payment system is not configured. Please contact support.");
+        setToolCheckout(null);
+        return;
+      }
+
+      const userEmail = user.email || await getAuthenticatedUserEmail();
+      if (!userEmail) {
+        alert("Unable to get your email address. Please try again.");
+        setToolCheckout(null);
+        return;
+      }
+
+      try {
+        await loadPaystackScript();
+      } catch (scriptError) {
+        console.error("❌ Failed to load Paystack script:", scriptError);
+        alert("Failed to load payment system. Please refresh the page and try again.");
+        setToolCheckout(null);
+        return;
+      }
+
+      const initializeResponse = await fetch("/api/vendor-tools/initialize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, toolName: toolTitle, billing }),
+      });
+      const initializeData = await initializeResponse.json();
+      if (!initializeResponse.ok || !initializeData?.success) {
+        alert(initializeData?.error || "Could not initialize premium tool payment.");
+        setToolCheckout(null);
+        return;
+      }
+      const paymentReference = initializeData.data.paymentReference as string;
+      const amountKobo = Number(initializeData.data.amountKobo || 0);
+      if (!paymentReference || !amountKobo) {
+        alert("Payment initialization returned invalid data.");
+        setToolCheckout(null);
+        return;
+      }
+
+      if (!window.PaystackPop || typeof window.PaystackPop.setup !== "function") {
+        alert("Payment system not ready. Please refresh the page and try again.");
+        setToolCheckout(null);
+        return;
+      }
+
+      const callbackUserId = user.id;
+
+      const handler = window.PaystackPop.setup({
+        key: paystackPublicKey,
+        email: userEmail,
+        amount: amountKobo,
+        currency: "NGN",
+        ref: paymentReference,
+        metadata: initializeData.data.metadata,
+        callback: function(response: { reference: string; status: string }) {
+          if (response.status === "success") {
+            alert("Payment successful, activating features...");
+            activatePremiumToolAfterPayment(callbackUserId, response.reference, toolTitle).catch(
+              (err) => {
+                console.error("Premium tool activation error:", err);
+                alert(
+                  `Payment succeeded but activation failed: ${err instanceof Error ? err.message : "Unknown error"}. Please contact support with reference: ${response.reference}`
+                );
+              }
+            );
+          } else {
+            alert("Payment was not completed successfully. Please try again.");
+          }
+          setToolCheckout(null);
+        },
+        onClose: function() {
+          setToolCheckout(null);
+        },
+      });
+
+      if (!handler || typeof handler.openIframe !== "function") {
+        alert("Unable to open payment window. Please refresh the page and try again.");
+        setToolCheckout(null);
+        return;
+      }
+
+      handler.openIframe();
+    } catch (error) {
+      console.error("❌ Error in tool checkout:", error);
+      const errorMessage = error instanceof Error ? error.message : "Please try again.";
+      alert(`An error occurred: ${errorMessage}`);
+      setToolCheckout(null);
+    }
+  };
+
   const updateSubscriptionDirectly = async (userId: string, planValue: string) => {
     try {
       const response = await fetch("/api/subscription/update", {
@@ -352,6 +525,32 @@ export default function SubscriptionPage() {
     }).format(price);
   };
 
+  const getToolPrice = (toolTitle: string) => {
+    const monthlyKobo = getExpectedToolPriceKobo(toolTitle, "monthly");
+    const yearlyKobo = getExpectedToolPriceKobo(toolTitle, "yearly");
+
+    const monthlyNgn = monthlyKobo ? monthlyKobo / 100 : 0;
+    const yearlyNgn = yearlyKobo ? yearlyKobo / 100 : 0;
+
+    if (!isYearlyPricing) {
+      return {
+        price: monthlyNgn,
+        label: "month",
+        monthlyPrice: monthlyNgn,
+        yearlyPrice: yearlyNgn,
+        showYearlyDiscountBadge: false,
+      };
+    }
+
+    return {
+      price: yearlyNgn,
+      label: "year",
+      monthlyPrice: monthlyNgn,
+      yearlyPrice: yearlyNgn,
+      showYearlyDiscountBadge: true,
+    };
+  };
+
   const toggleBillingPeriod = (planValue: string) => {
     setPlanBillingPeriod((prev) => ({
       ...prev,
@@ -381,215 +580,106 @@ export default function SubscriptionPage() {
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Subscription Plans</h1>
-        <p className="text-gray-600">
-          Choose the plan that best fits your business needs
-        </p>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          Boost your sales with optional premium tools
+        </h1>
+        <p className="text-gray-600">Stand out and reach more customers.</p>
       </div>
 
-      {/* Current Plan Badge */}
-      <div className="mb-6">
-        <Badge variant="outline" className="text-sm px-4 py-2">
-          Current Plan: <span className="font-semibold capitalize ml-1">{currentPlan.replace("_", " ")}</span>
-        </Badge>
+      {/* Billing Toggle */}
+      <div className="flex items-center gap-3 mb-6">
+        <span className={`text-sm font-medium ${!isYearlyPricing ? "text-gray-900" : "text-gray-500"}`}>
+          Monthly
+        </span>
+        <button
+          onClick={() => setIsYearlyPricing((prev) => !prev)}
+          className={`relative inline-flex h-8 w-16 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+            isYearlyPricing ? "bg-hospineil-primary" : "bg-gray-300"
+          }`}
+          aria-label="Toggle billing period"
+          type="button"
+        >
+          <span
+            className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+              isYearlyPricing ? "translate-x-9" : "translate-x-1"
+            }`}
+          />
+        </button>
+        <div className="flex items-center gap-2">
+          <span className={`text-sm font-medium ${isYearlyPricing ? "text-gray-900" : "text-gray-500"}`}>
+            Yearly
+          </span>
+          {isYearlyPricing && (
+            <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-hospineil-primary/10 text-hospineil-primary">
+              10% OFF
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Plans Grid */}
-      <div className="grid md:grid-cols-3 gap-8">
-        {PLANS.map((plan, index) => {
-          const status = getPlanStatus(plan.value);
-          const isCurrent = plan.value === currentPlan;
-          const displayPrice = getDisplayPrice(plan);
-          const isYearly = planBillingPeriod[plan.value] || false;
-
-          // Determine card and button colors based on index (matching Pricing component)
-          let cardBg, textColor, buttonBg, buttonText, buttonHover;
-          if (index === 0) {
-            // First card: Teal background, Orange button
-            cardBg = "bg-hospineil-primary";
-            textColor = "text-white";
-            buttonBg = "bg-hospineil-accent";
-            buttonText = "text-hospineil-light-bg";
-            buttonHover = "hover:bg-hospineil-accent-hover";
-          } else if (index === 1) {
-            // Middle card: Light background, Teal button
-            cardBg = "bg-hospineil-light-bg";
-            textColor = "text-gray-800";
-            buttonBg = "bg-hospineil-primary";
-            buttonText = "text-hospineil-light-bg";
-            buttonHover = "hover:bg-hospineil-primary/90";
-          } else {
-            // Last card: Orange background, Light button
-            cardBg = "bg-hospineil-accent";
-            textColor = "text-white";
-            buttonBg = "bg-hospineil-light-bg";
-            buttonText = "text-hospineil-primary";
-            buttonHover = "hover:bg-hospineil-light-bg/90";
-          }
-
+      {/* Premium Tools Grid */}
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {PREMIUM_TOOLS.map((tool) => {
+          const Icon = tool.icon;
+          const displayPrice = getToolPrice(tool.title);
           return (
-            <div
-              key={plan.value}
-              className={`relative rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-xl hover:scale-105 ${cardBg} border-2 border-transparent`}
+            <Card
+              key={tool.title}
+              className="border-2 border-transparent rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-xl hover:scale-[1.02] bg-hospineil-light-bg"
             >
-              {plan.isRecommended && (
-                <div className="absolute top-0 right-0 bg-white/20 backdrop-blur-sm text-white px-4 py-1 text-xs font-semibold rounded-bl-lg font-body">
-                  POPULAR
+              <CardContent className="p-6 space-y-4">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-hospineil-primary/10 text-hospineil-primary">
+                    <Icon size={20} />
+                  </span>
+                  <h3 className="text-lg font-semibold text-gray-900">{tool.title}</h3>
                 </div>
-              )}
-              {plan.value === "free_trial" && (
-                <div className="absolute top-0 right-0 bg-white/20 backdrop-blur-sm text-white px-4 py-1 text-xs font-semibold rounded-bl-lg font-body">
-                  FREE
-                </div>
-              )}
+                <p className="text-sm text-gray-600">{tool.description}</p>
+                <div className="pt-1 space-y-1">
+                  <p className="text-xl font-bold text-gray-900">
+                    {formatPrice(displayPrice.price)}
+                    <span className="text-sm font-medium text-gray-500"> / {displayPrice.label}</span>
+                  </p>
 
-              <div className="p-8">
-                {/* Plan Name */}
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className={`text-2xl font-bold font-header ${textColor}`}>
-                    {plan.name}
-                  </h3>
-                  {isCurrent && (
-                    <CheckCircle className={`h-6 w-6 ${textColor === "text-white" ? "text-white" : "text-green-600"}`} />
-                  )}
-                </div>
-
-                {/* Description */}
-                <p className={`text-sm mb-4 font-body ${textColor === "text-white" ? "text-white/90" : "text-gray-700"}`}>
-                  {plan.description}
-                </p>
-
-                {/* Price and Billing Toggle */}
-                <div className="mb-6">
-                  {plan.price === 0 ? (
-                    <span className={`text-4xl font-bold font-header ${textColor}`}>
-                      FREE
+                  <div className="text-xs text-gray-600 flex items-center gap-2 flex-wrap">
+                    <span>
+                      Monthly: {formatPrice(displayPrice.monthlyPrice)} / month
                     </span>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="flex items-baseline gap-2">
-                        <span className={`text-4xl font-bold font-header ${textColor}`}>
-                          {formatPrice(displayPrice.price)}
+                    <span className="text-gray-300">•</span>
+                    <span className="flex items-center gap-2">
+                      Yearly: {formatPrice(displayPrice.yearlyPrice)} / year
+                      {isYearlyPricing && (
+                        <span className="px-2 py-0.5 text-[11px] font-semibold rounded-full bg-hospineil-primary/10 text-hospineil-primary">
+                          10% OFF
                         </span>
-                        <span className={`text-sm font-body ${textColor === "text-white" ? "text-white/80" : "text-gray-600"}`}>
-                          /{displayPrice.label}
-                        </span>
-                      </div>
-                      {/* Billing Period Toggle */}
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => toggleBillingPeriod(plan.value)}
-                          className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-                            isYearly 
-                              ? textColor === "text-white" ? "bg-white/30" : "bg-hospineil-primary" 
-                              : textColor === "text-white" ? "bg-white/20" : "bg-gray-300"
-                          } ${textColor === "text-white" ? "focus:ring-white" : "focus:ring-hospineil-primary"}`}
-                          aria-label="Toggle billing period"
-                        >
-                          <span
-                            className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                              isYearly ? "translate-x-8" : "translate-x-1"
-                            }`}
-                          />
-                        </button>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-xs font-body ${!isYearly ? (textColor === "text-white" ? "text-white" : "text-gray-800") : (textColor === "text-white" ? "text-white/60" : "text-gray-500")}`}>
-                            Monthly
-                          </span>
-                          <span className={`text-xs font-body ${isYearly ? (textColor === "text-white" ? "text-white" : "text-gray-800") : (textColor === "text-white" ? "text-white/60" : "text-gray-500")}`}>
-                            Yearly
-                          </span>
-                          {isYearly && (
-                            <span className={`ml-1 px-2 py-0.5 text-xs font-semibold rounded-full font-body ${
-                              textColor === "text-white" 
-                                ? "bg-white/20 text-white" 
-                                : "bg-hospineil-primary/20 text-hospineil-primary"
-                            }`}>
-                              10% OFF
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                      )}
+                    </span>
+                  </div>
                 </div>
-
-                {/* Status Badge */}
-                {!isCurrent && (
-                  <Badge className={`mb-4 ${status.color} font-body`}>
-                    {status.label}
-                  </Badge>
-                )}
-
-                {/* Features List */}
-                <ul className="space-y-4 mb-8">
-                  {plan.features.map((feature, featureIndex) => (
-                    <li
-                      key={featureIndex}
-                      className="flex items-start gap-3"
-                    >
-                      <FiCheck
-                        className={`flex-shrink-0 w-5 h-5 mt-0.5 ${textColor === "text-white" ? "text-white" : "text-hospineil-accent"}`}
-                      />
-                      <span className={`text-sm font-body ${textColor === "text-white" ? "text-white/90" : "text-gray-800"}`}>
-                        {feature}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-
-                {/* CTA Button */}
                 <Button
-                  onClick={() => handleUpgrade(plan.value)}
-                  disabled={isCurrent || upgrading === plan.value}
-                  className={`w-full rounded-full py-3 font-button font-medium transition-all duration-300 hover:scale-105 hover:shadow-lg focus:ring-2 focus:ring-hospineil-primary focus:ring-offset-2 ${
-                    isCurrent
-                      ? "bg-gray-300 text-gray-600 cursor-not-allowed hover:scale-100"
-                      : `${buttonBg} ${buttonText} ${buttonHover}`
-                  }`}
+                  onClick={() =>
+                    handleToolCheckout(
+                      tool.title,
+                      isYearlyPricing ? "yearly" : "monthly"
+                    )
+                  }
+                  className="w-full rounded-full bg-hospineil-primary text-hospineil-light-bg hover:bg-hospineil-primary/90"
+                  disabled={toolCheckout === tool.title}
                 >
-                  {upgrading === plan.value ? (
+                  {toolCheckout === tool.title ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Processing...
                     </>
-                  ) : isCurrent ? (
-                    <>
-                      <CheckCircle className="mr-2 h-4 w-4" />
-                      Current Plan
-                    </>
                   ) : (
-                    <>
-                      <Crown className="mr-2 h-4 w-4" />
-                      {status.label}
-                    </>
+                    "Activate Tool"
                   )}
                 </Button>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           );
         })}
       </div>
-
-      {/* Info Section */}
-      <Card className="mt-8 bg-blue-50 border-blue-200">
-        <CardContent className="p-6">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <h3 className="font-semibold text-blue-900 mb-2">
-                Subscription Information
-              </h3>
-              <ul className="text-sm text-blue-800 space-y-1">
-                <li>• Free trial lasts 30 days from account creation</li>
-                <li>• All plans include 10% commission on sales</li>
-                <li>• Professional plan enables direct contact from users</li>
-                <li>• You can upgrade or downgrade at any time</li>
-              </ul>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

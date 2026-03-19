@@ -10,6 +10,7 @@ declare global {
         amount: number;
         currency?: string;
         ref?: string;
+        metadata?: Record<string, string | number | boolean | null | undefined>;
         callback: (response: { reference: string; status: string; transaction?: string }) => void;
         onClose?: () => void;
       }) => {

@@ -44,7 +44,7 @@ export default function Footer() {
   {/* Logo */}
   <div className="mb-4">
     <img
-      src="/Hos2.jpeg"            // your logo in public folder
+      src="/new.jpeg"            // your logo in public folder
       alt="Hospeniel"
       className="h-40 w-auto"     // adjust height as needed
     />

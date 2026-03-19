@@ -324,13 +324,17 @@ export default function PaymentPage() {
   const taxableAmount = subtotal;
   const taxAmount = taxableAmount * TAX_RATE;
 
+  // Service charge (flat fee for regular orders)
+  const SERVICE_CHARGE_REGULAR = 100;
+  const serviceCharge = subtotal > 0 ? SERVICE_CHARGE_REGULAR : 0;
+
   // Calculate commission (10% of subtotal)
   const COMMISSION_RATE = 0.10;
   const commissionAmount = subtotal * COMMISSION_RATE;
 
-  // Calculate total (subtotal + delivery charge + tax)
+  // Calculate total (subtotal + delivery charge + tax + service charge)
   // Note: Commission is deducted from vendor payout, not added to user total
-  const total = subtotal + deliveryCharge + taxAmount;
+  const total = subtotal + deliveryCharge + taxAmount + serviceCharge;
 
   // Redirect to cart if empty (only for cart-based flow)
   useEffect(() => {
@@ -503,7 +507,7 @@ export default function PaymentPage() {
             subtotal: subtotal,
             tax_amount: taxAmount,
             commission_amount: commissionAmount,
-            total_amount: total, // total = subtotal + delivery charge + tax
+            total_amount: total, // total = subtotal + delivery charge + tax + service charge
             status: "pending",
           },
         ])
@@ -526,6 +530,7 @@ export default function PaymentPage() {
           ...deliveryDetails,
           delivery_zone: deliveryZone,
           delivery_charge: deliveryCharge,
+          service_charge: serviceCharge,
           landmark: deliveryDetails.state === "Bayelsa" ? selectedLandmark : null,
         }));
         // Clean up direct order data
@@ -547,6 +552,7 @@ export default function PaymentPage() {
             amount: total,
             food_amount: subtotal,
             delivery_fee: deliveryCharge,
+            service_charge: serviceCharge,
             vat_amount: taxAmount,
             vendor_id: primaryVendorId,
             payment_id: paymentData.id,
@@ -555,11 +561,13 @@ export default function PaymentPage() {
               ...deliveryDetails,
               delivery_zone: deliveryZone,
               delivery_charge: deliveryCharge,
+              service_charge: serviceCharge,
               landmark: deliveryDetails.state === "Bayelsa" ? selectedLandmark : null,
             },
             metadata: {
               order_count: ordersToInsert.length,
               vendor_count: new Set(ordersToInsert.map((o) => o.vendor_id)).size,
+              service_charge: serviceCharge,
             },
           }),
         });
@@ -985,6 +993,14 @@ export default function PaymentPage() {
                     </div>
                   )}
                   
+                  {/* Service Charge */}
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Service Charge</span>
+                    <span className="font-medium">
+                      ₦{serviceCharge.toLocaleString("en-NG", { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+
                   {/* Tax */}
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">VAT (7.5%)</span>
@@ -1002,7 +1018,7 @@ export default function PaymentPage() {
                       </span>
                     </div>
                     <p className="text-xs text-gray-500 text-right">
-                      (Subtotal + Delivery + Tax)
+                      (Subtotal + Delivery + Tax + Service Charge)
                     </p>
                     {estimatedDeliveryTime && deliveryCharge > 0 && (
                       <p className="text-xs text-blue-600 text-right mt-1">
@@ -1054,4 +1070,16 @@ export default function PaymentPage() {
     </section>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
 

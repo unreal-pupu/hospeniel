@@ -214,53 +214,79 @@ export default function VendorSettingsPage() {
         .from("vendors")
         .select("*")
         .eq("profile_id", user.id)
-        .single();
+        .maybeSingle();
 
       if (vendorError) {
         console.error("Error fetching vendor data:", vendorError);
-        // If vendor doesn't exist, create a basic record
-        if (vendorError.code === "PGRST116") {
-          setMessage({ type: "info", text: "Creating vendor profile..." });
+      }
+
+      // Also fetch profile for email and subaccount_code
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select("email, subaccount_code, subscription_plan, category, name, phone_number, location, address")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error("Error fetching profile data:", profileError);
+      }
+
+      // If vendor doesn't exist yet, try to create a basic record
+      let resolvedVendorData = vendorData;
+      if (!resolvedVendorData && !vendorError) {
+        setMessage({ type: "info", text: "Creating vendor profile..." });
+        try {
           await createVendorRecord(user.id, user.email || "");
-          // Fetch again after creating
           const { data: newVendorData } = await supabase
             .from("vendors")
             .select("*")
             .eq("profile_id", user.id)
-            .single();
-          
-          if (newVendorData) {
-            populateSettings(newVendorData, user.email || "");
-          }
-        } else {
-          setMessage({ type: "error", text: "Failed to load vendor settings" });
+            .maybeSingle();
+          resolvedVendorData = newVendorData;
+        } catch (createError) {
+          console.error("Error creating vendor record:", createError);
         }
-      } else if (vendorData) {
-        populateSettings(vendorData, user.email || "");
       }
 
-      // Also fetch profile for email and subaccount_code
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("email, subaccount_code, subscription_plan, category")
-        .eq("id", user.id)
-        .single();
+      if (resolvedVendorData) {
+        populateSettings(resolvedVendorData, user.email || "");
+      } else if (profileData) {
+        populateSettings(
+          {
+            business_name: profileData.name || user.email?.split("@")[0] || "Vendor",
+            name: profileData.name || user.email?.split("@")[0] || "Vendor",
+            email: profileData.email || user.email || "",
+            phone_number: profileData.phone_number || "",
+            location: profileData.location || "",
+            category: profileData.category || "",
+            address: profileData.address || "",
+            description: "",
+            image_url: null,
+            is_open: true,
+            delivery_enabled: true,
+            pickup_enabled: true,
+          },
+          user.email || ""
+        );
+      } else {
+        setMessage({ type: "error", text: "Failed to load vendor settings" });
+      }
       
       if (profileData) {
-        if (profileData.email && (!vendorData || !vendorData.email)) {
+        if (profileData.email && (!resolvedVendorData || !resolvedVendorData.email)) {
           setSettings(prev => ({ ...prev, email: profileData.email }));
         }
         if (profileData.subaccount_code) {
           setSubaccountCode(profileData.subaccount_code);
         }
-        if ((!vendorData || !vendorData.category) && profileData.category) {
+        if ((!resolvedVendorData || !resolvedVendorData.category) && profileData.category) {
           setSettings(prev => ({ ...prev, category: normalizeCategory(profileData.category || "") }));
         }
         setSubscriptionPlan(profileData.subscription_plan || "free_trial");
       }
 
       const activeCategory = normalizeCategory(
-        vendorData?.category || profileData?.category || ""
+        resolvedVendorData?.category || profileData?.category || ""
       );
       const isChefOrHomeCook = activeCategory === "chef" || activeCategory === "home_cook";
       if (isChefOrHomeCook) {
@@ -298,11 +324,14 @@ export default function VendorSettingsPage() {
       const data = await res.json();
       
       if (data.success && data.banks && Array.isArray(data.banks)) {
-        // Filter only active banks that support pay_with_bank
-        // Also include banks that don't have pay_with_bank set (some banks might not have this field)
-        const activeBanks = data.banks.filter(
-          (bank: Bank) => bank.active !== false && (bank.pay_with_bank !== false)
-        );
+        // Keep only active Nigerian NGN NUBAN banks (Paystack subaccount requirement)
+        const activeBanks = data.banks.filter((bank: Bank) => {
+          if (bank.active === false || bank.is_deleted === true) return false;
+          if (bank.country && bank.country.toLowerCase() !== "nigeria") return false;
+          if (bank.currency && bank.currency.toLowerCase() !== "ngn") return false;
+          if (bank.type && bank.type.toLowerCase() !== "nuban") return false;
+          return true;
+        });
         
         // Sort banks alphabetically by name
         activeBanks.sort((a: Bank, b: Bank) => a.name.localeCompare(b.name));
@@ -1109,7 +1138,7 @@ export default function VendorSettingsPage() {
                                 value={bank.code} 
                                 className="font-body hover:bg-gray-100 cursor-pointer"
                               >
-                                {bank.name}
+                                {bank.name} ({bank.code})
                               </SelectItem>
                             ))
                           ) : (

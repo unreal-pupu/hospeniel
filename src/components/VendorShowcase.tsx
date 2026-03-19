@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabaseClient";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { MapPin } from "lucide-react";
+import VerifiedBadge from "@/components/VerifiedBadge";
+import Link from "next/link";
 
 interface Vendor {
   id: string;
@@ -16,6 +18,7 @@ interface Vendor {
   category?: string | null;
   location?: string | null;
   specialties?: string[];
+  verified?: boolean;
 }
 
 export default function VendorShowcase() {
@@ -72,6 +75,7 @@ export default function VendorShowcase() {
           category?: string | null;
           location?: string | null;
           specialties?: string[];
+          verified?: boolean | null;
           [key: string]: unknown;
         }
         const featuredVendors: Vendor[] = (data || []).map((vendor: VendorData) => ({
@@ -83,7 +87,12 @@ export default function VendorShowcase() {
           category: vendor.category || null,
           location: vendor.location || null,
           specialties: vendor.specialties || [],
+          verified: Boolean(vendor.verified),
         }));
+
+        console.log("[VendorShowcase] Featured vendors verified flags:", 
+          featuredVendors.map((vendor) => ({ id: vendor.id, verified: vendor.verified }))
+        );
 
         setVendors(featuredVendors);
       } catch (error) {
@@ -212,8 +221,9 @@ export default function VendorShowcase() {
                 {/* Vendor Info */}
                 <div className="p-6">
                   <div className="flex items-start justify-between gap-2 mb-2">
-                    <h3 className="text-xl font-bold text-gray-800 font-header">
-                      {vendor.name}
+                    <h3 className="text-xl font-bold text-gray-800 font-header flex items-center gap-2">
+                      <span>{vendor.name}</span>
+                      <VerifiedBadge verified={vendor.verified} className="h-5 w-5 text-blue-600" />
                     </h3>
                     {vendor.category && (
                       <span className="px-2 py-1 bg-hospineil-primary/10 text-hospineil-primary text-xs font-semibold rounded-full">
@@ -246,12 +256,25 @@ export default function VendorShowcase() {
                   </div>
 
                   {/* Contact Button */}
+                <div className="flex flex-col gap-2">
                   <Button
                     onClick={handleContact}
                     className="w-full bg-hospineil-accent text-hospineil-light-bg hover:bg-hospineil-accent-hover focus:ring-2 focus:ring-hospineil-primary focus:ring-offset-2 transition-all duration-300 hover:scale-105 hover:shadow-lg font-button font-medium"
                   >
                     Contact
                   </Button>
+                  <Link
+                    href={`/vendors/profile/${vendor.id}`}
+                    className="text-center w-full inline-flex justify-center"
+                  >
+                    <Button
+                      variant="outline"
+                      className="w-full border-hospineil-primary/30 text-hospineil-primary hover:bg-hospineil-primary/10"
+                    >
+                      View Profile
+                    </Button>
+                  </Link>
+                </div>
                 </div>
               </div>
             ))}

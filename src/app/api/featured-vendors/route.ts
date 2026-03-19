@@ -56,6 +56,99 @@ export async function GET(req: Request) {
     );
   }
   try {
+    // Entitlement-driven featured vendors (Featured Placement)
+    // Fallback to the older `profiles.is_featured` logic if entitlement tables aren't available.
+    try {
+      const featureName = "featured_placement";
+      const nowIso = new Date().toISOString();
+
+      const { data: featureRow } = await supabase
+        .from("features")
+        .select("id")
+        .eq("name", featureName)
+        .maybeSingle();
+
+      if (featureRow?.id) {
+        const { data: entRows } = await supabase
+          .from("vendor_entitlements")
+          .select("vendor_id")
+          .eq("feature_id", featureRow.id)
+          .eq("status", "active")
+          .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+          .order("expires_at", { ascending: false })
+          .limit(8);
+
+        const vendorIds = (entRows || []).map((r: { vendor_id: string }) => r.vendor_id);
+        if (vendorIds.length > 0) {
+          const { data: profilesData, error: profilesError } = await supabase
+            .from("profiles")
+            .select(
+              "id, name, featured_image, featured_description, category, location, verified, role"
+            )
+            .eq("role", "vendor")
+            .in("id", vendorIds);
+
+          if (!profilesError && profilesData) {
+            // Fetch service profile details for chefs/home cooks (for specialties + image)
+            const chefHomeIds = profilesData
+              .filter((p: any) => {
+                const cat = String(p.category || "").toLowerCase().trim();
+                return cat === "chef" || cat === "home_cook";
+              })
+              .map((p: any) => p.id);
+
+            const { data: serviceProfiles } = chefHomeIds.length
+              ? await supabase
+                  .from("vendor_service_profiles")
+                  .select("profile_id, image_url, specialties, bio, base_price, pricing_model, service_mode")
+                  .in("profile_id", chefHomeIds)
+              : { data: [] as any[] };
+
+            const serviceProfilesMap = new Map(
+              (serviceProfiles || []).map((sp: any) => [sp.profile_id, sp])
+            );
+
+            const vendors = (profilesData as any[]).map((profile) => {
+              const category = normalizeCategory(profile.category);
+              const serviceProfile = serviceProfilesMap.get(profile.id);
+
+              const specialties = serviceProfile?.specialties || [];
+              const isChefOrHomeCook =
+                category === "chef" || category === "home_cook";
+
+              const serviceDescription = serviceProfile
+                ? serviceProfile.bio ||
+                  (specialties.length > 0
+                    ? `Specializing in ${specialties.slice(0, 2).join(", ")}`
+                    : "Specialized culinary services")
+                : profile.featured_description;
+
+              const image =
+                (isChefOrHomeCook && serviceProfile?.image_url) ||
+                profile.featured_image;
+
+              return {
+                id: profile.id,
+                name: profile.name,
+                featured_image: image,
+                featured_description: isChefOrHomeCook && serviceProfile ? serviceDescription : profile.featured_description,
+                is_featured: true,
+                category: profile.category,
+                location: profile.location,
+                specialties,
+                verified: Boolean(profile.verified),
+                featured_image_url: image,
+              };
+            });
+
+            return NextResponse.json({ vendors: vendors.slice(0, 8) });
+          }
+        }
+      }
+    } catch (entitlementErr) {
+      console.warn("[featured-vendors] Entitlement fetch failed, falling back", entitlementErr);
+    }
+
     interface ServiceProfileRow {
       profile_id: string;
       image_url: string | null;
@@ -74,6 +167,7 @@ export async function GET(req: Request) {
       featured_image: string | null;
       featured_description: string | null;
       is_featured: boolean | null;
+      verified?: boolean | null;
     }
 
     interface ServiceProfileEntry extends ServiceProfileRow {
@@ -91,13 +185,14 @@ export async function GET(req: Request) {
       specialties: string[];
       base_price?: number | null;
       pricing_model?: string | null;
+      verified?: boolean | null;
     }
 
     // Fetch featured vendors from profiles table
     // Using service role key to bypass RLS for public access
     const { data: profilesData, error: profilesError } = await supabase
       .from("profiles")
-      .select("id, name, featured_image, featured_description, is_featured, category, location")
+      .select("id, name, featured_image, featured_description, is_featured, category, location, verified")
       .eq("role", "vendor")
       .eq("is_featured", true)
       .order("created_at", { ascending: false })
@@ -132,7 +227,7 @@ export async function GET(req: Request) {
         // Fetch profiles for these service profiles (profiles is source of truth)
         const serviceProfileUsersQuery = supabase
           .from("profiles")
-          .select("id, name, category, location, featured_image, featured_description, is_featured")
+          .select("id, name, category, location, featured_image, featured_description, is_featured, verified")
           .eq("role", "vendor")
           .in("category", ["chef", "home_cook"]);
 
@@ -233,6 +328,7 @@ export async function GET(req: Request) {
           is_featured: false, // Not explicitly featured, but included for visibility
           category: sp.profile.category,
           location: sp.profile.location,
+          verified: sp.profile.verified ?? false,
           specialties,
           base_price: sp.base_price,
           pricing_model: sp.pricing_model,

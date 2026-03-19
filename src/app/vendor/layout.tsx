@@ -17,6 +17,8 @@ import {
   ShieldCheck,
   Bell,
   MessageSquare,
+  Megaphone,
+  BarChart3,
 } from "lucide-react";
 import NotificationBell from "@/components/NotificationBell";
 
@@ -173,15 +175,14 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
     }
   };
 
-  // Check if vendor is a cook or chef (limited menu/orders access)
+  // Check if vendor is a cook or chef (used for service requests access)
   const isCookOrChef = vendorCategory === "chef" || vendorCategory === "home_cook";
-  const canManageMenu = !isCookOrChef || subscriptionPlan === "professional";
   const canManageOrders = !isCookOrChef || subscriptionPlan === "professional";
 
   // Base links (conditionally show menu/orders based on category)
   const baseLinks = [
     { href: "/vendor/dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
-    ...(canManageMenu ? [{ href: "/vendor/menu", label: "Menu", icon: <UtensilsCrossed size={18} /> }] : []),
+    { href: "/vendor/menu", label: "Menu", icon: <UtensilsCrossed size={18} /> },
     ...(canManageOrders ? [{ href: "/vendor/orders", label: "Orders", icon: <Clock size={18} /> }] : []),
     { href: "/vendor/notifications", label: "Notifications", icon: <Bell size={18} /> },
   ];
@@ -196,7 +197,9 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
 
   // Other links (always visible)
   const otherLinks = [
-    { href: "/vendor/subscription", label: "Subscription", icon: <ShieldCheck size={18} /> },
+    { href: "/vendor/subscription", label: "Premium Tools", icon: <ShieldCheck size={18} /> },
+    { href: "/vendor/banners", label: "Promotions", icon: <Megaphone size={18} /> },
+    { href: "/vendor/analytics", label: "Analytics", icon: <BarChart3 size={18} /> },
     { href: "/vendor/settings", label: "Settings", icon: <Settings size={18} /> },
     { href: "/vendor/help", label: "Help Center", icon: <HelpCircle size={18} /> },
     { href: "/vendor/privacy", label: "Privacy Policy", icon: <ShieldCheck size={18} /> },

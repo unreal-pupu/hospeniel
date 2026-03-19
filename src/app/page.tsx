@@ -39,6 +39,14 @@ const FAQ = dynamic(() => import("@/components/FAQ"), {
   loading: () => <div className="min-h-[400px] bg-hospineil-base-bg" />,
 });
 
+const SponsoredBannersSection = dynamic(
+  () => import("@/components/SponsoredBannersSection"),
+  {
+    loading: () => <div className="min-h-[120px] bg-hospineil-base-bg" />,
+    ssr: false,
+  }
+);
+
 export const metadata = getLandingPageMetadata();
 
 export default function Home() {
@@ -56,6 +64,9 @@ export default function Home() {
      />
    ))}
    <Hero/>
+  <Suspense fallback={<div className="min-h-[120px] bg-hospineil-base-bg" />}>
+    <SponsoredBannersSection />
+  </Suspense>
    <Suspense fallback={<div className="min-h-[600px] bg-hospineil-base-bg" />}>
      <ProductsShowcase/>
    </Suspense>

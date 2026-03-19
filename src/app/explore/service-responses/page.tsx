@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import type { RealtimePostgresChangesPayload, REALTIME_SUBSCRIBE_STATES } from "@supabase/supabase-js";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,6 +30,9 @@ import {
   CheckCircle,
 } from "lucide-react";
 import Image from "next/image";
+
+/** Platform service charge for service booking checkout (NGN); keep in sync with payment flows */
+const SERVICE_CHARGE_SERVICE_BOOKING = 100;
 
 interface ServiceRequest {
   id: string;
@@ -518,7 +522,10 @@ export default function ServiceResponsesPage() {
         return;
       }
 
-      console.log("🔵 Processing payment for request:", requestId, "Amount:", amount);
+      const serviceCharge = SERVICE_CHARGE_SERVICE_BOOKING;
+      const totalAmount = amount + serviceCharge;
+
+      console.log("🔵 Processing payment for request:", requestId, "Amount:", amount, "Service Charge:", serviceCharge, "Total:", totalAmount);
 
       // Get user email
       const { data: profile } = await supabase
@@ -540,14 +547,16 @@ export default function ServiceResponsesPage() {
         },
         body: JSON.stringify({
           email: profile.email,
-          amount: amount,
+          amount: totalAmount,
           food_amount: amount,
           delivery_fee: 0,
+          service_charge: serviceCharge,
           vat_amount: 0,
           vendor_id: request.vendor_id,
           metadata: {
             service_request_id: requestId,
             type: "service_request",
+            service_charge: serviceCharge,
           },
         }),
       });
@@ -665,7 +674,7 @@ export default function ServiceResponsesPage() {
       {/* Left Sidebar */}
       <aside
         className={`
-          fixed lg:static inset-y-0 left-0 z-50
+          fixed lg:static top-32 bottom-0 left-0 z-40
           w-64 bg-hospineil-primary shadow-xl
           transform transition-transform duration-300 ease-in-out
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
@@ -673,8 +682,16 @@ export default function ServiceResponsesPage() {
       >
         <div className="flex flex-col h-full">
           {/* Sidebar Header */}
-          <div className="p-6 border-b border-hospineil-primary/20">
-            <h2 className="text-xl font-bold text-white font-logo">Hospineil</h2>
+          <div className="p-6 border-b border-hospineil-primary/20 flex items-start justify-between">
+            <h2 className="text-xl font-bold text-white font-logo">Hospeniel</h2>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="lg:hidden p-2 rounded-lg text-white/90 hover:text-white hover:bg-white/10"
+              aria-label="Close menu"
+              type="button"
+            >
+              <X size={20} />
+            </button>
           </div>
 
           {/* Navigation Links */}
@@ -722,22 +739,32 @@ export default function ServiceResponsesPage() {
       {/* Overlay for mobile */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          className="fixed inset-x-0 bottom-0 top-32 bg-black bg-opacity-50 z-30 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* Main Content */}
-      <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+      <main className="flex-1 p-4 sm:p-6 lg:p-8 pt-6 sm:pt-8 lg:pt-10 overflow-y-auto">
         {/* Header with mobile menu */}
         <header className="mb-6">
           <div className="flex items-center justify-between">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="lg:hidden p-2 rounded-lg text-gray-600 hover:bg-gray-100"
-            >
-              {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className="lg:hidden p-2 rounded-lg text-gray-600 hover:bg-gray-100"
+                aria-label={sidebarOpen ? "Close menu" : "Open menu"}
+                type="button"
+              >
+                {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+              </button>
+              <Link
+                href="/explore"
+                className="text-sm font-semibold text-gray-700 hover:text-hospineil-primary transition-colors"
+              >
+                ← Back to Explore
+              </Link>
+            </div>
             {userProfile && (
               <div className="flex items-center gap-4 ml-auto">
                 <div className="flex items-center gap-3">
@@ -978,6 +1005,12 @@ export default function ServiceResponsesPage() {
                                   <p className="text-lg font-bold text-hospineil-primary mt-1">
                                     ₦{request.final_price.toLocaleString('en-NG', { minimumFractionDigits: 2 })}
                                   </p>
+                                  <p className="text-xs text-gray-600 mt-1">
+                                    Service Charge: ₦{SERVICE_CHARGE_SERVICE_BOOKING.toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                                  </p>
+                                  <p className="text-sm font-semibold text-gray-800 mt-1">
+                                    Total: ₦{(request.final_price + SERVICE_CHARGE_SERVICE_BOOKING).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                                  </p>
                                 </div>
                                 <Button
                                   onClick={() => handlePayment(request.id, request.final_price!)}
@@ -1079,3 +1112,13 @@ export default function ServiceResponsesPage() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+

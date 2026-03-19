@@ -55,9 +55,6 @@ export default function MenuPage() {
   const [itemToDelete, setItemToDelete] = useState<MenuItem | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [subscriptionPlan, setSubscriptionPlan] = useState<string>("free_trial");
-  const [vendorCategory, setVendorCategory] = useState<string | null>(null);
-  
   // Form state
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [formData, setFormData] = useState({
@@ -71,41 +68,7 @@ export default function MenuPage() {
 
   useEffect(() => {
     fetchMenuItems();
-    fetchSubscriptionPlan();
   }, []);
-
-  const fetchSubscriptionPlan = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Fetch subscription_plan from profiles table (primary source)
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("subscription_plan, category")
-        .eq("id", user.id)
-        .single();
-
-      if (profile) {
-        setSubscriptionPlan(profile.subscription_plan || "free_trial");
-        setVendorCategory(profile.category || null);
-      } else {
-        // Fallback to vendors table if profile not found
-        const { data: vendor } = await supabase
-          .from("vendors")
-          .select("subscription_plan, category")
-          .eq("profile_id", user.id)
-          .single();
-
-        if (vendor) {
-          setSubscriptionPlan(vendor.subscription_plan || "free_trial");
-          setVendorCategory(vendor.category || null);
-        }
-      }
-    } catch (error) {
-      console.error("Error fetching subscription plan:", error);
-    }
-  };
 
   const fetchMenuItems = async () => {
     try {
@@ -210,27 +173,6 @@ export default function MenuPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const getMenuLimit = () => {
-    switch (subscriptionPlan) {
-      case "professional":
-        return Infinity; // Unlimited
-      case "starter":
-        return 10;
-      case "free_trial":
-      default:
-        return 3; // Free trial: 3 items
-    }
-  };
-
-  const isCookOrChef = vendorCategory === "chef" || vendorCategory === "home_cook";
-  const canAccessMenu = !isCookOrChef || subscriptionPlan === "professional";
-
-  const canAddMoreItems = () => {
-    const limit = getMenuLimit();
-    if (limit === Infinity) return true;
-    return menuItems.length < limit;
   };
 
   const openAddModal = () => {
@@ -483,18 +425,6 @@ export default function MenuPage() {
           await fetchMenuItems();
         }
       } else {
-        // Check subscription limit before creating new item
-        if (!canAddMoreItems()) {
-          const limit = getMenuLimit();
-          alert(
-            `You have reached your menu item limit (${limit} items).\n\n` +
-            `Your current plan: ${subscriptionPlan === "free_trial" ? "Free Trial" : subscriptionPlan === "starter" ? "Starter Plan" : "Professional Plan"}\n\n` +
-            `Upgrade to Professional Plan for unlimited menu items.`
-          );
-          setSaving(false);
-          return;
-        }
-
         // Create new item
         const { error } = await supabase
           .from("menu_items")
@@ -607,26 +537,6 @@ export default function MenuPage() {
     );
   }
 
-  if (!canAccessMenu) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] bg-hospineil-base-bg px-6 text-center">
-        <h2 className="text-2xl font-semibold text-hospineil-primary font-header mb-2">
-          Menu Access Requires Professional Plan
-        </h2>
-        <p className="text-gray-600 font-body mb-6 max-w-lg">
-          Home cooks and chefs can manage menu items only on the Professional plan.
-          Upgrade your subscription to add menu items and appear in the menu listings.
-        </p>
-        <Button
-          onClick={() => (window.location.href = "/vendor/subscription")}
-          className="bg-hospineil-primary text-white rounded-lg hover:bg-hospineil-primary/90 hover:scale-105 transition-all font-button"
-        >
-          Upgrade Plan
-        </Button>
-      </div>
-    );
-  }
-
   return (
     <div className="w-full">
       {/* Header */}
@@ -635,26 +545,14 @@ export default function MenuPage() {
           <div>
             <h1 className="text-3xl md:text-4xl font-bold text-hospineil-primary mb-2 font-header">Menu Management</h1>
             <p className="text-gray-600 font-body">Manage your menu items and product listings</p>
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
-              <span className="text-sm text-gray-600 font-body">
-                Plan: <span className="font-semibold capitalize text-hospineil-primary">{subscriptionPlan === "free_trial" ? "Free Trial" : subscriptionPlan === "starter" ? "Starter Plan" : "Professional Plan"}</span>
-              </span>
-              {subscriptionPlan !== "professional" && (
-                <span className="text-sm text-gray-600 font-body">
-                  • {menuItems.length}/{getMenuLimit()} items
-                </span>
-              )}
-            </div>
           </div>
           <Button
             onClick={openAddModal}
-            disabled={!canAddMoreItems()}
-            className="bg-hospineil-primary text-white rounded-lg hover:bg-hospineil-primary/90 hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-button"
+            className="bg-hospineil-primary text-white rounded-lg hover:bg-hospineil-primary/90 hover:scale-105 transition-all font-button"
             size="lg"
           >
             <Plus className="mr-2 h-5 w-5" />
             Add Menu Item
-            {!canAddMoreItems() && " (Limit Reached)"}
           </Button>
         </div>
       </div>

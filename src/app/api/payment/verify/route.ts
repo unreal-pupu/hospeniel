@@ -184,10 +184,11 @@ export async function POST(req: Request) {
     const foodAmount = Number(transactionData?.metadata?.food_amount || 0);
     const deliveryFee = Number(transactionData?.metadata?.delivery_fee || 0);
     const vatAmount = Number(transactionData?.metadata?.vat_amount || 0);
+    const serviceCharge = Number(transactionData?.metadata?.service_charge || 0);
     const expectedVendorPayout = foodAmount * 0.9;
-    const expectedPlatformShare = foodAmount * 0.1 + deliveryFee + vatAmount;
+    const expectedPlatformShare = foodAmount * 0.1 + deliveryFee + vatAmount + serviceCharge;
     const expectedPlatformPayout = expectedPlatformShare - paystackFeeKobo / 100;
-    const expectedGrossTotal = foodAmount + deliveryFee + vatAmount;
+    const expectedGrossTotal = foodAmount + deliveryFee + vatAmount + serviceCharge;
     const hasMismatch = Math.abs(expectedGrossTotal - grossAmount) > 0.01;
 
     await logPaymentAuditEntry(
@@ -932,4 +933,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
 

@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { supabase } from "../../lib/supabaseClient";
-import { useCart } from "../context/CartContex";
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -19,24 +19,14 @@ import {
   ShieldCheck,
   MessageSquare,
 } from "lucide-react";
+import VerifiedBadge from "@/components/VerifiedBadge";
 import type { RealtimePostgresChangesPayload, REALTIME_SUBSCRIBE_STATES } from "@supabase/supabase-js";
 import ServiceRequestDialog from "@/components/ServiceRequestDialog";
-import { throttle, debounce, ThrottleDelays } from "@/lib/clientThrottle";
+import { debounce } from "@/lib/clientThrottle";
 import SEOHead from "@/components/SEOHead";
 import { generateBreadcrumbSchema } from "@/lib/seo";
 import { getLocationsWithAll } from "@/lib/vendorLocations";
 import { getCategoriesWithAll, getCategoryLabel } from "@/lib/vendorCategories";
-
-interface Vendor {
-  id: string;
-  name?: string;
-  business_name?: string;
-  description: string;
-  image_url: string;
-  location?: string;
-  profile_id?: string;
-  category?: string;
-}
 
 interface MenuItem {
   id: string;
@@ -52,13 +42,25 @@ interface MenuItem {
     image_url: string | null;
     location?: string | null;
     category?: string | null;
+    description?: string | null;
+    verified?: boolean;
+    vendor_table_id?: string | null;
     is_premium?: boolean;
     subscription_plan?: string;
   };
 }
 
-interface MenuItemRow {
-  vendor_id: string | null;
+interface VendorCardData {
+  profile_id: string;
+  name: string;
+  image_url: string | null;
+  location?: string | null;
+  category?: string | null;
+  description?: string | null;
+  verified?: boolean;
+  vendor_table_id?: string | null;
+  is_premium?: boolean;
+  subscription_plan?: string;
 }
 
 interface ProfileRow {
@@ -69,6 +71,7 @@ interface ProfileRow {
   category: string | null;
   is_premium?: boolean | null;
   subscription_plan?: string | null;
+  verified?: boolean | null;
 }
 
 interface VendorRow {
@@ -80,6 +83,7 @@ interface VendorRow {
   profile_id?: string | null;
   description?: string | null;
   category?: string | null;
+  verified?: boolean | null;
   is_premium?: boolean | null;
   subscription_plan?: string | null;
 }
@@ -100,6 +104,7 @@ interface ServiceProfileVendor {
   base_price: number;
   service_mode: string[];
   bio: string | null;
+  verified?: boolean;
 }
 
 const LOCATIONS = getLocationsWithAll();
@@ -108,19 +113,16 @@ const CATEGORIES = getCategoriesWithAll();
 export default function ExplorePage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { addToCart } = useCart();
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [filteredMenuItems, setFilteredMenuItems] = useState<MenuItem[]>([]);
-  const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
   const [loading, setLoading] = useState(true);
-  const [placingOrder, setPlacingOrder] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState("All Locations");
   const [selectedCategory, setSelectedCategory] = useState("All");
-  const [addingToCart, setAddingToCart] = useState<string | null>(null);
   const [serviceProfileVendors, setServiceProfileVendors] = useState<ServiceProfileVendor[]>([]);
   const [loadingServiceProfiles, setLoadingServiceProfiles] = useState(false);
+  const [vendorRatings, setVendorRatings] = useState<Record<string, { average: number; count: number }>>({});
   const [serviceRequestDialog, setServiceRequestDialog] = useState<{
     open: boolean;
     vendorId: string;
@@ -172,6 +174,7 @@ export default function ExplorePage() {
           id: v.id, 
           name: v.name, 
           category: v.category, 
+          verified: v.verified ?? false,
           specialtiesCount: v.specialties?.length || 0,
           hasImage: !!v.image_url
         }))
@@ -189,7 +192,8 @@ export default function ExplorePage() {
         pricing_model: v.pricing_model,
         base_price: v.base_price || 0,
         service_mode: v.service_mode || [],
-        bio: v.bio
+        bio: v.bio,
+        verified: v.verified ?? false,
       }));
       
       setServiceProfileVendors(transformed);
@@ -252,14 +256,14 @@ export default function ExplorePage() {
       // Also fetch profiles to get location if vendors.location is not available
       const { data: vendorsData, error: vendorsError } = await supabase
         .from("vendors")
-        .select("id, name, business_name, image_url, location, profile_id, description, category, is_premium, subscription_plan")
+        .select("id, name, business_name, image_url, location, profile_id, description, category, is_premium, subscription_plan, verified")
         .in("profile_id", vendorIds);
 
       // Fetch profiles - CRITICAL: Don't filter by role initially to catch all profiles
       // Some profiles might not have role set correctly, but we still need their names
       const { data: profilesData, error: profilesError } = await supabase
         .from("profiles")
-        .select("id, name, location, role, category, is_premium, subscription_plan")
+        .select("id, name, location, role, category, is_premium, subscription_plan, verified")
         .in("id", vendorIds);
       
       // Filter to vendors in memory (but we fetched all to catch missing roles)
@@ -315,7 +319,7 @@ export default function ExplorePage() {
         // Try to fetch missing profiles directly (without role filter)
         const { data: missingProfilesData, error: missingError } = await supabase
           .from("profiles")
-          .select("id, name, location, role, category, is_premium, subscription_plan")
+          .select("id, name, location, role, category, is_premium, subscription_plan, verified")
           .in("id", missingProfileIds);
         
         const missingProfiles: ProfileRow[] = missingProfilesData ?? [];
@@ -421,6 +425,7 @@ export default function ExplorePage() {
           // Use is_premium from profiles table (primary source), fallback to vendors table
           const vendorIsPremium = profile?.is_premium || vendor?.is_premium || false;
           const vendorSubscriptionPlan = profile?.subscription_plan || vendor?.subscription_plan || "free_trial";
+          const vendorVerified = profile?.verified ?? vendor?.verified ?? false;
           
           
           // Always create vendors object, even if data is incomplete
@@ -432,6 +437,9 @@ export default function ExplorePage() {
             image_url: vendor?.image_url || null,
             location: vendorLocation || null,
             category: vendorCategory || null,
+            description: vendor?.description || null,
+            verified: vendorVerified,
+            vendor_table_id: vendor?.id ? String(vendor.id) : null,
             is_premium: vendorIsPremium || false,
             subscription_plan: vendorSubscriptionPlan || "free_trial"
           };
@@ -645,162 +653,142 @@ export default function ExplorePage() {
     setFilteredMenuItems(filtered);
   }, [selectedLocation, selectedCategory, menuItems]);
 
-  // Throttled add to cart handler
-  const handleAddToCart = useMemo(
-    () => throttle(async (...args: unknown[]) => {
-      const [itemId, vendorId] = args;
-      if (typeof itemId !== "string" || typeof vendorId !== "string") {
-        console.error("Invalid arguments for addToCart");
+  const filteredVendors = useMemo(() => {
+    const vendorMap = new Map<string, VendorCardData>();
+    filteredMenuItems.forEach((item) => {
+      if (!item.vendor_id) return;
+      if (vendorMap.has(item.vendor_id)) return;
+
+      vendorMap.set(item.vendor_id, {
+        profile_id: item.vendor_id,
+        name: item.vendors?.name || "Vendor",
+        image_url: item.vendors?.image_url || null,
+        location: item.vendors?.location || null,
+        category: item.vendors?.category || null,
+        description: item.vendors?.description || null,
+        verified: item.vendors?.verified || false,
+        vendor_table_id: item.vendors?.vendor_table_id || null,
+        is_premium: item.vendors?.is_premium,
+        subscription_plan: item.vendors?.subscription_plan,
+      });
+    });
+    return Array.from(vendorMap.values());
+  }, [filteredMenuItems]);
+
+  const [priorityBoostVendorIds, setPriorityBoostVendorIds] = useState<string[]>([]);
+
+  const vendorIdSignature = useMemo(() => {
+    // Small signature to avoid refetching too often
+    return filteredVendors.map((v) => v.profile_id).sort().join("|");
+  }, [filteredVendors]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const run = async () => {
+      const vendorIds = Array.from(new Set(filteredVendors.map((v) => v.profile_id))).filter(Boolean);
+      if (vendorIds.length === 0) {
+        if (isMounted) setPriorityBoostVendorIds([]);
         return;
       }
+
+      // Avoid overly large payloads
+      const slice = vendorIds.slice(0, 200);
       try {
-        setAddingToCart(itemId);
-        if (!vendorId) {
-          alert("Invalid vendor information. Please try again.");
-          return;
-        }
-        await addToCart(itemId, vendorId, 1);
-        // Show toast notification
-        const toast = document.createElement("div");
-        toast.className = "fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 animate-in slide-in-from-right";
-        toast.textContent = "✓ Item added to cart!";
-        document.body.appendChild(toast);
-        setTimeout(() => {
-          if (document.body.contains(toast)) {
-            document.body.removeChild(toast);
-          }
-        }, 3000);
-      } catch (error) {
-        console.error("Error adding to cart:", error);
-        const errorMessage = error instanceof Error ? error.message : "";
-        if (errorMessage.includes("log in")) {
-          alert("Please log in to add items to cart.");
-          router.push("/loginpage");
-        } else {
-          const errMsg = error instanceof Error ? error.message : "Failed to add item to cart. Please try again.";
-          alert(errMsg);
-        }
-      } finally {
-        setAddingToCart(null);
+        const res = await fetch("/api/vendor-entitlements/active-feature", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ vendorIds: slice, featureName: "priority_location_boost" }),
+        });
+        const data = await res.json();
+        if (!isMounted) return;
+        const activeIds = (data?.activeVendorIds || []) as string[];
+        console.log("Priority Location Boost:", {
+          selectedLocation,
+          selectedCategory,
+          totalVendorsInPage: vendorIds.length,
+          eligibleInSlice: slice.length,
+          activeVendorIdsCount: activeIds.length,
+        });
+        setPriorityBoostVendorIds(activeIds);
+      } catch (e) {
+        console.error("Priority location boost fetch error:", e);
+        if (isMounted) setPriorityBoostVendorIds([]);
       }
-    }, ThrottleDelays.ADD_TO_CART),
-    [addToCart, router]
-  );
+    };
 
+    void run();
+    return () => {
+      isMounted = false;
+    };
+  }, [vendorIdSignature]);
 
-  // Memoize placeOrder to prevent recreation on every render
-  const placeOrder = useMemo(
-    () => throttle(async (...args: unknown[]) => {
-      const [menuItemArg] = args;
-      
-      // Validate menuItem argument
-      if (!menuItemArg || typeof menuItemArg !== "object") {
-        console.error("Invalid menuItem argument for placeOrder");
+  const displayedVendors = useMemo(() => {
+    const prioritySet = new Set(priorityBoostVendorIds);
+    const requireLocationMatch = selectedLocation !== "All Locations";
+    const selectedLocationNormalized = selectedLocation.trim().toLowerCase();
+
+    const indexed = filteredVendors.map((v, idx) => ({ v, idx }));
+    indexed.sort((a, b) => {
+      const aLoc = (a.v.location || "").trim().toLowerCase();
+      const bLoc = (b.v.location || "").trim().toLowerCase();
+      const aPriority =
+        prioritySet.has(String(a.v.profile_id)) &&
+        (!requireLocationMatch || aLoc === selectedLocationNormalized);
+      const bPriority =
+        prioritySet.has(String(b.v.profile_id)) &&
+        (!requireLocationMatch || bLoc === selectedLocationNormalized);
+
+      if (aPriority !== bPriority) return Number(bPriority) - Number(aPriority);
+      return a.idx - b.idx;
+    });
+
+    return indexed.map((x) => x.v);
+  }, [filteredVendors, priorityBoostVendorIds, selectedLocation]);
+
+  useEffect(() => {
+    const fetchRatings = async () => {
+      const vendorIds = filteredVendors
+        .map((vendor) => vendor.vendor_table_id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+      if (vendorIds.length === 0) {
+        setVendorRatings({});
         return;
       }
-      
-      const menuItem = menuItemArg as MenuItem;
-      
-      try {
-        setPlacingOrder(true);
-        
-        // Verify user is authenticated
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-        if (userError) {
-          console.error("Authentication error:", userError);
-          alert("Authentication error. Please log in again.");
-          setPlacingOrder(false);
-          return;
-        }
+      const { data, error } = await supabase
+        .from("vendor_ratings")
+        .select("vendor_id, rating")
+        .in("vendor_id", vendorIds);
 
-        if (!user) {
-          alert("Please login to place an order");
-          router.push("/loginpage");
-          setPlacingOrder(false);
-          return;
-        }
+      if (error) {
+        console.error("Error fetching vendor ratings:", error);
+        setVendorRatings({});
+        return;
+      }
 
-        // Verify session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError || !session) {
-          alert("Session expired. Please log in again.");
-          router.push("/loginpage");
-          setPlacingOrder(false);
-          return;
-        }
+      const ratingBuckets = new Map<string, { total: number; count: number }>();
+      (data || []).forEach((row: { vendor_id: string | number; rating: number }) => {
+        const key = String(row.vendor_id);
+        const entry = ratingBuckets.get(key) || { total: 0, count: 0 };
+        entry.total += row.rating || 0;
+        entry.count += 1;
+        ratingBuckets.set(key, entry);
+      });
 
-        // Verify user.id is a valid UUID
-        if (!user.id || typeof user.id !== 'string' || !user.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-          console.error("Invalid user.id:", user.id);
-          alert("Invalid user account. Please log out and log in again.");
-          setPlacingOrder(false);
-          return;
-        }
-
-        // Validate required fields
-        if (!menuItem.vendor_id) {
-          alert("Invalid vendor information. Please try again.");
-          setPlacingOrder(false);
-          return;
-        }
-
-        // Verify vendor_id is a valid UUID
-        if (!menuItem.vendor_id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-          console.error("Invalid vendor_id:", menuItem.vendor_id);
-          alert("Invalid vendor information. Please try again.");
-          setPlacingOrder(false);
-          return;
-        }
-
-        if (!menuItem.id) {
-          alert("Invalid product information. Please try again.");
-          setPlacingOrder(false);
-          return;
-        }
-
-        // Verify product_id is a valid UUID
-        if (!menuItem.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-          console.error("Invalid product_id:", menuItem.id);
-          alert("Invalid product information. Please try again.");
-          setPlacingOrder(false);
-          return;
-        }
-
-        if (!menuItem.price || menuItem.price <= 0) {
-          alert("Invalid product price. Please try again.");
-          setPlacingOrder(false);
-          return;
-        }
-
-        // Prepare order data for checkout (don't create order yet - wait for payment)
-        const orderData = {
-          user_id: user.id,
-          vendor_id: menuItem.vendor_id,
-          product_id: menuItem.id,
-          quantity: 1,
-          total_price: menuItem.price,
-          status: "Pending",
+      const ratingsMap: Record<string, { average: number; count: number }> = {};
+      ratingBuckets.forEach((value, key) => {
+        ratingsMap[key] = {
+          average: value.count > 0 ? value.total / value.count : 0,
+          count: value.count,
         };
+      });
 
-        // Store order data in sessionStorage for checkout page
-        if (typeof window !== "undefined") {
-          sessionStorage.setItem("directOrderData", JSON.stringify([orderData]));
-          sessionStorage.setItem("directOrderSource", "explore");
-        }
+      setVendorRatings(ratingsMap);
+    };
 
-        // Redirect to payment/checkout page
-        router.push("/payment");
-      } catch (error) {
-        console.error("Unexpected error placing order:", error);
-        const errorMessage = error instanceof Error ? error.message : "Please try again";
-        alert(`An unexpected error occurred: ${errorMessage}`);
-      } finally {
-        setPlacingOrder(false);
-      }
-    }, ThrottleDelays.BUTTON_CLICK),
-    [router]
-  );
+    fetchRatings();
+  }, [filteredVendors]);
 
   if (loading) {
     return (
@@ -870,13 +858,13 @@ export default function ExplorePage() {
         title={
           selectedLocation !== "All Locations" || selectedCategory !== "All"
             ? `${
-                selectedCategory !== "All" ? getCategoryLabel(selectedCategory) + "s" : "Menu Items"
+                selectedCategory !== "All" ? getCategoryLabel(selectedCategory) + " Vendors" : "Vendors"
               }${selectedLocation !== "All Locations" ? ` in ${selectedLocation}` : ""} | Hospineil`
             : undefined
         }
         description={
           selectedLocation !== "All Locations" || selectedCategory !== "All"
-            ? `Discover ${selectedCategory !== "All" ? getCategoryLabel(selectedCategory).toLowerCase() + "s" : "delicious meals"}${selectedLocation !== "All Locations" ? ` in ${selectedLocation}` : ""}. Browse menus, place orders, and enjoy delicious local food.`
+            ? `Discover ${selectedCategory !== "All" ? getCategoryLabel(selectedCategory).toLowerCase() + " vendors" : "local vendors"}${selectedLocation !== "All Locations" ? ` in ${selectedLocation}` : ""}. Browse vendors, view profiles, and explore their menus.`
             : undefined
         }
       />
@@ -885,7 +873,7 @@ export default function ExplorePage() {
         {/* ✅ Left Sidebar */}
         <aside
         className={`
-          fixed lg:static inset-y-0 left-0 z-50
+          fixed lg:static top-32 bottom-0 left-0 z-40
           w-64 bg-hospineil-primary shadow-xl
           transform transition-transform duration-300 ease-in-out
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
@@ -893,8 +881,16 @@ export default function ExplorePage() {
       >
         <div className="flex flex-col h-full">
           {/* Sidebar Header */}
-          <div className="p-6 border-b border-hospineil-primary/20">
-            <h2 className="text-xl font-bold text-white font-logo">Hospineil</h2>
+          <div className="p-6 border-b border-hospineil-primary/20 flex items-start justify-between">
+            <h2 className="text-xl font-bold text-white font-logo">Hospeniel</h2>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="lg:hidden p-2 rounded-lg text-white/90 hover:text-white hover:bg-white/10"
+              aria-label="Close menu"
+              type="button"
+            >
+              <X size={20} />
+            </button>
           </div>
 
           {/* Navigation Links */}
@@ -942,7 +938,7 @@ export default function ExplorePage() {
       {/* ✅ Overlay for mobile sidebar */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          className="fixed inset-x-0 bottom-0 top-32 bg-black bg-opacity-50 z-30 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -950,15 +946,17 @@ export default function ExplorePage() {
       {/* ✅ Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Header */}
-        <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-30">
+        <header className="bg-white shadow-sm border-b border-gray-200 sticky top-32 z-30">
           <div className="px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex items-center justify-between">
               {/* Mobile Menu Button */}
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
                 className="lg:hidden p-2 rounded-lg text-gray-600 hover:bg-gray-100"
+                aria-label={sidebarOpen ? "Close menu" : "Open menu"}
+                type="button"
               >
-                {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
+                {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
               </button>
 
               {/* Greeting Section */}
@@ -989,9 +987,9 @@ export default function ExplorePage() {
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 pt-6 sm:pt-8 lg:pt-10 overflow-y-auto">
           {/* ✅ Service Profile Vendors Section (Chefs & Home Cooks) */}
-          {!selectedVendor && (() => {
+          {(() => {
             // Show loading state
             if (loadingServiceProfiles) {
               return (
@@ -1058,9 +1056,9 @@ export default function ExplorePage() {
             }
             
             return (
-              <div className="mb-8">
-                <h2 className="text-2xl font-bold text-gray-800 mb-4 font-header">
-                  Chefs & Home Cooks
+              <div className="mb-8 pt-2 sm:pt-4">
+                <h2 className="text-2xl font-bold text-gray-800 mb-4 font-header relative z-10">
+                  Chef and Home Cooks Too
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {filteredServiceVendors.map((vendor) => {
@@ -1072,7 +1070,7 @@ export default function ExplorePage() {
                     return (
                     <div
                       key={vendor.id}
-                      className="bg-white rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:scale-105 border border-gray-100"
+                      className="relative bg-white rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:scale-[1.02] hover:z-10 border border-gray-100"
                     >
                       {/* Vendor Image */}
                       <div className="relative w-full h-48 overflow-hidden bg-gray-200">
@@ -1098,9 +1096,10 @@ export default function ExplorePage() {
                       {/* Vendor Info */}
                       <div className="p-5 pt-4 flex flex-col h-full">
                         <div className="flex items-center justify-between mb-2">
-                          <h3 className="text-lg font-bold text-gray-800 font-header">
-                            {vendor.name}
-                          </h3>
+                        <h3 className="text-lg font-bold text-gray-800 font-header flex items-center gap-2">
+                          <span>{vendor.name}</span>
+                          <VerifiedBadge verified={vendor.verified} />
+                        </h3>
                           <span className="px-2 py-1 bg-hospineil-primary/10 text-hospineil-primary text-xs font-semibold rounded-full">
                             {getCategoryLabel(vendor.category)}
                           </span>
@@ -1158,17 +1157,15 @@ export default function ExplorePage() {
             );
           })()}
 
-          {/* ✅ Menu Items Section */}
-          {!selectedVendor ? (
-            <>
+          {/* ✅ Vendor Directory Section */}
               <div className="mb-6">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
                   <div>
                     <h2 className="text-3xl font-bold text-hospineil-primary mb-2 font-header">
-                      Explore Menu Items
+                  Explore Vendors
                     </h2>
                     <p className="text-gray-600 font-body">
-                      Discover delicious meals from all vendors
+                  Browse vendor profiles and explore their menus
                     </p>
                   </div>
                   
@@ -1216,12 +1213,12 @@ export default function ExplorePage() {
                 </div>
               </div>
 
-              {filteredMenuItems.length === 0 && !loading ? (
+          {filteredVendors.length === 0 && !loading ? (
                 <div className="bg-white rounded-xl shadow-sm p-12 text-center">
                   <p className="text-gray-500 text-lg mb-4">
                     {selectedLocation === "All Locations" && selectedCategory === "All"
-                      ? "No menu items available yet."
-                      : `No menu items found${selectedLocation !== "All Locations" ? ` in ${selectedLocation}` : ""}${selectedCategory !== "All" ? ` for ${selectedCategory}` : ""}.`}
+                  ? "No vendors available yet."
+                  : `No vendors found${selectedLocation !== "All Locations" ? ` in ${selectedLocation}` : ""}${selectedCategory !== "All" ? ` for ${selectedCategory}` : ""}.`}
                   </p>
                   {(selectedLocation !== "All Locations" || selectedCategory !== "All") && (
                     <div className="flex gap-2 justify-center">
@@ -1246,23 +1243,23 @@ export default function ExplorePage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {filteredMenuItems.map((item) => (
-                    <div
-                      key={item.id}
+              {displayedVendors.map((vendor) => (
+                <Link
+                  key={vendor.profile_id}
+                  href={`/vendors/profile/${vendor.profile_id}`}
                       className="bg-white rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:scale-[1.01] border border-gray-100 hover:border-hospineil-accent/30 group flex flex-col"
                     >
-                      {/* Product Image */}
-                      <div className="relative w-full h-64 sm:h-60 overflow-hidden bg-gray-100">
-                        {item.image_url ? (
+                  <div className="relative w-full h-48 sm:h-52 overflow-hidden bg-gray-100">
+                    {vendor.image_url ? (
                           <Image
-                            src={item.image_url}
-                            alt={item.title}
+                        src={vendor.image_url}
+                        alt={vendor.name}
                             fill
                             className="object-cover transition-transform duration-300 group-hover:scale-105"
                             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                             onError={(e) => {
                               const target = e.target as HTMLImageElement;
-                              target.src = "/placeholder-image.png";
+                          target.src = "/default-vendor.png";
                             }}
                             unoptimized
                           />
@@ -1272,312 +1269,42 @@ export default function ExplorePage() {
                           </div>
                         )}
                         <div className="absolute inset-0 bg-gradient-to-t from-black/25 via-black/0 to-black/0" />
-                        {/* Availability Badge */}
-                        <div className="absolute top-3 right-3">
-                          <span
-                            className={`px-3 py-1 rounded-full text-xs font-semibold shadow-md ${
-                              (item.availability === true || (typeof item.availability === "string" && item.availability.toLowerCase() === "available"))
-                                ? "bg-green-500 text-white"
-                                : "bg-red-500 text-white"
-                            }`}
-                          >
-                            {(item.availability === true || (typeof item.availability === "string" && item.availability.toLowerCase() === "available")) ? "Available" : "Out of Stock"}
-                          </span>
-                        </div>
                       </div>
 
-                      {/* Product Info */}
-                      <div className="p-5">
-                        {/* Vendor Name - Prominent Display - Always show if vendor data exists */}
-                        {item.vendors ? (
-                          <div className="mb-3 pb-3 border-b border-gray-100">
-                            <div className="flex items-center gap-2 mb-1">
-                              {item.vendors.image_url ? (
-                                <div className="relative w-8 h-8 rounded-full overflow-hidden border border-gray-200">
-                                  <Image
-                                    src={item.vendors.image_url}
-                                    alt={item.vendors.name || "Vendor"}
-                                    fill
-                                    className="object-cover"
-                                    sizes="32px"
-                                    onError={(e) => {
-                                      const target = e.target as HTMLImageElement;
-                                      target.src = "/default-vendor.png";
-                                    }}
-                                  />
-                                </div>
-                              ) : (
-                                <div className="w-8 h-8 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center">
-                                  <UtensilsCrossed className="w-4 h-4 text-gray-400" />
-                                </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-gray-800 truncate font-header">
-                                  {/* CRITICAL: Display vendor name from profiles.name - never show placeholder if name exists */}
-                                  {item.vendors.name && 
-                                   item.vendors.name !== "Vendor Name Not Available"
-                                    ? item.vendors.name 
-                                    : "Vendor"}
-                                  {item.vendors.category && (
-                                    <span className="text-gray-500 font-normal"> – {getCategoryLabel(item.vendors.category)}</span>
-                                  )}
-                                </p>
-                                {item.vendors.location && (
-                                  <p className="text-xs text-gray-500 flex items-center gap-1 font-body">
-                                    <span>📍</span>
-                                    <span>{item.vendors.location}</span>
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="mb-3 pb-3 border-b border-gray-200">
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 rounded-full bg-gray-100 border-2 border-gray-200 flex items-center justify-center">
-                                <UtensilsCrossed className="w-4 h-4 text-gray-400" />
-                              </div>
-                              <p className="text-xs text-gray-500 italic font-body">Loading vendor information...</p>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Product Title */}
-                        <h3 className="text-lg font-semibold text-gray-800 mb-2 line-clamp-2 font-header">
-                          {item.title}
-                        </h3>
-
-                        {/* Description */}
-                        <p className="text-gray-600 text-sm mb-2 line-clamp-2 font-body">
-                          {item.description || "No description available"}
-                        </p>
-
-                        {/* Price and Buttons */}
-                        <div className="flex items-center justify-between mb-3">
-                          <p className="text-hospineil-primary font-bold text-xl font-header">
-                            ₦{item.price.toLocaleString("en-NG", { minimumFractionDigits: 2 })}
-                          </p>
-                        </div>
-
-                        <div className="flex flex-col gap-2">
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => handleAddToCart(item.id, item.vendor_id)}
-                              disabled={!(item.availability === true || item.availability === "available") || addingToCart === item.id}
-                              className={`flex-1 py-2.5 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium font-button ${
-                                (item.availability === true || item.availability === "available")
-                                  ? "bg-hospineil-primary text-white hover:bg-hospineil-primary/90 hover:scale-105"
-                                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                              }`}
-                            >
-                              {addingToCart === item.id ? "Adding..." : (item.availability === true || item.availability === "available") ? "Add to Cart" : "Out of Stock"}
-                            </button>
-                            <button
-                              onClick={() => placeOrder(item)}
-                              disabled={placingOrder || !(item.availability === true || item.availability === "available")}
-                              className={`flex-1 py-2.5 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium border-2 font-button ${
-                                (item.availability === true || item.availability === "available")
-                                  ? "border-hospineil-accent text-hospineil-accent hover:bg-hospineil-accent hover:text-white hover:scale-105"
-                                  : "border-gray-300 text-gray-500 cursor-not-allowed"
-                              }`}
-                            >
-                              {placingOrder ? "Placing..." : (item.availability === true || item.availability === "available") ? "Order Now" : "Out of Stock"}
-                            </button>
-                          </div>
-                          
-                          {/* Contact Vendor Button - Only for Premium Vendors (is_premium = true) */}
-                          {item.vendors && item.vendor_id && item.vendors.is_premium === true && (
-                            <button
-                              onClick={() => {
-                                setServiceRequestDialog({
-                                  open: true,
-                                  vendorId: item.vendor_id,
-                                  vendorName: item.vendors?.name || "Vendor",
-                                  isPremium: true,
-                                  subscriptionPlan: item.vendors?.subscription_plan || "professional",
-                                });
-                              }}
-                              className="w-full py-2 rounded-lg transition-all font-medium border-2 border-hospineil-primary text-hospineil-primary hover:bg-hospineil-primary hover:text-white flex items-center justify-center gap-2 font-button"
-                            >
-                              <MessageSquare className="h-4 w-4" />
-                              Request Service
-                            </button>
+                  <div className="p-5 flex flex-col flex-1">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <h3 className="text-lg font-semibold text-gray-800 line-clamp-1 font-header flex items-center gap-1">
+                        <span>{vendor.name}</span>
+                          <VerifiedBadge verified={vendor.verified} />
+                      </h3>
+                      {vendor.category && (
+                        <span className="px-2 py-1 bg-hospineil-accent/10 text-hospineil-accent text-xs font-semibold rounded-full whitespace-nowrap">
+                          {getCategoryLabel(vendor.category)}
+                        </span>
                           )}
                         </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => {
-                  setSelectedVendor(null);
-                  fetchAllMenuItems();
-                }}
-                className="flex items-center gap-2 text-hospineil-primary hover:text-hospineil-accent font-medium mb-6 transition-colors font-button"
-              >
-                <X size={20} className="rotate-45" />
-                Back to All Items
-              </button>
-
-              <div className="mb-6">
-                <h2 className="text-3xl font-bold text-hospineil-primary mb-2 font-header">
-                  {selectedVendor.name} Menu
-                </h2>
-                <p className="text-gray-600 font-body">
-                  Browse our delicious menu items
-                </p>
-              </div>
-
-              {menuItems.length === 0 ? (
-                <div className="bg-white rounded-xl shadow-sm p-12 text-center">
-                  <p className="text-gray-500 text-lg">
-                    No menu items yet.
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {menuItems.map((item) => (
-                    <div
-                      key={item.id}
-                      className="bg-white rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:scale-[1.01] border border-gray-100 hover:border-hospineil-accent/30 group flex flex-col"
-                    >
-                      <div className="relative w-full h-64 sm:h-60 overflow-hidden bg-gray-100">
-                        <Image
-                          src={item.image_url || "/placeholder-image.png"}
-                          alt={item.title}
-                          fill
-                          className="object-cover transition-transform duration-300 group-hover:scale-105"
-                          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/25 via-black/0 to-black/0" />
-                        <div className="absolute top-3 right-3">
-                          <span
-                            className={`px-3 py-1 rounded-full text-xs font-semibold shadow-md ${
-                              (item.availability === true || item.availability === "available")
-                                ? "bg-green-500 text-white"
-                                : "bg-red-500 text-white"
-                            }`}
-                          >
-                            {(item.availability === true || item.availability === "available") ? "Available" : "Out of Stock"}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="p-5 pt-4 flex flex-col h-full">
-                        {/* Vendor Name - Prominent Display (for selected vendor view) - Always show if vendor data exists */}
-                        {item.vendors ? (
-                          <div className="mb-3 pb-3 border-b border-gray-100">
-                            <div className="flex items-center gap-2 mb-1">
-                              {item.vendors.image_url ? (
-                                <div className="relative w-8 h-8 rounded-full overflow-hidden border border-gray-200">
-                                  <Image
-                                    src={item.vendors.image_url}
-                                    alt={item.vendors.name || "Vendor"}
-                                    fill
-                                    className="object-cover"
-                                    sizes="32px"
-                                    onError={(e) => {
-                                      const target = e.target as HTMLImageElement;
-                                      target.src = "/default-vendor.png";
-                                    }}
-                                  />
-                                </div>
-                              ) : (
-                                <div className="w-8 h-8 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center">
-                                  <UtensilsCrossed className="w-4 h-4 text-gray-400" />
-                                </div>
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-gray-800 truncate font-header">
-                                  {item.vendors.name || "Vendor"}
-                                  {item.vendors.category && (
-                                    <span className="text-gray-500 font-normal"> – {getCategoryLabel(item.vendors.category)}</span>
-                                  )}
-                                </p>
-                                {item.vendors.location && (
-                                  <p className="text-xs text-gray-500 flex items-center gap-1 font-body">
-                                    <span>📍</span>
-                                    <span>{item.vendors.location}</span>
-                                  </p>
-                                )}
+                    {vendor.vendor_table_id &&
+                      vendorRatings[String(vendor.vendor_table_id)] && (
+                      <p className="text-sm text-gray-600 mb-2 font-body">
+                        ⭐ {vendorRatings[String(vendor.vendor_table_id)].average.toFixed(1)} ({vendorRatings[String(vendor.vendor_table_id)].count} reviews)
+                      </p>
+                    )}
+                    {vendor.location && (
+                      <p className="text-sm text-gray-600 mb-2 font-body flex items-center gap-1">
+                        <MapPin className="h-4 w-4 text-gray-500" />
+                        <span>{vendor.location}</span>
+                      </p>
+                    )}
+                    <p className="text-sm text-gray-600 line-clamp-2 font-body">
+                      {vendor.description || "View menu and vendor details"}
+                    </p>
+                    <div className="mt-4 text-sm font-semibold text-hospineil-primary">
+                      View Profile →
                               </div>
                             </div>
-                          </div>
-                        ) : (
-                          <div className="mb-3 pb-3 border-b border-gray-200">
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 rounded-full bg-gray-100 border-2 border-gray-200 flex items-center justify-center">
-                                <UtensilsCrossed className="w-4 h-4 text-gray-400" />
-                              </div>
-                              <p className="text-xs text-gray-500 italic font-body">Loading vendor information...</p>
-                            </div>
-                          </div>
-                        )}
-
-                        <h3 className="text-lg font-semibold text-gray-800 mb-2 font-header">
-                          {item.title}
-                        </h3>
-                        <p className="text-gray-600 text-sm mb-2 line-clamp-2 font-body">
-                          {item.description}
-                        </p>
-                        <div className="flex items-center justify-between mb-3">
-                          <p className="text-hospineil-primary font-bold text-xl font-header">
-                            ₦{item.price.toLocaleString("en-NG", { minimumFractionDigits: 2 })}
-                          </p>
-                        </div>
-                        <div className="flex flex-col gap-2">
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => handleAddToCart(item.id, item.vendor_id)}
-                              disabled={!(item.availability === true || item.availability === "available") || addingToCart === item.id}
-                              className={`flex-1 py-2.5 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium font-button ${
-                                (item.availability === true || item.availability === "available")
-                                  ? "bg-hospineil-primary text-white hover:bg-hospineil-primary/90 hover:scale-105"
-                                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                              }`}
-                            >
-                              {addingToCart === item.id ? "Adding..." : (item.availability === true || item.availability === "available") ? "Add to Cart" : "Out of Stock"}
-                            </button>
-                            <button
-                              onClick={() => placeOrder(item)}
-                              disabled={placingOrder || !(item.availability === true || item.availability === "available")}
-                              className={`flex-1 py-2.5 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium border-2 font-button ${
-                                (item.availability === true || item.availability === "available")
-                                  ? "border-hospineil-accent text-hospineil-accent hover:bg-hospineil-accent hover:text-white hover:scale-105"
-                                  : "border-gray-300 text-gray-500 cursor-not-allowed"
-                              }`}
-                            >
-                              {placingOrder ? "Placing..." : (item.availability === true || item.availability === "available") ? "Order Now" : "Out of Stock"}
-                            </button>
-                          </div>
-                          {/* Contact Vendor Button - Only for Premium Vendors (is_premium = true) */}
-                          {item.vendors && item.vendor_id && item.vendors.is_premium === true && (
-                            <button
-                              onClick={() => {
-                                setServiceRequestDialog({
-                                  open: true,
-                                  vendorId: item.vendor_id,
-                                  vendorName: item.vendors?.name || "Vendor",
-                                  isPremium: true,
-                                  subscriptionPlan: item.vendors?.subscription_plan || "professional",
-                                });
-                              }}
-                              className="w-full py-2 rounded-lg transition-all font-medium border-2 border-hospineil-primary text-hospineil-primary hover:bg-hospineil-primary hover:text-white flex items-center justify-center gap-2 font-button"
-                            >
-                              <MessageSquare className="h-4 w-4" />
-                              Request Service
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                </Link>
                   ))}
                 </div>
-              )}
-            </>
           )}
         </main>
       </div>

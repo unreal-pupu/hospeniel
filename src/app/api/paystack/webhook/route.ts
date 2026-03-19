@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { POST as verifyPayment } from "@/app/api/payment/verify/route";
+import { processPremiumToolPayment } from "@/lib/vendor-feature-entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,12 @@ export async function POST(req: Request) {
       reference?: string;
       metadata?: {
         service_request_id?: string;
+        purchase_type?: string;
+        [key: string]: unknown;
       };
+      amount?: number;
+      paid_at?: string;
+      status?: string;
     };
   };
   try {
@@ -50,6 +56,26 @@ export async function POST(req: Request) {
 
   if (event !== "charge.success" || !data?.reference) {
     return NextResponse.json({ received: true });
+  }
+
+  // Dedicated handler for vendor premium-tool purchases
+  const purchaseType = data?.metadata && typeof data.metadata === "object" && "purchase_type" in data.metadata ? (data.metadata as { purchase_type?: string }).purchase_type : undefined;
+  if (purchaseType === "vendor_premium_tool") {
+    console.log("[paystack/webhook] processing vendor premium tool", { reference: data.reference });
+    const processed = await processPremiumToolPayment({
+      reference: data.reference as string,
+      transactionData: data as { reference?: string; amount?: number; paid_at?: string; status?: string; metadata?: Record<string, unknown> },
+    });
+
+    if (!processed.ok) {
+      console.error("[paystack/webhook] vendor premium-tool processing failed", { reference: data.reference, reason: processed.reason });
+      return NextResponse.json(
+        { received: false, error: `Processing failed: ${processed.reason}` },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ received: true, premium_tool_processed: true });
   }
 
   const reference = data.reference as string;

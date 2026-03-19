@@ -26,6 +26,7 @@ import {
   Trash2,
   ChefHat
 } from "lucide-react";
+import { VendorPremiumToolsSection } from "@/components/vendor-premium-tools-section";
 
 interface VendorProfile {
   id: string;
@@ -704,6 +705,12 @@ export default function CookChefDashboard({ vendor }: { vendor: VendorProfile | 
           </div>
         </div>
       </div>
+
+      {vendor?.id && isValidUuid(vendor.id) && (
+        <div className="mb-8">
+          <VendorPremiumToolsSection vendorId={vendor.id} />
+        </div>
+      )}
 
       {/* Payout + Commission Notice */}
       <div className="mb-6 p-4 bg-amber-50 border-2 border-amber-300 rounded-lg">
