@@ -86,14 +86,7 @@ export default function Navbar() {
   if (pathname.startsWith("/vendor") || pathname.startsWith("/admin")) return null;
 
   // ✅ Navigation links for landing page
-  const landingPageLinks = [
-    { id: "home", label: "Home" },
-    { id: "features", label: "Features" },
-    // { id: "pricing", label: "Pricing" },
-    { id: "listing", label: "Listing" },
-    { id: "testimonials", label: "Testimonials" },
-    { id: "faq", label: "FAQ" },
-  ];
+  const landingPageLinks: Array<{ id: string; label: string }> = [];
 
   return (
     <nav className="bg-[#ffffff] shadow-sm fixed top-0 left-0 right-0 z-50">

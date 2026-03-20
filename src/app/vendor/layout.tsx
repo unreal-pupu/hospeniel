@@ -19,6 +19,7 @@ import {
   MessageSquare,
   Megaphone,
   BarChart3,
+  Bike,
 } from "lucide-react";
 import NotificationBell from "@/components/NotificationBell";
 
@@ -183,6 +184,7 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
   const baseLinks = [
     { href: "/vendor/dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
     { href: "/vendor/menu", label: "Menu", icon: <UtensilsCrossed size={18} /> },
+    { href: "/vendor/dispatch", label: "Dispatch", icon: <Bike size={18} /> },
     ...(canManageOrders ? [{ href: "/vendor/orders", label: "Orders", icon: <Clock size={18} /> }] : []),
     { href: "/vendor/notifications", label: "Notifications", icon: <Bell size={18} /> },
   ];
@@ -213,7 +215,11 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-hospineil-base-bg flex flex-col">
       {/* ✅ Top Navbar */}
       <header className="flex items-center justify-between bg-white shadow-sm border-b border-gray-200 px-4 py-3 lg:px-8 sticky top-0 z-30">
-        <h1 className="text-2xl font-bold text-hospineil-primary font-logo">Hospineil</h1>
+        <img
+          src="/new.jpeg"
+          alt="Hospeniel"
+          className="h-9 w-auto object-contain"
+        />
         <div className="flex items-center gap-4">
           {/* Only show NotificationBell if authenticated (prevents errors) */}
           {isAuthenticated === true && (

@@ -85,7 +85,7 @@ Become a Partner
   href="/pricing"
   className="text-gray-600 hover:text-hospineil-primary font-body transition-colors duration-200 text-left"
 >
-  Pricing
+  How to sell your Food items on Hospeniel
 </Link>
 
               </li>

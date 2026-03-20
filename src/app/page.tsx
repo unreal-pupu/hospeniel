@@ -9,6 +9,8 @@ import { generateWebsiteSchema, generateOrganizationSchema } from "@/lib/seo";
 // Dynamic imports for below-the-fold components with code splitting
 const HowItWorks = dynamic(() => import("@/components/HowItWorks"), {
   loading: () => <div className="min-h-[400px] bg-hospineil-base-bg" />,
+  // This is a client component; avoid SSR loading to prevent server-side webpack runtime errors.
+  ssr: false,
 });
 
 const VendorShowcase = dynamic(() => import("@/components/VendorShowcase"), {
