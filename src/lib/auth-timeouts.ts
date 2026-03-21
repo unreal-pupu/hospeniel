@@ -1,4 +1,10 @@
-import type { Session, SupabaseClient } from "@supabase/supabase-js";
+import type { Session, SupabaseClient, User } from "@supabase/supabase-js";
+
+/**
+ * After `window.location` navigation (e.g. post-login), `getUser()` can briefly
+ * return null on mobile/incognito while storage hydrates. Poll until session exists.
+ */
+export const POST_NAV_AUTH_WAIT_MS = 30_000;
 
 /**
  * Default cap for non-login paths (navbar, cart). Long enough for slow mobile,
@@ -86,4 +92,19 @@ export async function waitForPersistedSession(
   }
   console.warn("[auth] waitForPersistedSession: no session with access_token before deadline");
   return null;
+}
+
+/**
+ * Use on protected pages right after full-page navigation from login.
+ * Prefers session.user from getSession() (local) then falls back to getUser().
+ */
+export async function getSessionUserAfterNavigation(
+  client: AuthClient,
+  maxMs: number = POST_NAV_AUTH_WAIT_MS
+): Promise<User | null> {
+  const session = await waitForPersistedSession(client, maxMs);
+  if (session?.user) return session.user;
+  const { data, error } = await client.auth.getUser();
+  if (error) console.warn("[auth] getSessionUserAfterNavigation getUser:", error.message);
+  return data.user ?? null;
 }

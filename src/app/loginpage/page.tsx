@@ -422,26 +422,28 @@ export default function LoginPage() {
         return;
       }
 
-      // Step 2b: Ensure session + access_token exist before RLS-backed profile read.
-      // On mobile, short Promise.race timeouts falsely return "no session"; polling avoids that.
-      if (!authData?.session?.access_token) {
-        console.log("🔵 No session in signIn response — waiting for persisted session...");
-        const persisted = await waitForPersistedSession(supabase, LOGIN_SESSION_WAIT_MAX_MS);
-        if (!persisted?.access_token) {
-          console.error("❌ Session not available after sign-in");
-          setLoading(false);
-          setIsLoggingIn(false);
-          alert("Session not created. Please try again.");
-          return;
-        }
-        console.log("✅ Session available after wait");
-      } else {
-        console.log("✅ Session confirmed from sign-in");
+      // Step 2b: Always wait for persisted session before RLS-backed profile read.
+      // Mobile/incognito often lags writing storage; skipping this caused profile=null (RLS).
+      console.log("🔵 Waiting for session persistence before profile fetch...");
+      const persisted = await waitForPersistedSession(supabase, LOGIN_SESSION_WAIT_MAX_MS);
+      if (!persisted?.access_token) {
+        console.error("❌ Session not available after sign-in");
+        setLoading(false);
+        setIsLoggingIn(false);
+        alert("Session not created. Please try again.");
+        return;
+      }
+      console.log("✅ Session persisted and ready for API calls");
+
+      // Refresh user/JWT with server so PostgREST sees a valid token on slow mobile links
+      const { error: jwtRefreshError } = await supabase.auth.getUser();
+      if (jwtRefreshError) {
+        console.warn("[login] getUser after persist (non-fatal):", jwtRefreshError.message);
       }
 
       console.log("🔵 User authenticated:", user.id, user.email);
 
-      // Step 3: Fetch profile — retry briefly if JWT/storage lags on mobile (RLS needs auth header)
+      // Step 3: Fetch profile — retries if JWT/RLS lags after navigation-class delays
       console.log("🔵 Fetching user profile...");
       let profile: {
         role: string | null;
@@ -451,7 +453,7 @@ export default function LoginPage() {
       } | null = null;
       let profileError: { message: string; code?: string } | null = null;
 
-      for (let attempt = 0; attempt < 4; attempt++) {
+      for (let attempt = 0; attempt < 6; attempt++) {
         const res = await supabase
           .from("profiles")
           .select("role, is_admin, rider_approval_status, approval_status")
@@ -463,7 +465,7 @@ export default function LoginPage() {
 
         if (profileError) break;
         if (profile) break;
-        await new Promise((resolve) => setTimeout(resolve, 300 + attempt * 200));
+        await new Promise((resolve) => setTimeout(resolve, 400 + attempt * 350));
       }
 
       console.log("🔵 Profile fetch response:", { 

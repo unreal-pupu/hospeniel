@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { getUserWithTimeout } from "@/lib/auth-timeouts";
+import { getSessionUserAfterNavigation } from "@/lib/auth-timeouts";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import {
   LogOut,
@@ -46,12 +46,9 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
             setIsAuthenticated(true); // Default to true to allow layout to render
             setSubscriptionPlan("free_trial");
           }
-        }, 5000); // 5 second timeout
+        }, 35_000);
 
-        const {
-          data: { user },
-          error,
-        } = await getUserWithTimeout(supabase);
+        const user = await getSessionUserAfterNavigation(supabase);
         
         // Clear timeout if we got a response
         if (timeoutId) {
@@ -60,7 +57,7 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
         }
         
         if (isMounted) {
-          if (error || !user) {
+          if (!user) {
             setIsAuthenticated(false);
             // Don't redirect here - let the child page handle it to prevent loops
           } else {

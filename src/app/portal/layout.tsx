@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { getUserWithTimeout } from "@/lib/auth-timeouts";
+import { getSessionUserAfterNavigation } from "@/lib/auth-timeouts";
 import {
   LayoutDashboard,
   Package,
@@ -42,17 +42,10 @@ export default function RiderLayout({ children }: RiderLayoutProps) {
     }
 
     try {
-      const { data: { user }, error: userError } = await getUserWithTimeout(supabase);
+      const user = await getSessionUserAfterNavigation(supabase);
       
-      if (userError) {
-        console.error("Error getting user:", userError);
-        setLoading(false);
-        router.replace("/loginpage?redirect=/portal");
-        return;
-      }
-
       if (!user) {
-        console.log("No user found - redirecting to login");
+        console.error("Error getting user: no session after navigation wait");
         setLoading(false);
         router.replace("/loginpage?redirect=/portal");
         return;

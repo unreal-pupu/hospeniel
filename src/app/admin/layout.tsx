@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { getSessionUserAfterNavigation } from "@/lib/auth-timeouts";
 import {
   LayoutDashboard,
   Users,
@@ -42,7 +43,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   useEffect(() => {
     const checkAdminAccess = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const user = await getSessionUserAfterNavigation(supabase);
         
         if (!user) {
           router.push("/loginpage?redirect=/admin");
@@ -173,14 +174,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     if (!isAdmin) return;
 
     const fetchNotifications = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
 
       const { count } = await supabase
         .from("notifications")
         .select("*", { count: "exact", head: true })
         .eq("read", false)
-        .eq("vendor_id", user.id);
+        .eq("vendor_id", session.user.id);
 
       setUnreadNotifications(count || 0);
     };

@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { getSessionUserAfterNavigation } from "@/lib/auth-timeouts";
 import { RefreshCw, Loader2, Info } from "lucide-react";
 import type {
   User,
@@ -131,24 +132,19 @@ const VendorDashboard: React.FC = () => {
 
         if (!isMounted) return;
 
-        // Step 1: Check authentication
+        // Step 1: Check authentication — after full-page redirect from login, mobile can
+        // briefly return null from getUser(); poll until session is hydrated.
         console.log("🔵 Vendor Dashboard: Checking authentication...");
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-        
-        currentUser = user; // Store user for error handling
+        const user = await getSessionUserAfterNavigation(supabase);
+        currentUser = user;
 
         console.log("🔵 Vendor Dashboard: Auth check result:", {
-          hasError: !!userError,
-          error: userError?.message,
           hasUser: !!user,
-          userId: user?.id
+          userId: user?.id,
         });
 
-        if (userError || !user) {
-          console.error("❌ Vendor Dashboard: No authenticated user");
+        if (!user) {
+          console.error("❌ Vendor Dashboard: No authenticated user after session wait");
           clearTimeout(timeoutId);
           if (isMounted) {
             router.replace("/loginpage");
@@ -168,7 +164,8 @@ const VendorDashboard: React.FC = () => {
           .from("profiles")
           .select("id, name, email, role, address, location, category, subscription_plan, is_premium, created_at")
           .eq("id", user.id)
-          .single();
+          .limit(1)
+          .maybeSingle();
 
         // Better error logging
         if (profileError) {
