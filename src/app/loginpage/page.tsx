@@ -6,12 +6,16 @@ import { supabase } from "@/lib/supabaseClient";
 import {
   getSessionWithTimeout,
   getUserWithTimeout,
+  isLikelyMobileBrowser,
   LOGIN_AUTH_FETCH_TIMEOUT_MS,
   LOGIN_SESSION_WAIT_MAX_MS,
   POST_LOGIN_AUTH_USER_WAIT_MS,
-  waitForAuthenticatedUser,
+  POST_SET_SESSION_SETTLE_MS,
+  persistSessionAfterSignIn,
   waitForPersistedSession,
+  waitForVerifiedUserForProfileQuery,
 } from "@/lib/auth-timeouts";
+import { fetchProfileForLogin } from "@/lib/fetch-login-profile";
 import {
   Card,
   CardContent,
@@ -235,14 +239,13 @@ export default function LoginPage() {
 
         if (!isMounted || redirectExecuted) return;
 
-        // ✅ STEP 6: Fetch profile to determine role and admin status (only if all validations passed)
+        // ✅ STEP 6: Fetch profile (retries + ensure_my_profile if row missing — mobile/RLS/storage)
         console.log("🔵 Fetching user profile...");
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("role, is_admin, rider_approval_status, approval_status")
-          .eq("id", userData.user.id)
-          .limit(1)
-          .maybeSingle();
+        const { profile, error: profileError } = await fetchProfileForLogin(
+          supabase,
+          userData.user.id,
+          { logPrefix: "[login session]" }
+        );
 
         console.log("🔵 Profile fetch result:", {
           hasError: !!profileError,
@@ -424,26 +427,11 @@ export default function LoginPage() {
         return;
       }
 
-      // Step 2b: Prefer session from signIn response — it is authoritative. Polling getSession()
-      // alone can spin for LOGIN_SESSION_WAIT_MAX_MS on mobile when storage lags behind in-memory state.
+      // Step 2b: Persist tokens to storage immediately so JWT is attached before profile queries (mobile).
       const signInSession = authData?.session ?? null;
       let sessionReady = signInSession?.access_token ? signInSession : null;
 
-      if (sessionReady?.access_token && sessionReady.refresh_token) {
-        try {
-          const { error: setErr } = await supabase.auth.setSession({
-            access_token: sessionReady.access_token,
-            refresh_token: sessionReady.refresh_token,
-          });
-          if (setErr) {
-            console.warn("[login] setSession after signIn (non-fatal):", setErr.message);
-          }
-        } catch (e) {
-          console.warn("[login] setSession after signIn:", e);
-        }
-      } else if (sessionReady?.access_token && !sessionReady.refresh_token) {
-        console.warn("[login] signIn session missing refresh_token — relying on client session + getUser()");
-      }
+      await persistSessionAfterSignIn(supabase, signInSession);
 
       if (!sessionReady?.access_token) {
         console.log("🔵 No session in signIn response — waiting for persisted session...");
@@ -459,9 +447,14 @@ export default function LoginPage() {
       }
       console.log("✅ Session ready for API calls");
 
-      // Prefer user from waitForAuthenticatedUser (getSession fast path + getUser poll). On slow mobile,
-      // getUser() alone can hit the wall-clock timeout even though signIn already returned session.user.
-      const verifiedUser = await waitForAuthenticatedUser(supabase, POST_LOGIN_AUTH_USER_WAIT_MS);
+      // Poll getUser() until server-verified user (JWT valid for RLS). Mobile: short settle after setSession.
+      const settleMs = isLikelyMobileBrowser() ? POST_SET_SESSION_SETTLE_MS : 0;
+      const verifiedUser = await waitForVerifiedUserForProfileQuery(
+        supabase,
+        POST_LOGIN_AUTH_USER_WAIT_MS,
+        400,
+        settleMs
+      );
       const fallbackUser = sessionReady.user ?? user;
       const canonicalUser = verifiedUser ?? fallbackUser ?? null;
 
@@ -479,30 +472,11 @@ export default function LoginPage() {
 
       console.log("🔵 User authenticated:", canonicalUser.id, canonicalUser.email);
 
-      // Step 3: Fetch profile — retries if PostgREST/RLS lags after JWT attach
+      // Step 3: Fetch profile — retries + ensure_my_profile if row missing
       console.log("🔵 Fetching user profile...");
-      let profile: {
-        role: string | null;
-        is_admin: boolean | null;
-        rider_approval_status: string | null;
-        approval_status: string | null;
-      } | null = null;
-      let profileError: { message: string; code?: string } | null = null;
-
-      for (let attempt = 0; attempt < 8; attempt++) {
-        const res = await supabase
-          .from("profiles")
-          .select("role, is_admin, rider_approval_status, approval_status")
-          .eq("id", canonicalUser.id)
-          .limit(1)
-          .maybeSingle();
-        profile = res.data;
-        profileError = res.error;
-
-        if (profileError) break;
-        if (profile) break;
-        await new Promise((resolve) => setTimeout(resolve, 400 + attempt * 350));
-      }
+      const { profile, error: profileError } = await fetchProfileForLogin(supabase, canonicalUser.id, {
+        logPrefix: "[login]",
+      });
 
       console.log("🔵 Profile fetch response:", { 
         hasError: !!profileError,

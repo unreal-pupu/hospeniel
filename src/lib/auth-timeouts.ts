@@ -30,10 +30,95 @@ export const LOGIN_SESSION_WAIT_MAX_MS = 60_000;
  */
 export const POST_LOGIN_AUTH_USER_WAIT_MS = 60_000;
 
+/**
+ * After setSession / sign-in, mobile storage (localStorage / WebKit) can lag briefly before
+ * the next PostgREST request attaches JWT. Applied only when {@link isLikelyMobileBrowser} is true.
+ */
+export const POST_SET_SESSION_SETTLE_MS = 150;
+
 type SessionResult = Awaited<ReturnType<SupabaseClient["auth"]["getSession"]>>;
 type UserResult = Awaited<ReturnType<SupabaseClient["auth"]["getUser"]>>;
 
 type AuthClient = Pick<SupabaseClient, "auth">;
+
+/** Heuristic for touch / phone UA — used to add a short post-session settle delay only on mobile. */
+export function isLikelyMobileBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua)) return true;
+  if (navigator.maxTouchPoints > 1 && !/Windows NT/i.test(ua)) return true;
+  return false;
+}
+
+/**
+ * Persists tokens to client storage immediately after signIn. Call before profile queries so JWT is attached.
+ * When refresh_token is missing, attempts setSession with empty refresh (some clients); failures are non-fatal.
+ */
+export async function persistSessionAfterSignIn(
+  client: AuthClient,
+  session: Session | null
+): Promise<void> {
+  if (!session?.access_token) return;
+
+  if (session.refresh_token) {
+    const { error } = await client.auth.setSession({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+    });
+    if (error) console.warn("[auth] persistSessionAfterSignIn:", error.message);
+    return;
+  }
+
+  try {
+    const { error } = await client.auth.setSession({
+      access_token: session.access_token,
+      refresh_token: "",
+    });
+    if (error) {
+      console.warn(
+        "[auth] persistSessionAfterSignIn: no refresh_token; setSession failed (using in-memory session):",
+        error.message
+      );
+    }
+  } catch (e) {
+    console.warn("[auth] persistSessionAfterSignIn:", e);
+  }
+}
+
+/**
+ * After sign-in: wait until {@link AuthClient.getUser} returns a user (validates JWT with Auth server).
+ * Use after {@link waitForPersistedSession} + optional {@link POST_SET_SESSION_SETTLE_MS} so RLS sees auth.uid().
+ * Does not short-circuit on getSession() alone — avoids mobile false positives before storage settles.
+ */
+export async function waitForVerifiedUserForProfileQuery(
+  client: AuthClient,
+  maxMs: number = POST_LOGIN_AUTH_USER_WAIT_MS,
+  intervalMs: number = 400,
+  settleMs: number = 0
+): Promise<User | null> {
+  if (settleMs > 0) {
+    await new Promise((r) => setTimeout(r, settleMs));
+  }
+
+  const deadline = Date.now() + maxMs;
+  let attempt = 0;
+  while (Date.now() < deadline) {
+    const { data, error } = await client.auth.getUser();
+    if (data.user) {
+      if (attempt > 0) {
+        console.log(`[auth] waitForVerifiedUserForProfileQuery: user after ${attempt} getUser poll(s)`);
+      }
+      return data.user;
+    }
+    if (error) {
+      console.warn(`[auth] waitForVerifiedUserForProfileQuery attempt ${attempt}:`, error.message);
+    }
+    attempt += 1;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  console.warn("[auth] waitForVerifiedUserForProfileQuery: timeout without user from getUser()");
+  return null;
+}
 
 /**
  * Wraps getSession() so a hung request cannot freeze first paint indefinitely.
