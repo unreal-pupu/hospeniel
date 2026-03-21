@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { getUserWithTimeout } from "@/lib/auth-timeouts";
 import {
   LayoutDashboard,
   Package,
@@ -41,7 +42,7 @@ export default function RiderLayout({ children }: RiderLayoutProps) {
     }
 
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      const { data: { user }, error: userError } = await getUserWithTimeout(supabase);
       
       if (userError) {
         console.error("Error getting user:", userError);

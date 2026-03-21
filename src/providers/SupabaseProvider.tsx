@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabaseClient";
+import { DEFAULT_AUTH_TIMEOUT_MS, getSessionWithTimeout } from "../lib/auth-timeouts";
 
 interface SupabaseContextValue {
   supabase: typeof supabase;
@@ -18,17 +19,8 @@ export default function SupabaseProvider({ children }: { children: ReactNode }) 
 
   useEffect(() => {
     const getSession = async () => {
-      const SESSION_INIT_MS = 12_000;
       try {
-        const { data, error } = await Promise.race([
-          supabase.auth.getSession(),
-          new Promise<Awaited<ReturnType<typeof supabase.auth.getSession>>>((resolve) =>
-            setTimeout(() => {
-              console.warn("[SupabaseProvider] getSession exceeded timeout — continuing without session");
-              resolve({ data: { session: null }, error: null });
-            }, SESSION_INIT_MS)
-          ),
-        ]);
+        const { data, error } = await getSessionWithTimeout(supabase, DEFAULT_AUTH_TIMEOUT_MS);
         if (error) console.error("Session fetch error:", error.message);
         setSession(data?.session ?? null);
       } catch (e) {

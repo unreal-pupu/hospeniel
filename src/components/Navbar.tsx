@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { FiShoppingCart, FiUser } from "react-icons/fi";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { getUserWithTimeout } from "@/lib/auth-timeouts";
 import NotificationBell from "./NotificationBell";
 import CartIcon from "./CartIcon";
 import Image from "next/image";
@@ -19,7 +20,7 @@ export default function Navbar() {
   // ✅ Detect logged-in user
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user } } = await getUserWithTimeout(supabase);
       setIsLoggedIn(!!user);
     };
 

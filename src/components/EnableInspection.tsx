@@ -2,18 +2,25 @@
 
 import { useEffect } from "react";
 
-/** Allow normal typing/selection in form fields — blocking these globally breaks mobile keyboards and inputs. */
-function isFormFieldInteraction(target: EventTarget | null): boolean {
+/**
+ * Allow normal typing/selection and form submission — blocking these globally breaks
+ * mobile virtual keyboards, paste, and Enter/Space on submit buttons.
+ */
+function shouldAllowInteraction(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
+  // Any control inside a form (inputs, textareas, buttons, submit) must receive events
+  if (target.closest("form")) return true;
   return Boolean(
-    target.closest("input, textarea, select, option, [contenteditable='true']")
+    target.closest(
+      "input, textarea, select, option, [contenteditable]:not([contenteditable='false'])"
+    )
   );
 }
 
 export default function EnableInspection() {
   useEffect(() => {
     const stopBlockers = (event: Event) => {
-      if (isFormFieldInteraction(event.target)) return;
+      if (shouldAllowInteraction(event.target)) return;
       event.stopImmediatePropagation();
     };
 

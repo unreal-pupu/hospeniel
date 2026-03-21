@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { getSessionWithTimeout, getUserWithTimeout } from "@/lib/auth-timeouts";
 import {
   Card,
   CardContent,
@@ -40,7 +41,7 @@ export default function LoginPage() {
           console.warn("[login] Session verification timed out — showing login form");
           setCheckingSession(false);
         }
-      }, 15_000);
+      }, 12_000);
 
       try {
         console.log("🔵 Login page: Starting session check...");
@@ -84,7 +85,7 @@ export default function LoginPage() {
 
         // ✅ STEP 1: Check for ACTIVE session (not just user)
         console.log("🔵 Checking for existing session...");
-        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        const { data: sessionData, error: sessionError } = await getSessionWithTimeout(supabase);
         
         console.log("🔵 Session check result:", {
           hasError: !!sessionError,
@@ -159,7 +160,7 @@ export default function LoginPage() {
         // ✅ STEP 3: CRITICAL - Validate token server-side with getUser()
         // This is the most important check - it validates the token with Supabase
         console.log("🔵 Validating session token with server (getUser)...");
-        const { data: userData, error: userError } = await supabase.auth.getUser();
+        const { data: userData, error: userError } = await getUserWithTimeout(supabase);
         
         console.log("🔵 getUser() result:", {
           hasError: !!userError,
@@ -414,7 +415,7 @@ export default function LoginPage() {
         console.error("❌ No session returned from signIn - waiting for session...");
         // Wait a bit and check for session
         await new Promise(resolve => setTimeout(resolve, 500));
-        const { data: sessionData } = await supabase.auth.getSession();
+        const { data: sessionData } = await getSessionWithTimeout(supabase);
         if (!sessionData?.session) {
           console.error("❌ Still no session after wait");
           setLoading(false);
@@ -534,12 +535,12 @@ export default function LoginPage() {
       await new Promise(resolve => setTimeout(resolve, 500));
       
       // Double-check session is available
-      const { data: finalSessionCheck } = await supabase.auth.getSession();
+      const { data: finalSessionCheck } = await getSessionWithTimeout(supabase);
       if (!finalSessionCheck?.session) {
         console.error("❌ Session not available after login - waiting more...");
         await new Promise(resolve => setTimeout(resolve, 1000));
         
-        const { data: retrySessionCheck } = await supabase.auth.getSession();
+        const { data: retrySessionCheck } = await getSessionWithTimeout(supabase);
         if (!retrySessionCheck?.session) {
           console.error("❌ Session still not available - this is a problem");
           setLoading(false);

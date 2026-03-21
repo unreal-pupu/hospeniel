@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from "react";
 import type { REALTIME_SUBSCRIBE_STATES } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
+import { getUserWithTimeout } from "@/lib/auth-timeouts";
 
 export type CartItem = {
   id: string; // cart_items.id or temporary ID for localStorage
@@ -132,7 +133,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       const {
         data: { user },
         error: userError,
-      } = await supabase.auth.getUser();
+      } = await getUserWithTimeout(supabase);
 
       const isAuth = !userError && !!user;
       setIsAuthenticated(isAuth);
@@ -375,7 +376,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       // Get authenticated user for realtime subscription
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getUserWithTimeout(supabase);
 
       if (!user || !mounted) {
         // For unauthenticated users, listen to localStorage changes from other tabs
@@ -448,7 +449,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       const {
         data: { user },
         error: userError,
-      } = await supabase.auth.getUser();
+      } = await getUserWithTimeout(supabase);
 
       const isAuth = !userError && !!user;
 
@@ -551,7 +552,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getUserWithTimeout(supabase);
 
       if (!user) {
         // Remove from localStorage
@@ -590,7 +591,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getUserWithTimeout(supabase);
 
       if (!user) {
         // Update in localStorage
@@ -626,7 +627,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getUserWithTimeout(supabase);
 
       if (!user) {
         // Clear localStorage

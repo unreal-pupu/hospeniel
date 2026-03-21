@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { getUserWithTimeout } from "@/lib/auth-timeouts";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import {
   LogOut,
@@ -50,7 +51,7 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
         const {
           data: { user },
           error,
-        } = await supabase.auth.getUser();
+        } = await getUserWithTimeout(supabase);
         
         // Clear timeout if we got a response
         if (timeoutId) {
