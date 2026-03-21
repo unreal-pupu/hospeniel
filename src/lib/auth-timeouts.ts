@@ -24,6 +24,12 @@ export const LOGIN_AUTH_FETCH_TIMEOUT_MS = 60_000;
  */
 export const LOGIN_SESSION_WAIT_MAX_MS = 60_000;
 
+/**
+ * Post signIn/setSession: poll getUser() until a user is returned. RLS uses auth.uid()
+ * from the JWT; PostgREST must see a validated user before profiles SELECT succeeds on mobile.
+ */
+export const POST_LOGIN_AUTH_USER_WAIT_MS = 25_000;
+
 type SessionResult = Awaited<ReturnType<SupabaseClient["auth"]["getSession"]>>;
 type UserResult = Awaited<ReturnType<SupabaseClient["auth"]["getUser"]>>;
 
@@ -91,6 +97,35 @@ export async function waitForPersistedSession(
     await new Promise((r) => setTimeout(r, intervalMs));
   }
   console.warn("[auth] waitForPersistedSession: no session with access_token before deadline");
+  return null;
+}
+
+/**
+ * Polls getUser() until the server returns a user (JWT accepted). Required before RLS-backed
+ * queries on slow/incognito mobile clients where the first getUser() can transiently fail.
+ */
+export async function waitForAuthenticatedUser(
+  client: AuthClient,
+  maxMs: number = POST_LOGIN_AUTH_USER_WAIT_MS,
+  intervalMs: number = 200
+): Promise<User | null> {
+  const deadline = Date.now() + maxMs;
+  let attempt = 0;
+  while (Date.now() < deadline) {
+    const { data, error } = await client.auth.getUser();
+    if (data.user) {
+      if (attempt > 0) {
+        console.log(`[auth] waitForAuthenticatedUser: user after ${attempt} poll(s)`);
+      }
+      return data.user;
+    }
+    if (error) {
+      console.warn(`[auth] waitForAuthenticatedUser attempt ${attempt}:`, error.message);
+    }
+    attempt += 1;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  console.warn("[auth] waitForAuthenticatedUser: timeout without user");
   return null;
 }
 

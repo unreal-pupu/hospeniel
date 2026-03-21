@@ -8,6 +8,8 @@ import {
   getUserWithTimeout,
   LOGIN_AUTH_FETCH_TIMEOUT_MS,
   LOGIN_SESSION_WAIT_MAX_MS,
+  POST_LOGIN_AUTH_USER_WAIT_MS,
+  waitForAuthenticatedUser,
   waitForPersistedSession,
 } from "@/lib/auth-timeouts";
 import {
@@ -427,7 +429,7 @@ export default function LoginPage() {
       const signInSession = authData?.session ?? null;
       let sessionReady = signInSession?.access_token ? signInSession : null;
 
-      if (sessionReady?.refresh_token) {
+      if (sessionReady?.access_token && sessionReady.refresh_token) {
         try {
           const { error: setErr } = await supabase.auth.setSession({
             access_token: sessionReady.access_token,
@@ -439,6 +441,8 @@ export default function LoginPage() {
         } catch (e) {
           console.warn("[login] setSession after signIn:", e);
         }
+      } else if (sessionReady?.access_token && !sessionReady.refresh_token) {
+        console.warn("[login] signIn session missing refresh_token — relying on client session + getUser()");
       }
 
       if (!sessionReady?.access_token) {
@@ -455,15 +459,20 @@ export default function LoginPage() {
       }
       console.log("✅ Session ready for API calls");
 
-      // Refresh user/JWT with server so PostgREST sees a valid token on slow mobile links
-      const { error: jwtRefreshError } = await supabase.auth.getUser();
-      if (jwtRefreshError) {
-        console.warn("[login] getUser after persist (non-fatal):", jwtRefreshError.message);
+      // Must have a validated user before profiles (RLS: id = auth.uid()). On mobile/incognito,
+      // the first getUser() is often null even when signIn returned a session — poll until stable.
+      const canonicalUser = await waitForAuthenticatedUser(supabase, POST_LOGIN_AUTH_USER_WAIT_MS);
+      if (!canonicalUser) {
+        console.error("❌ Could not verify authenticated user with Supabase after sign-in");
+        setLoading(false);
+        setIsLoggingIn(false);
+        alert("Unable to verify your session. Please check your connection and try again.");
+        return;
       }
 
-      console.log("🔵 User authenticated:", user.id, user.email);
+      console.log("🔵 User authenticated:", canonicalUser.id, canonicalUser.email);
 
-      // Step 3: Fetch profile — retries if JWT/RLS lags after navigation-class delays
+      // Step 3: Fetch profile — retries if PostgREST/RLS lags after JWT attach
       console.log("🔵 Fetching user profile...");
       let profile: {
         role: string | null;
@@ -473,11 +482,11 @@ export default function LoginPage() {
       } | null = null;
       let profileError: { message: string; code?: string } | null = null;
 
-      for (let attempt = 0; attempt < 6; attempt++) {
+      for (let attempt = 0; attempt < 8; attempt++) {
         const res = await supabase
           .from("profiles")
           .select("role, is_admin, rider_approval_status, approval_status")
-          .eq("id", user.id)
+          .eq("id", canonicalUser.id)
           .limit(1)
           .maybeSingle();
         profile = res.data;
