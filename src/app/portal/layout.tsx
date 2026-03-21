@@ -62,7 +62,8 @@ export default function RiderLayout({ children }: RiderLayoutProps) {
         .from("profiles")
         .select("name, role, rider_approval_status")
         .eq("id", user.id)
-        .single();
+        .limit(1)
+        .maybeSingle();
 
       if (profileError) {
         console.error("Error fetching profile:", profileError);

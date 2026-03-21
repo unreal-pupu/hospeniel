@@ -75,11 +75,16 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
             }, 3000);
 
             try {
-              const { data: profile } = await supabase
+              const { data: profile, error: profileFetchError } = await supabase
                 .from("profiles")
                 .select("subscription_plan, role, category, approval_status")
                 .eq("id", user.id)
-                .single();
+                .limit(1)
+                .maybeSingle();
+
+              if (profileFetchError) {
+                console.error("[vendor layout] profile fetch:", profileFetchError);
+              }
               
               clearTimeout(profileTimeout);
               

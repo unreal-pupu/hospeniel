@@ -18,10 +18,25 @@ export default function SupabaseProvider({ children }: { children: ReactNode }) 
 
   useEffect(() => {
     const getSession = async () => {
-      const { data, error } = await supabase.auth.getSession();
-      if (error) console.error("Session fetch error:", error.message);
-      setSession(data?.session ?? null);
-      setLoading(false);
+      const SESSION_INIT_MS = 12_000;
+      try {
+        const { data, error } = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise<Awaited<ReturnType<typeof supabase.auth.getSession>>>((resolve) =>
+            setTimeout(() => {
+              console.warn("[SupabaseProvider] getSession exceeded timeout — continuing without session");
+              resolve({ data: { session: null }, error: null });
+            }, SESSION_INIT_MS)
+          ),
+        ]);
+        if (error) console.error("Session fetch error:", error.message);
+        setSession(data?.session ?? null);
+      } catch (e) {
+        console.error("[SupabaseProvider] getSession failed:", e);
+        setSession(null);
+      } finally {
+        setLoading(false);
+      }
     };
 
     getSession();

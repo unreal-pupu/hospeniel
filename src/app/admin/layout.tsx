@@ -54,7 +54,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           .from("profiles")
           .select("role, name")
           .eq("id", user.id)
-          .single();
+          .limit(1)
+          .maybeSingle();
 
         if (error || !profile) {
           console.error("Error checking admin status:", error);

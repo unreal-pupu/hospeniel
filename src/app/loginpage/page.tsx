@@ -34,6 +34,14 @@ export default function LoginPage() {
     let redirectExecuted = false; // Prevent multiple redirects
 
     const verifySession = async () => {
+      // Prevent infinite "Checking authentication..." if auth/network hangs on slow mobile networks
+      const verificationTimeoutId = window.setTimeout(() => {
+        if (isMounted) {
+          console.warn("[login] Session verification timed out — showing login form");
+          setCheckingSession(false);
+        }
+      }, 15_000);
+
       try {
         console.log("🔵 Login page: Starting session check...");
         
@@ -218,7 +226,8 @@ export default function LoginPage() {
           .from("profiles")
           .select("role, is_admin, rider_approval_status, approval_status")
           .eq("id", userData.user.id)
-          .single();
+          .limit(1)
+          .maybeSingle();
 
         console.log("🔵 Profile fetch result:", {
           hasError: !!profileError,
@@ -344,6 +353,8 @@ export default function LoginPage() {
         if (isMounted) {
           setCheckingSession(false);
         }
+      } finally {
+        window.clearTimeout(verificationTimeoutId);
       }
     };
 
@@ -424,7 +435,8 @@ export default function LoginPage() {
         .from("profiles")
         .select("role, is_admin, rider_approval_status, approval_status")
         .eq("id", user.id)
-        .single();
+        .limit(1)
+        .maybeSingle();
 
       console.log("🔵 Profile fetch response:", { 
         hasError: !!profileError,
@@ -435,7 +447,7 @@ export default function LoginPage() {
       });
 
       if (profileError) {
-        console.error("❌ Profile fetch error:", profileError.message);
+        console.error("❌ Profile fetch error:", profileError.message, profileError);
         setLoading(false);
         setIsLoggingIn(false);
         alert(`Error loading profile: ${profileError.message}. Please try again.`);
