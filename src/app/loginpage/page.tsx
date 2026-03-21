@@ -3,7 +3,13 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { getSessionWithTimeout, getUserWithTimeout } from "@/lib/auth-timeouts";
+import {
+  getSessionWithTimeout,
+  getUserWithTimeout,
+  LOGIN_AUTH_FETCH_TIMEOUT_MS,
+  LOGIN_SESSION_WAIT_MAX_MS,
+  waitForPersistedSession,
+} from "@/lib/auth-timeouts";
 import {
   Card,
   CardContent,
@@ -41,7 +47,7 @@ export default function LoginPage() {
           console.warn("[login] Session verification timed out — showing login form");
           setCheckingSession(false);
         }
-      }, 12_000);
+      }, 75_000);
 
       try {
         console.log("🔵 Login page: Starting session check...");
@@ -85,7 +91,10 @@ export default function LoginPage() {
 
         // ✅ STEP 1: Check for ACTIVE session (not just user)
         console.log("🔵 Checking for existing session...");
-        const { data: sessionData, error: sessionError } = await getSessionWithTimeout(supabase);
+        const { data: sessionData, error: sessionError } = await getSessionWithTimeout(
+          supabase,
+          LOGIN_AUTH_FETCH_TIMEOUT_MS
+        );
         
         console.log("🔵 Session check result:", {
           hasError: !!sessionError,
@@ -160,7 +169,10 @@ export default function LoginPage() {
         // ✅ STEP 3: CRITICAL - Validate token server-side with getUser()
         // This is the most important check - it validates the token with Supabase
         console.log("🔵 Validating session token with server (getUser)...");
-        const { data: userData, error: userError } = await getUserWithTimeout(supabase);
+        const { data: userData, error: userError } = await getUserWithTimeout(
+          supabase,
+          LOGIN_AUTH_FETCH_TIMEOUT_MS
+        );
         
         console.log("🔵 getUser() result:", {
           hasError: !!userError,
@@ -399,9 +411,8 @@ export default function LoginPage() {
         return;
       }
 
-      // Step 2: Verify user and session exist
+      // Step 2: Verify user exists
       const user = authData?.user;
-      const session = authData?.session;
 
       if (!user) {
         console.error("❌ No user returned from signIn");
@@ -411,33 +422,49 @@ export default function LoginPage() {
         return;
       }
 
-      if (!session) {
-        console.error("❌ No session returned from signIn - waiting for session...");
-        // Wait a bit and check for session
-        await new Promise(resolve => setTimeout(resolve, 500));
-        const { data: sessionData } = await getSessionWithTimeout(supabase);
-        if (!sessionData?.session) {
-          console.error("❌ Still no session after wait");
+      // Step 2b: Ensure session + access_token exist before RLS-backed profile read.
+      // On mobile, short Promise.race timeouts falsely return "no session"; polling avoids that.
+      if (!authData?.session?.access_token) {
+        console.log("🔵 No session in signIn response — waiting for persisted session...");
+        const persisted = await waitForPersistedSession(supabase, LOGIN_SESSION_WAIT_MAX_MS);
+        if (!persisted?.access_token) {
+          console.error("❌ Session not available after sign-in");
           setLoading(false);
           setIsLoggingIn(false);
           alert("Session not created. Please try again.");
           return;
         }
-        console.log("✅ Session created after wait");
+        console.log("✅ Session available after wait");
       } else {
-        console.log("✅ Session confirmed immediately");
+        console.log("✅ Session confirmed from sign-in");
       }
 
       console.log("🔵 User authenticated:", user.id, user.email);
 
-      // Step 3: Fetch the user's profile from Supabase (including admin status)
+      // Step 3: Fetch profile — retry briefly if JWT/storage lags on mobile (RLS needs auth header)
       console.log("🔵 Fetching user profile...");
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("role, is_admin, rider_approval_status, approval_status")
-        .eq("id", user.id)
-        .limit(1)
-        .maybeSingle();
+      let profile: {
+        role: string | null;
+        is_admin: boolean | null;
+        rider_approval_status: string | null;
+        approval_status: string | null;
+      } | null = null;
+      let profileError: { message: string; code?: string } | null = null;
+
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const res = await supabase
+          .from("profiles")
+          .select("role, is_admin, rider_approval_status, approval_status")
+          .eq("id", user.id)
+          .limit(1)
+          .maybeSingle();
+        profile = res.data;
+        profileError = res.error;
+
+        if (profileError) break;
+        if (profile) break;
+        await new Promise((resolve) => setTimeout(resolve, 300 + attempt * 200));
+      }
 
       console.log("🔵 Profile fetch response:", { 
         hasError: !!profileError,
@@ -529,28 +556,9 @@ export default function LoginPage() {
 
       console.log("✅ Login successful! Redirecting to:", redirectPath);
 
-      // Step 5: Wait for session to be fully established before redirecting
-      // This is especially important for vendor login to prevent race conditions
-      console.log("🔵 Waiting for session to be fully established...");
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Double-check session is available
-      const { data: finalSessionCheck } = await getSessionWithTimeout(supabase);
-      if (!finalSessionCheck?.session) {
-        console.error("❌ Session not available after login - waiting more...");
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        const { data: retrySessionCheck } = await getSessionWithTimeout(supabase);
-        if (!retrySessionCheck?.session) {
-          console.error("❌ Session still not available - this is a problem");
-          setLoading(false);
-          setIsLoggingIn(false);
-          alert("Session not established. Please try logging in again.");
-          return;
-        }
-      }
-      
-      console.log("✅ Session confirmed - ready to redirect");
+      // Step 5: Session was already verified + profile loaded; do not use short getSession
+      // races here — on mobile they often false-fail while the real session is still loading.
+      console.log("✅ Session and profile ready for redirect");
 
       // Set flag to prevent session check from interfering
       setIsLoggingIn(false);
