@@ -422,18 +422,38 @@ export default function LoginPage() {
         return;
       }
 
-      // Step 2b: Always wait for persisted session before RLS-backed profile read.
-      // Mobile/incognito often lags writing storage; skipping this caused profile=null (RLS).
-      console.log("🔵 Waiting for session persistence before profile fetch...");
-      const persisted = await waitForPersistedSession(supabase, LOGIN_SESSION_WAIT_MAX_MS);
-      if (!persisted?.access_token) {
+      // Step 2b: Prefer session from signIn response — it is authoritative. Polling getSession()
+      // alone can spin for LOGIN_SESSION_WAIT_MAX_MS on mobile when storage lags behind in-memory state.
+      const signInSession = authData?.session ?? null;
+      let sessionReady = signInSession?.access_token ? signInSession : null;
+
+      if (sessionReady?.refresh_token) {
+        try {
+          const { error: setErr } = await supabase.auth.setSession({
+            access_token: sessionReady.access_token,
+            refresh_token: sessionReady.refresh_token,
+          });
+          if (setErr) {
+            console.warn("[login] setSession after signIn (non-fatal):", setErr.message);
+          }
+        } catch (e) {
+          console.warn("[login] setSession after signIn:", e);
+        }
+      }
+
+      if (!sessionReady?.access_token) {
+        console.log("🔵 No session in signIn response — waiting for persisted session...");
+        sessionReady = await waitForPersistedSession(supabase, LOGIN_SESSION_WAIT_MAX_MS);
+      }
+
+      if (!sessionReady?.access_token) {
         console.error("❌ Session not available after sign-in");
         setLoading(false);
         setIsLoggingIn(false);
         alert("Session not created. Please try again.");
         return;
       }
-      console.log("✅ Session persisted and ready for API calls");
+      console.log("✅ Session ready for API calls");
 
       // Refresh user/JWT with server so PostgREST sees a valid token on slow mobile links
       const { error: jwtRefreshError } = await supabase.auth.getUser();
