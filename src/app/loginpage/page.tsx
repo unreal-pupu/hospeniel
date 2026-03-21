@@ -459,15 +459,22 @@ export default function LoginPage() {
       }
       console.log("✅ Session ready for API calls");
 
-      // Must have a validated user before profiles (RLS: id = auth.uid()). On mobile/incognito,
-      // the first getUser() is often null even when signIn returned a session — poll until stable.
-      const canonicalUser = await waitForAuthenticatedUser(supabase, POST_LOGIN_AUTH_USER_WAIT_MS);
-      if (!canonicalUser) {
-        console.error("❌ Could not verify authenticated user with Supabase after sign-in");
+      // Prefer user from waitForAuthenticatedUser (getSession fast path + getUser poll). On slow mobile,
+      // getUser() alone can hit the wall-clock timeout even though signIn already returned session.user.
+      const verifiedUser = await waitForAuthenticatedUser(supabase, POST_LOGIN_AUTH_USER_WAIT_MS);
+      const fallbackUser = sessionReady.user ?? user;
+      const canonicalUser = verifiedUser ?? fallbackUser ?? null;
+
+      if (!canonicalUser?.id) {
+        console.error("❌ No user from getSession/getUser or signIn response");
         setLoading(false);
         setIsLoggingIn(false);
         alert("Unable to verify your session. Please check your connection and try again.");
         return;
+      }
+
+      if (!verifiedUser && fallbackUser) {
+        console.warn("[login] Using signIn/session user fallback after getUser poll (slow network OK)");
       }
 
       console.log("🔵 User authenticated:", canonicalUser.id, canonicalUser.email);

@@ -25,10 +25,10 @@ export const LOGIN_AUTH_FETCH_TIMEOUT_MS = 60_000;
 export const LOGIN_SESSION_WAIT_MAX_MS = 60_000;
 
 /**
- * Post signIn/setSession: poll getUser() until a user is returned. RLS uses auth.uid()
- * from the JWT; PostgREST must see a validated user before profiles SELECT succeeds on mobile.
+ * Post signIn/setSession: align with LOGIN_SESSION_WAIT_MAX_MS — slow mobile links can
+ * spend several seconds per getUser() round-trip; 25s was too short and caused false timeouts.
  */
-export const POST_LOGIN_AUTH_USER_WAIT_MS = 25_000;
+export const POST_LOGIN_AUTH_USER_WAIT_MS = 60_000;
 
 type SessionResult = Awaited<ReturnType<SupabaseClient["auth"]["getSession"]>>;
 type UserResult = Awaited<ReturnType<SupabaseClient["auth"]["getUser"]>>;
@@ -101,21 +101,27 @@ export async function waitForPersistedSession(
 }
 
 /**
- * Polls getUser() until the server returns a user (JWT accepted). Required before RLS-backed
- * queries on slow/incognito mobile clients where the first getUser() can transiently fail.
+ * Resolves the authenticated user after signIn/setSession.
+ * 1) Fast path: `getSession()` reads local state (often has `session.user` immediately — no extra network).
+ * 2) Slow path: poll `getUser()` until success or timeout (each call can be slow on mobile data).
  */
 export async function waitForAuthenticatedUser(
   client: AuthClient,
   maxMs: number = POST_LOGIN_AUTH_USER_WAIT_MS,
-  intervalMs: number = 200
+  intervalMs: number = 400
 ): Promise<User | null> {
+  const { data: local } = await client.auth.getSession();
+  if (local.session?.user) {
+    return local.session.user;
+  }
+
   const deadline = Date.now() + maxMs;
   let attempt = 0;
   while (Date.now() < deadline) {
     const { data, error } = await client.auth.getUser();
     if (data.user) {
       if (attempt > 0) {
-        console.log(`[auth] waitForAuthenticatedUser: user after ${attempt} poll(s)`);
+        console.log(`[auth] waitForAuthenticatedUser: user after ${attempt} getUser poll(s)`);
       }
       return data.user;
     }
@@ -125,7 +131,7 @@ export async function waitForAuthenticatedUser(
     attempt += 1;
     await new Promise((r) => setTimeout(r, intervalMs));
   }
-  console.warn("[auth] waitForAuthenticatedUser: timeout without user");
+  console.warn("[auth] waitForAuthenticatedUser: timeout without user from getUser()");
   return null;
 }
 
