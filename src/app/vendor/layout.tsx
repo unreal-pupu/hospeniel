@@ -181,7 +181,9 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
 
   // Check if vendor is a cook or chef (used for service requests access)
   const isCookOrChef = vendorCategory === "chef" || vendorCategory === "home_cook";
-  const canManageOrders = !isCookOrChef || subscriptionPlan === "professional";
+  // Orders should be available for all vendor categories in the vendor sidebar.
+  // (Access restrictions, if any, are handled inside the orders page itself.)
+  const canManageOrders = true;
 
   // Base links (conditionally show menu/orders based on category)
   const baseLinks = [

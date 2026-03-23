@@ -89,10 +89,18 @@ interface CookChefMessage {
   created_at: string;
 }
 
-export default function CookChefDashboard({ vendor }: { vendor: VendorProfile | null }) {
+export default function CookChefDashboard({
+  vendor,
+  initialTab,
+}: {
+  vendor: VendorProfile | null;
+  initialTab?: 'profile' | 'availability' | 'requests' | 'jobs' | 'messages';
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'profile' | 'availability' | 'requests' | 'jobs' | 'messages'>('requests');
+  const [activeTab, setActiveTab] = useState<
+    'profile' | 'availability' | 'requests' | 'jobs' | 'messages'
+  >(initialTab ?? 'requests');
   const [resolvedVendorId, setResolvedVendorId] = useState<string | null>(null);
   
   // Service Profile State

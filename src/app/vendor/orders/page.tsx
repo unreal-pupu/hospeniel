@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import CookChefDashboard from "@/components/CookChefDashboard";
 
 dayjs.extend(relativeTime);
 
@@ -104,6 +105,15 @@ export default function OrdersPage() {
   const [subscriptionPlan, setSubscriptionPlan] = useState<string>("free_trial");
   const [vendorCategory, setVendorCategory] = useState<string | null>(null);
   const [planLoading, setPlanLoading] = useState(true);
+  const [cookChefVendor, setCookChefVendor] = useState<{
+    id: string;
+    name: string | null;
+    email: string;
+    role: string;
+    category?: string | null;
+    subscription_plan?: string;
+    is_premium?: boolean;
+  } | null>(null);
 
   const isCookOrChef = vendorCategory === "chef" || vendorCategory === "home_cook";
   const canAccessOrders = !isCookOrChef || subscriptionPlan === "professional";
@@ -354,6 +364,15 @@ interface DeliveryTaskRow {
         if (profile) {
           setSubscriptionPlan(profile.subscription_plan || "free_trial");
           setVendorCategory(profile.category || null);
+          setCookChefVendor({
+            id: user.id,
+            name: null,
+            email: user.email ?? "",
+            role: "vendor",
+            category: profile.category || null,
+            subscription_plan: profile.subscription_plan || "free_trial",
+            is_premium: false,
+          });
         } else {
           const { data: vendor } = await supabase
             .from("vendors")
@@ -364,6 +383,15 @@ interface DeliveryTaskRow {
           if (vendor) {
             setSubscriptionPlan(vendor.subscription_plan || "free_trial");
             setVendorCategory(vendor.category || null);
+            setCookChefVendor({
+              id: user.id,
+              name: null,
+              email: user.email ?? "",
+              role: "vendor",
+              category: vendor.category || null,
+              subscription_plan: vendor.subscription_plan || "free_trial",
+              is_premium: false,
+            });
           }
         }
       } catch (planError) {
@@ -609,6 +637,11 @@ interface DeliveryTaskRow {
         <p className="text-gray-600 font-body">Loading orders...</p>
       </div>
     );
+  }
+
+  // For chef/home_cook vendors, the "orders-like" management lives in CookChefDashboard.
+  if (isCookOrChef) {
+    return <CookChefDashboard vendor={cookChefVendor} initialTab="jobs" />;
   }
 
   if (!canAccessOrders) {
