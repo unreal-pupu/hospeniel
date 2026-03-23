@@ -29,7 +29,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import CookChefDashboard from "@/components/CookChefDashboard";
 
 dayjs.extend(relativeTime);
 
@@ -102,21 +101,6 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [requestingRiderForOrderId, setRequestingRiderForOrderId] = useState<string | null>(null);
-  const [subscriptionPlan, setSubscriptionPlan] = useState<string>("free_trial");
-  const [vendorCategory, setVendorCategory] = useState<string | null>(null);
-  const [planLoading, setPlanLoading] = useState(true);
-  const [cookChefVendor, setCookChefVendor] = useState<{
-    id: string;
-    name: string | null;
-    email: string;
-    role: string;
-    category?: string | null;
-    subscription_plan?: string;
-    is_premium?: boolean;
-  } | null>(null);
-
-  const isCookOrChef = vendorCategory === "chef" || vendorCategory === "home_cook";
-  const canAccessOrders = !isCookOrChef || subscriptionPlan === "professional";
 
   // Fetch orders with error handling
   const fetchOrders = useCallback(async () => {
@@ -349,68 +333,6 @@ interface DeliveryTaskRow {
   }, [orders, statusFilter, searchQuery]);
 
   useEffect(() => {
-    const fetchSubscriptionPlan = async () => {
-      try {
-        setPlanLoading(true);
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("subscription_plan, category")
-          .eq("id", user.id)
-          .single();
-
-        if (profile) {
-          setSubscriptionPlan(profile.subscription_plan || "free_trial");
-          setVendorCategory(profile.category || null);
-          setCookChefVendor({
-            id: user.id,
-            name: null,
-            email: user.email ?? "",
-            role: "vendor",
-            category: profile.category || null,
-            subscription_plan: profile.subscription_plan || "free_trial",
-            is_premium: false,
-          });
-        } else {
-          const { data: vendor } = await supabase
-            .from("vendors")
-            .select("subscription_plan, category")
-            .eq("profile_id", user.id)
-            .single();
-
-          if (vendor) {
-            setSubscriptionPlan(vendor.subscription_plan || "free_trial");
-            setVendorCategory(vendor.category || null);
-            setCookChefVendor({
-              id: user.id,
-              name: null,
-              email: user.email ?? "",
-              role: "vendor",
-              category: vendor.category || null,
-              subscription_plan: vendor.subscription_plan || "free_trial",
-              is_premium: false,
-            });
-          }
-        }
-      } catch (planError) {
-        console.error("Error fetching subscription plan:", planError);
-      } finally {
-        setPlanLoading(false);
-      }
-    };
-
-    fetchSubscriptionPlan();
-  }, []);
-
-  useEffect(() => {
-    if (planLoading) return;
-    if (!canAccessOrders) {
-      setLoading(false);
-      return;
-    }
-
     fetchOrders();
     
     // Set up real-time subscription for orders
@@ -438,7 +360,7 @@ interface DeliveryTaskRow {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [planLoading, canAccessOrders, fetchOrders]);
+  }, [fetchOrders]);
 
   useEffect(() => {
     filterOrders();
@@ -630,36 +552,11 @@ interface DeliveryTaskRow {
     }
   };
 
-  if (planLoading || loading) {
+  if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] bg-hospineil-base-bg">
         <Loader2 className="animate-spin text-hospineil-primary h-8 w-8 mb-4" />
         <p className="text-gray-600 font-body">Loading orders...</p>
-      </div>
-    );
-  }
-
-  // For chef/home_cook vendors, the "orders-like" management lives in CookChefDashboard.
-  if (isCookOrChef) {
-    return <CookChefDashboard vendor={cookChefVendor} initialTab="jobs" />;
-  }
-
-  if (!canAccessOrders) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] bg-hospineil-base-bg px-6 text-center">
-        <h2 className="text-2xl font-semibold text-hospineil-primary font-header mb-2">
-          Orders Access Requires Professional Plan
-        </h2>
-        <p className="text-gray-600 font-body mb-6 max-w-lg">
-          Home cooks and chefs can manage orders only on the Professional plan.
-          Upgrade your subscription to access order management tools.
-        </p>
-        <Button
-          onClick={() => (window.location.href = "/vendor/subscription")}
-          className="bg-hospineil-primary text-white rounded-lg hover:bg-hospineil-primary/90 hover:scale-105 transition-all font-button"
-        >
-          Upgrade Plan
-        </Button>
       </div>
     );
   }

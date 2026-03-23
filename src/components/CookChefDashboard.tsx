@@ -89,6 +89,12 @@ interface CookChefMessage {
   created_at: string;
 }
 
+function isSupabaseMissingTable(err: unknown): boolean {
+  const message = err && typeof err === "object" && "message" in err ? String((err as { message?: unknown }).message ?? "") : "";
+  const code = err && typeof err === "object" && "code" in err ? String((err as { code?: unknown }).code ?? "") : "";
+  return message.includes("PGRST205") || message.includes("Could not find the table") || code.includes("PGRST205");
+}
+
 export default function CookChefDashboard({
   vendor,
   initialTab,
@@ -102,6 +108,11 @@ export default function CookChefDashboard({
     'profile' | 'availability' | 'requests' | 'jobs' | 'messages'
   >(initialTab ?? 'requests');
   const [resolvedVendorId, setResolvedVendorId] = useState<string | null>(null);
+
+  // Keep tab selection in sync with route intent (e.g. /vendor/orders should open Jobs).
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
   
   // Service Profile State
   const [serviceProfile, setServiceProfile] = useState<ServiceProfile>({
@@ -389,6 +400,11 @@ export default function CookChefDashboard({
         .order('start_time', { ascending: true });
       
       if (error) {
+        if (isSupabaseMissingTable(error)) {
+          console.warn("CookChefDashboard: cook_chef_availability missing; rendering empty availability.");
+          setAvailabilitySlots([]);
+          return;
+        }
         console.error('Error loading availability:', {
           message: error.message,
           code: error.code,
@@ -401,6 +417,7 @@ export default function CookChefDashboard({
       setAvailabilitySlots(data || []);
     } catch (error) {
       console.error('Error loading availability:', error);
+      if (isSupabaseMissingTable(error)) setAvailabilitySlots([]);
     }
   }, [resolveVendorId]);
 
@@ -467,7 +484,13 @@ export default function CookChefDashboard({
         .order('created_at', { ascending: false });
       
       if (error) {
+        if (isSupabaseMissingTable(error)) {
+          console.warn("CookChefDashboard: cook_chef_booking_requests missing; rendering empty jobs/requests.");
+          setBookingRequests([]);
+          return;
+        }
         console.error('Error loading booking requests:', error);
+        setBookingRequests([]);
         return;
       }
       
@@ -498,6 +521,7 @@ export default function CookChefDashboard({
       setBookingRequests(transformed);
     } catch (error) {
       console.error('Error loading booking requests:', error);
+      if (isSupabaseMissingTable(error)) setBookingRequests([]);
     } finally {
       setLoadingRequests(false);
     }
@@ -537,23 +561,32 @@ export default function CookChefDashboard({
 
     // Set up real-time subscription for booking requests
     const subscribeToRequests = async () => {
-      const vendorId = await resolveVendorId();
-      if (!vendorId) return null;
-      return supabase
-        .channel('cook-chef-dashboard-changes')
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'cook_chef_booking_requests',
-            filter: `vendor_id=eq.${vendorId}`
-          },
-          () => {
-            loadBookingRequests();
-          }
-        )
-        .subscribe();
+      try {
+        const vendorId = await resolveVendorId();
+        if (!vendorId) return null;
+        return supabase
+          .channel('cook-chef-dashboard-changes')
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'cook_chef_booking_requests',
+              filter: `vendor_id=eq.${vendorId}`
+            },
+            () => {
+              loadBookingRequests();
+            }
+          )
+          .subscribe();
+      } catch (err) {
+        if (isSupabaseMissingTable(err)) {
+          console.warn("CookChefDashboard: realtime subscription skipped; table missing.");
+          return null;
+        }
+        console.error("CookChefDashboard: realtime subscription error:", err);
+        return null;
+      }
     };
 
     let channel: ReturnType<typeof supabase.channel> | null = null;
@@ -644,6 +677,11 @@ export default function CookChefDashboard({
         .order('created_at', { ascending: true });
       
       if (error) {
+        if (isSupabaseMissingTable(error)) {
+          console.warn("CookChefDashboard: cook_chef_messages missing; rendering empty messages.");
+          setMessages([]);
+          return;
+        }
         console.error('Error loading messages:', error);
         return;
       }
@@ -651,6 +689,7 @@ export default function CookChefDashboard({
       setMessages(data || []);
     } catch (error) {
       console.error('Error loading messages:', error);
+      if (isSupabaseMissingTable(error)) setMessages([]);
     }
   };
 
