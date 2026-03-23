@@ -16,36 +16,34 @@ export default function AcceptableUsePolicy() {
           <section>
             <h2 className="text-xl font-semibold mb-2">1. Introduction</h2>
             <p>
-              Hospeniel (“we”, “our”, “us”) is an online food marketplace that
-              connects customers with independent third-party food vendors. This
-              Acceptable Use Policy (“Policy”) outlines the activities, products,
-              and conduct that are permitted and prohibited on our platform.
+            Hospeniel (“we”, “our”, “us”) is an online food marketplace connecting customers with independent vendors, including home cooks, chefs, pastry sellers, and food vendors.
             </p>
             <p className="mt-2">
-              All vendors, users, and partners are required to comply with this
-              Policy. Failure to do so may result in suspension or termination of
-              access to the platform.
+            This Acceptable Use Policy (“Policy”) sets out the rules and standards for using the Hospeniel platform. All vendors, customers, and partners must comply with this Policy. Failure to comply may result in suspension, termination, withholding of funds, or legal action.
             </p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold mb-2">2. Permitted Use</h2>
-            <ul className="list-disc list-inside space-y-1">
-              <li>List and sell lawful food and beverage products</li>
-              <li>Provide accurate descriptions of products and pricing</li>
-              <li>Fulfill customer orders in a timely and professional manner</li>
-              <li>Communicate respectfully with customers and Hospeniel staff</li>
-            </ul>
             <p className="mt-2">
-              Customers may place orders for personal consumption and use the
-              platform for lawful purposes only.
+            Users may only use the platform for lawful purposes, including:
             </p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Vendors may list and sell only lawful food and beverage products.</li>
+              <li>Vendors must provide accurate product descriptions, images, and pricing.</li>
+              <li>Vendors must fulfill customer orders as described and in a timely, professional manner.</li>
+              <li>Users must communicate respectfully with other users and Hospeniel staff.</li>
+              <li>Customers may place orders for personal consumption only and may not use the platform for unlawful purposes..</li>
+            </ul>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold mb-2">
               3. Prohibited Products and Activities
             </h2>
+            <p className="mt-2">
+            The following activities and products are strictly prohibited:
+            </p>
             <ul className="list-disc list-inside space-y-1">
               <li>Illegal, restricted, or regulated products</li>
               <li>Alcohol, tobacco, drugs, or controlled substances</li>
@@ -55,6 +53,7 @@ export default function AcceptableUsePolicy() {
               <li>Hate speech, harassment, or abusive conduct</li>
               <li>Fraudulent, deceptive, or misleading practices</li>
               <li>Any activity that violates Nigerian law or regulations</li>
+              <li>Circumventing platform security or interfering with its operation.</li>
               <li>
                 Any product or activity prohibited under Paystack’s Acceptable
                 Use Policy
@@ -64,13 +63,17 @@ export default function AcceptableUsePolicy() {
 
           <section>
             <h2 className="text-xl font-semibold mb-2">4. Vendor Responsibilities</h2>
+            <p className="mt-2">
+            Vendors are required to:
+            </p>
             <ul className="list-disc list-inside space-y-1">
-              <li>Provide accurate and truthful business information</li>
-              <li>Prepare food under hygienic conditions</li>
-              <li>Comply with food safety and consumer protection laws</li>
-              <li>Deliver orders as described and on time</li>
-              <li>Resolve customer complaints promptly</li>
-              <li>Avoid fraudulent or misleading activity</li>
+              <li>Provide accurate and truthful business information during registration.</li>
+              <li>Prepare and store food under safe and hygienic conditions, complying with applicable food safety and consumer protection laws.</li>
+              <li>Deliver orders as described and on time.</li>
+              <li>Disclose allergens and dietary information for listed products.</li>
+              <li>Resolve customer complaints promptly and professionally.</li>
+              <li>Avoid any fraudulent, deceptive, or misleading activity.</li>
+              <li>Provide additional documentation upon request for verification or compliance purposes.</li>
             </ul>
             <p className="mt-2">
               Hospeniel may request additional documentation from vendors when
@@ -79,32 +82,40 @@ export default function AcceptableUsePolicy() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold mb-2">
-              5. Monitoring and Enforcement
-            </h2>
-            <p>
-              We conduct manual reviews and ongoing monitoring of vendor
-              activity. Hospeniel reserves the right to suspend or terminate
-              accounts, remove prohibited listings, withhold settlements during
-              investigations, and report unlawful activity where required.
+          <h2 className="text-xl font-semibold mb-2">5. Payment Compliance</h2>
+            <p className="mt-2">
+            Users may only use the platform for lawful purposes, including:
             </p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Vendors and users must comply with Hospeniel’s payment policies, including the rules of payment providers such as Paystack.</li>
+              <li>Non-compliance may result in restricted payouts, account suspension, or termination.</li>
+              <li>Hospeniel is not responsible for delays or errors caused by payment providers.</li>
+            </ul>
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold mb-2">6. Reporting Violations</h2>
-            <p>
-              Violations may be reported through our customer support channels
-              and are reviewed promptly.
-            </p>
+            <h2 className="text-xl font-semibold mb-2">6. Monitoring and Enforcement</h2>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Hospeniel may conduct manual reviews and ongoing monitoring of vendor and user activity.</li>
+              <li>We may suspend, restrict, or terminate accounts, remove listings, withhold funds, or take other interim measures during investigations.</li>
+              <li>Hospeniel may report unlawful activity to authorities, payment providers, or other relevant parties as required.</li>
+            </ul>
+          </section>
+          
+          <section>
+            <h2 className="text-xl font-semibold mb-2">7. Reporting Violations</h2>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Users may report suspected violations through Hospeniel’s customer support channels..</li>
+              <li>All reports will be reviewed promptly and confidentially, and appropriate action will be taken.</li>
+            </ul>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold mb-2">
-              7. Changes to This Policy
+              8. Changes to This Policy
             </h2>
             <p>
-              We may update this Policy at any time. Continued use of the
-              platform constitutes acceptance of the updated Policy.
+            Hospeniel may update this Policy at any time. Continued use of the platform constitutes acceptance of any changes.
             </p>
           </section>
 
