@@ -438,37 +438,8 @@ export default function VendorProfilePage() {
           setPlacingOrder(true);
           const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-          if (userError) {
-            console.error("Authentication error:", userError);
-            alert("Authentication error. Please log in again.");
-            setPlacingOrder(false);
-            return;
-          }
-
-          if (!user) {
-            alert("Please login to place an order");
-            router.push("/loginpage");
-            setPlacingOrder(false);
-            return;
-          }
-
-          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-          if (sessionError || !session) {
-            alert("Session expired. Please log in again.");
-            router.push("/loginpage");
-            setPlacingOrder(false);
-            return;
-          }
-
-          if (
-            !user.id ||
-            typeof user.id !== "string" ||
-            !user.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
-          ) {
-            console.error("Invalid user.id:", user.id);
-            alert("Invalid user account. Please log out and log in again.");
-            setPlacingOrder(false);
-            return;
+          if (userError && user) {
+            console.warn("getUser warning with session user present:", userError.message);
           }
 
           if (!menuItem.vendor_id) {
@@ -511,14 +482,53 @@ export default function VendorProfilePage() {
             return;
           }
 
-          const orderData = {
-            user_id: user.id,
-            vendor_id: menuItem.vendor_id,
-            product_id: menuItem.id,
-            quantity: 1,
-            total_price: menuItem.price,
-            status: "Pending",
+          let orderData: {
+            user_id?: string;
+            vendor_id: string;
+            product_id: string;
+            quantity: number;
+            total_price: number;
+            status: string;
           };
+
+          if (user) {
+            const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+            if (sessionError || !session) {
+              alert("Session expired. Please log in again.");
+              router.push("/loginpage");
+              setPlacingOrder(false);
+              return;
+            }
+
+            if (
+              !user.id ||
+              typeof user.id !== "string" ||
+              !user.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+            ) {
+              console.error("Invalid user.id:", user.id);
+              alert("Invalid user account. Please log out and log in again.");
+              setPlacingOrder(false);
+              return;
+            }
+
+            orderData = {
+              user_id: user.id,
+              vendor_id: menuItem.vendor_id,
+              product_id: menuItem.id,
+              quantity: 1,
+              total_price: menuItem.price,
+              status: "Pending",
+            };
+          } else {
+            // Guest: proceed to /payment; Paystack + verify use guest_id from checkout
+            orderData = {
+              vendor_id: menuItem.vendor_id,
+              product_id: menuItem.id,
+              quantity: 1,
+              total_price: menuItem.price,
+              status: "Pending",
+            };
+          }
 
           if (typeof window !== "undefined") {
             sessionStorage.setItem("directOrderData", JSON.stringify([orderData]));

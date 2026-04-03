@@ -90,13 +90,13 @@ export default function Navbar() {
   const landingPageLinks: Array<{ id: string; label: string }> = [];
 
   return (
-    <nav className="bg-[#ffffff] shadow-sm fixed top-0 left-0 right-0 z-50">
-      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+    <nav className="bg-[#ffffff] shadow-sm fixed top-0 left-0 right-0 z-50 max-w-[100vw]">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-3 sm:py-4 flex items-center justify-between gap-2 min-w-0">
         {/* Logo */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0 shrink">
           <Link
             href="/"
-            className="inline-block hover:opacity-80 transition-opacity duration-300"
+            className="inline-block hover:opacity-80 transition-opacity duration-300 shrink-0 min-w-0"
             onClick={(e) => {
               if (isLandingPage) {
                 e.preventDefault();
@@ -107,9 +107,10 @@ export default function Navbar() {
             <Image
               src="/new.jpeg"
               alt="Hospeniel"
-              width={160}  // adjust width
-              height={20}  // adjust height
+              width={160}
+              height={32}
               priority
+              className="h-7 sm:h-8 w-auto max-w-[120px] sm:max-w-[160px] object-contain"
             />
           </Link>
         </div>
@@ -218,7 +219,7 @@ export default function Navbar() {
 
         {/* Explore page: show Cart and Notifications */}
         {isExplorePage && (
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
             {isLoggedIn && (
               <NotificationBell userType="user" notificationsPageUrl="/notifications" />
             )}
@@ -228,7 +229,7 @@ export default function Navbar() {
 
         {/* Other pages (not landing, explore, login, register): show cart icon */}
         {!isLandingPage && !isExplorePage && !isLoginPage && !isRegisterPage && (
-          <div className="flex items-center gap-4 ml-auto">
+          <div className="flex items-center gap-2 sm:gap-4 ml-auto shrink-0">
             {/* Cart Icon - visible to all users on other pages */}
             <CartIcon size={24} />
           </div>
@@ -237,8 +238,8 @@ export default function Navbar() {
 
       {/* Mobile Menu Dropdown - Landing Page */}
       {isLandingPage && mobileMenuOpen && (
-        <div className="md:hidden bg-[#ffffff] border-t border-gray-200 shadow-lg">
-          <div className="px-6 py-4 space-y-3">
+        <div className="md:hidden bg-[#ffffff] border-t border-gray-200 shadow-lg max-h-[min(85vh,32rem)] overflow-y-auto">
+          <div className="px-3 sm:px-6 py-4 space-y-3">
             {landingPageLinks.map((link) => (
               <button
                 key={link.id}

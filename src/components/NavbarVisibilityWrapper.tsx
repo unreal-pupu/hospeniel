@@ -16,12 +16,12 @@ export default function NavbarVisibilityWrapper({ children }: { children: React.
       {!isVendorPage && !isAdminPage && <Navbar />}
 
       <main
-        className={`min-h-screen ${
+        className={`min-h-screen w-full max-w-full min-w-0 ${
           isVendorPage || isAdminPage
             ? "p-0"
             : isExplorePage
-            ? "pt-32 p-6"
-            : "pt-28 p-6"
+            ? "pt-24 sm:pt-28 px-0 sm:px-4 md:px-6 pb-6"
+            : "pt-24 sm:pt-28 px-3 sm:px-4 md:px-6 pb-6"
         } ${isVendorPage || isAdminPage ? "bg-gray-50" : "bg-white"}`}
         style={{ 
           overflowX: 'hidden',

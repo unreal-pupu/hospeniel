@@ -6,7 +6,10 @@ export const dynamic = "force-dynamic";
 interface OrderWithDetails {
   id: string;
   vendor_id: string;
-  user_id: string;
+  user_id: string | null;
+  guest_id?: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
   product_id: string;
   quantity: number;
   total_price: number;
@@ -176,13 +179,22 @@ export async function GET(req: Request) {
 
     // Combine orders with user and vendor information
     const ordersWithDetails: OrderWithDetails[] = orders.map((order: OrderWithDetails) => {
-      const userProfile = userProfileMap.get(order.user_id);
+      const userProfile = order.user_id ? userProfileMap.get(order.user_id) : null;
       const vendorProfile = vendorProfileMap.get(order.vendor_id);
       const vendorInfo = vendorMap.get(order.vendor_id);
 
+      const profilesForOrder =
+        order.user_id
+          ? userProfile || { id: order.user_id, name: "Unknown User", email: "N/A" }
+          : {
+              id: order.guest_id || "guest",
+              name: order.customer_name?.trim() || "Guest customer",
+              email: "N/A",
+            };
+
       return {
         ...order,
-        profiles: userProfile || { id: order.user_id, name: "Unknown User", email: "N/A" },
+        profiles: profilesForOrder,
         vendor_profiles: vendorProfile && vendorInfo
           ? {
               id: vendorProfile.id,

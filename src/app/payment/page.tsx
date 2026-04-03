@@ -18,7 +18,7 @@ import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { getAuthenticatedUserEmail } from "@/lib/paystack";
 import Image from "next/image";
-import { Loader2, ShoppingBag, Store, CreditCard, ArrowLeft } from "lucide-react";
+import { Loader2, ShoppingBag, Store, CreditCard, ArrowLeft, Phone } from "lucide-react";
 import { 
   getAvailableStates,
   getDeliveryFeeByLandmark,
@@ -26,6 +26,19 @@ import {
   getLandmarkInfo,
   getAvailableLandmarks
 } from "@/lib/deliveryFees";
+import { getOrCreateGuestId } from "@/lib/guestSession";
+import {
+  isValidGuestId,
+  isValidCheckoutPhone,
+  isValidCustomerName,
+} from "@/lib/guestCheckoutValidation";
+
+function buildGuestPaystackEmail(guestId: string): string {
+  const domain =
+    process.env.NEXT_PUBLIC_GUEST_CHECKOUT_EMAIL_DOMAIN || "guest.hospineil.com";
+  const safe = guestId.replace(/[^0-9a-f-]/gi, "").slice(0, 36);
+  return `guest.${safe}@${domain}`;
+}
 
 interface DirectOrderItem {
   product_id: string;
@@ -44,6 +57,7 @@ interface DirectOrderItem {
     name: string;
     image_url: string;
     location?: string;
+    phone_number?: string | null;
   };
   [key: string]: unknown; // Index signature for compatibility
 }
@@ -69,6 +83,25 @@ export default function PaymentPage() {
   const [isPaymentLocked, setIsPaymentLocked] = useState(false);
   const [landmarkError, setLandmarkError] = useState("");
   const router = useRouter();
+  const [checkoutMode, setCheckoutMode] = useState<"loading" | "authenticated" | "guest">("loading");
+  const [guestCustomerName, setGuestCustomerName] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (cancelled) return;
+      if (user) {
+        setCheckoutMode("authenticated");
+      } else {
+        setCheckoutMode("guest");
+        getOrCreateGuestId();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Load delivery details from user profile (including admin-entered fields)
   useEffect(() => {
@@ -146,14 +179,14 @@ export default function PaymentPage() {
               // Fetch vendor details from profiles table (primary source for vendor names)
               const { data: profile } = await supabase
                 .from("profiles")
-                .select("id, name, location")
+                .select("id, name, location, phone_number")
                 .eq("id", orderData.vendor_id)
                 .single();
 
               // Also try to fetch from vendors table for additional info
               const { data: vendor } = await supabase
                 .from("vendors")
-                .select("id, name, business_name, image_url, location, profile_id")
+                .select("id, name, business_name, image_url, location, profile_id, phone_number")
                 .eq("profile_id", orderData.vendor_id)
                 .maybeSingle(); // Use maybeSingle() to avoid error if not found
 
@@ -179,6 +212,9 @@ export default function PaymentPage() {
                 vendorLocation = vendor.location || vendorLocation;
               }
 
+              const vendorPhone =
+                vendor?.phone_number?.trim() || profile?.phone_number?.trim() || "";
+
               // If we have menu item, create the order item even if vendor fetch failed
               itemsWithDetails.push({
                 product_id: orderData.product_id,
@@ -191,6 +227,7 @@ export default function PaymentPage() {
                   name: vendorName,
                   image_url: vendorImage,
                   location: vendorLocation,
+                  phone_number: vendorPhone || undefined,
                 },
               });
 
@@ -233,14 +270,24 @@ export default function PaymentPage() {
     if (!acc[vendorId]) {
       // Safely extract and transform vendors to match expected type
       const itemVendors = item.vendors;
-      let vendor: { id: string; name?: string; business_name?: string; image_url?: string | null; location?: string } | null = null;
-      
+      let vendor: {
+        id: string;
+        name?: string;
+        business_name?: string;
+        image_url?: string | null;
+        location?: string;
+        phone_number?: string | null;
+      } | null = null;
+
       if (itemVendors && typeof itemVendors === "object" && "id" in itemVendors) {
         // Safely access business_name and location by checking if they exist on the object
         const vendorsObj = itemVendors as Record<string, unknown>;
         const businessName = vendorsObj.business_name;
         const location = vendorsObj.location;
-        
+        const phoneRaw = vendorsObj.phone_number;
+        const phoneStr =
+          typeof phoneRaw === "string" ? phoneRaw : phoneRaw === null ? null : undefined;
+
         vendor = {
           id: typeof itemVendors.id === "string" ? itemVendors.id : "",
           name: typeof itemVendors.name === "string" ? itemVendors.name : undefined,
@@ -251,6 +298,7 @@ export default function PaymentPage() {
               ? null 
               : undefined,
           location: typeof location === "string" ? location : undefined,
+          phone_number: phoneStr,
         };
       }
       
@@ -267,7 +315,7 @@ export default function PaymentPage() {
     const quantity = item.quantity;
     acc[vendorId].subtotal += price * quantity;
     return acc;
-  }, {} as Record<string, { vendor: { id: string; name?: string; business_name?: string; image_url?: string | null; location?: string } | null; items: Array<DirectOrderItem | import("../context/CartContex").CartItem>; subtotal: number }>);
+  }, {} as Record<string, { vendor: { id: string; name?: string; business_name?: string; image_url?: string | null; location?: string; phone_number?: string | null } | null; items: Array<DirectOrderItem | import("../context/CartContex").CartItem>; subtotal: number }>);
 
   // Calculate overall subtotal (before tax and commission)
   const subtotal = Object.values(groupedByVendor).reduce(
@@ -415,41 +463,33 @@ export default function PaymentPage() {
       return;
     }
 
+    if (!isValidCheckoutPhone(deliveryDetails.phone)) {
+      alert("Please enter a valid phone number (at least 10 digits).");
+      return;
+    }
+
     console.log("✅ Validation passed, proceeding with payment");
-    
-    // Lock delivery details once payment is initiated
+
     setIsPaymentLocked(true);
     setLoading(true);
 
     try {
-      // Get authenticated user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        alert("Please login to complete payment.");
-        setLoading(false);
-        router.push("/loginpage");
-        return;
+      const isLoggedIn = !userError && !!user;
+
+      interface OrderLineGuest {
+        user_id: null;
+        guest_id: string;
+        vendor_id: string;
+        product_id: string;
+        quantity: number;
+        total_price: number;
+        status: string;
+        customer_name: string;
+        customer_phone: string;
       }
 
-      // Verify session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !session) {
-        alert("Your session has expired. Please log in again.");
-        setLoading(false);
-        router.push("/loginpage");
-        return;
-      }
-
-      // Get email for Paystack payment
-      const resolvedEmail = (await getAuthenticatedUserEmail()) ?? user.email ?? "";
-      if (!resolvedEmail) {
-        alert("No email found for the authenticated user.");
-        setLoading(false);
-        return;
-      }
-
-      // Prepare order data (but don't create orders yet - wait for payment success)
-      interface OrderToInsert {
+      interface OrderLineAuth {
         user_id: string;
         vendor_id: string;
         product_id: string;
@@ -457,90 +497,192 @@ export default function PaymentPage() {
         total_price: number;
         status: string;
       }
-      const ordersToInsert: OrderToInsert[] = [];
 
-      if (isDirectOrder) {
-        // Use direct order data
-        for (const item of directOrderItems) {
-          ordersToInsert.push({
-            user_id: user.id,
-            vendor_id: item.vendor_id,
-            product_id: item.product_id,
-            quantity: item.quantity,
-            total_price: item.total_price,
-            status: "Pending",
-          });
+      let resolvedEmail = "";
+      let paymentData: { id: string };
+      let ordersToInsert: Array<OrderLineGuest | OrderLineAuth> = [];
+
+      if (!isLoggedIn) {
+        if (!isValidCustomerName(guestCustomerName)) {
+          alert("Please enter your full name (at least 2 characters).");
+          setLoading(false);
+          setIsPaymentLocked(false);
+          return;
         }
-      } else {
-        // Use cart items
-        for (const [vendorId, group] of Object.entries(groupedByVendor)) {
-          // Create one order per item for this vendor
-          for (const item of group.items) {
-            ordersToInsert.push({
-              user_id: user.id,
-              vendor_id: vendorId,
+        const guestId = getOrCreateGuestId();
+        if (!isValidGuestId(guestId)) {
+          alert("Could not start guest checkout. Please enable local storage or try another browser.");
+          setLoading(false);
+          setIsPaymentLocked(false);
+          return;
+        }
+
+        const guestLines: OrderLineGuest[] = [];
+        const trimmedName = guestCustomerName.trim();
+        const trimmedPhone = deliveryDetails.phone.trim();
+
+        if (isDirectOrder) {
+          for (const item of directOrderItems) {
+            guestLines.push({
+              user_id: null,
+              guest_id: guestId,
+              vendor_id: item.vendor_id,
               product_id: item.product_id,
               quantity: item.quantity,
-              total_price: ((item as { price?: number }).price || 0) * item.quantity,
+              total_price: item.total_price,
+              status: "Pending",
+              customer_name: trimmedName,
+              customer_phone: trimmedPhone,
+            });
+          }
+        } else {
+          for (const [vendorId, group] of Object.entries(groupedByVendor)) {
+            for (const item of group.items) {
+              guestLines.push({
+                user_id: null,
+                guest_id: guestId,
+                vendor_id: vendorId,
+                product_id: item.product_id,
+                quantity: item.quantity,
+                total_price: ((item as { price?: number }).price || 0) * item.quantity,
+                status: "Pending",
+                customer_name: trimmedName,
+                customer_phone: trimmedPhone,
+              });
+            }
+          }
+        }
+
+        ordersToInsert = guestLines;
+        const primaryVendorIdGuest =
+          ordersToInsert.length > 0 ? ordersToInsert[0].vendor_id : null;
+        if (!primaryVendorIdGuest) {
+          alert("Unable to determine vendor. Please try again.");
+          setLoading(false);
+          setIsPaymentLocked(false);
+          return;
+        }
+
+        const intentRes = await fetch("/api/payment/create-pending-payment", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            guest_id: guestId,
+            subtotal,
+            tax_amount: taxAmount,
+            commission_amount: commissionAmount,
+            total_amount: total,
+          }),
+        });
+        const intentJson = await intentRes.json();
+        if (!intentRes.ok || !intentJson?.id) {
+          alert(intentJson?.error || "Failed to initialize payment. Please try again.");
+          setLoading(false);
+          setIsPaymentLocked(false);
+          return;
+        }
+        paymentData = { id: intentJson.id as string };
+        resolvedEmail = buildGuestPaystackEmail(guestId);
+      } else {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session) {
+          alert("Your session has expired. Please log in again.");
+          setLoading(false);
+          setIsPaymentLocked(false);
+          router.push("/loginpage");
+          return;
+        }
+
+        resolvedEmail = (await getAuthenticatedUserEmail()) ?? user.email ?? "";
+        if (!resolvedEmail) {
+          alert("No email found for the authenticated user.");
+          setLoading(false);
+          setIsPaymentLocked(false);
+          return;
+        }
+
+        const authLines: OrderLineAuth[] = [];
+        if (isDirectOrder) {
+          for (const item of directOrderItems) {
+            authLines.push({
+              user_id: user.id,
+              vendor_id: item.vendor_id,
+              product_id: item.product_id,
+              quantity: item.quantity,
+              total_price: item.total_price,
               status: "Pending",
             });
           }
+        } else {
+          for (const [vendorId, group] of Object.entries(groupedByVendor)) {
+            for (const item of group.items) {
+              authLines.push({
+                user_id: user.id,
+                vendor_id: vendorId,
+                product_id: item.product_id,
+                quantity: item.quantity,
+                total_price: ((item as { price?: number }).price || 0) * item.quantity,
+                status: "Pending",
+              });
+            }
+          }
         }
+
+        ordersToInsert = authLines;
+        const { data: insertedPayment, error: paymentError } = await supabase
+          .from("payments")
+          .insert([
+            {
+              user_id: user.id,
+              subtotal: subtotal,
+              tax_amount: taxAmount,
+              commission_amount: commissionAmount,
+              total_amount: total,
+              status: "pending",
+            },
+          ])
+          .select()
+          .single();
+
+        if (paymentError || !insertedPayment?.id) {
+          console.error("Error creating payment record:", paymentError);
+          alert("Failed to initialize payment. Please try again.");
+          setLoading(false);
+          setIsPaymentLocked(false);
+          return;
+        }
+        paymentData = { id: insertedPayment.id };
       }
 
-      // Determine primary vendor (first vendor in the order)
-      // For multi-vendor orders, we'll use the first vendor's subaccount
-      // In the future, you might want to split payments per vendor
       const primaryVendorId = ordersToInsert.length > 0 ? ordersToInsert[0].vendor_id : null;
       if (!primaryVendorId) {
         alert("Unable to determine vendor. Please try again.");
         setLoading(false);
+        setIsPaymentLocked(false);
         return;
       }
 
-      // Create a payment record in pending status with tax, commission, and delivery charge
-      const { data: paymentData, error: paymentError } = await supabase
-        .from("payments")
-        .insert([
-          {
-            user_id: user.id,
-            subtotal: subtotal,
-            tax_amount: taxAmount,
-            commission_amount: commissionAmount,
-            total_amount: total, // total = subtotal + delivery charge + tax + service charge
-            status: "pending",
-          },
-        ])
-        .select()
-        .single();
+      const deliveryPayload = {
+        ...deliveryDetails,
+        delivery_zone: deliveryZone,
+        delivery_charge: deliveryCharge,
+        service_charge: serviceCharge,
+        landmark: deliveryDetails.state === "Bayelsa" ? selectedLandmark : null,
+        customer_name: !isLoggedIn ? guestCustomerName.trim() : undefined,
+        customer_phone: deliveryDetails.phone.trim(),
+      };
 
-      if (paymentError) {
-        console.error("Error creating payment record:", paymentError);
-        alert("Failed to initialize payment. Please try again.");
-        setLoading(false);
-        return;
-      }
-
-      // Store order data, payment ID, delivery details, and delivery charge in sessionStorage for payment handler
       if (typeof window !== "undefined") {
         sessionStorage.setItem("pendingOrdersData", JSON.stringify(ordersToInsert));
         sessionStorage.setItem("paymentId", paymentData.id);
         sessionStorage.setItem("paymentAmount", total.toString());
-        sessionStorage.setItem("deliveryDetails", JSON.stringify({
-          ...deliveryDetails,
-          delivery_zone: deliveryZone,
-          delivery_charge: deliveryCharge,
-          service_charge: serviceCharge,
-          landmark: deliveryDetails.state === "Bayelsa" ? selectedLandmark : null,
-        }));
-        // Clean up direct order data
+        sessionStorage.setItem("deliveryDetails", JSON.stringify(deliveryPayload));
         if (isDirectOrder) {
           sessionStorage.removeItem("directOrderData");
           sessionStorage.removeItem("directOrderSource");
         }
       }
 
-      // Initialize Paystack payment with subaccount support via API
       try {
         const initResponse = await fetch("/api/payment/initialize", {
           method: "POST",
@@ -557,13 +699,7 @@ export default function PaymentPage() {
             vendor_id: primaryVendorId,
             payment_id: paymentData.id,
             pending_orders: ordersToInsert,
-            delivery_details: {
-              ...deliveryDetails,
-              delivery_zone: deliveryZone,
-              delivery_charge: deliveryCharge,
-              service_charge: serviceCharge,
-              landmark: deliveryDetails.state === "Bayelsa" ? selectedLandmark : null,
-            },
+            delivery_details: deliveryPayload,
             metadata: {
               order_count: ordersToInsert.length,
               vendor_count: new Set(ordersToInsert.map((o) => o.vendor_id)).size,
@@ -578,15 +714,14 @@ export default function PaymentPage() {
           console.error("Payment initialization error:", initData);
           alert(initData.error || "Failed to initialize payment. Please try again.");
           setLoading(false);
+          setIsPaymentLocked(false);
           return;
         }
 
-        // Store payment reference for verification
         if (typeof window !== "undefined") {
           sessionStorage.setItem("paymentReference", initData.reference);
         }
 
-        // Redirect to Paystack payment page
         if (initData.authorization_url) {
           window.location.href = initData.authorization_url;
         } else {
@@ -597,6 +732,7 @@ export default function PaymentPage() {
         const errorMessage = paymentError instanceof Error ? paymentError.message : "Please try again";
         alert(`Failed to initialize payment: ${errorMessage}`);
         setLoading(false);
+        setIsPaymentLocked(false);
       }
     } catch (error) {
       console.error("Unexpected error during payment:", error);
@@ -622,8 +758,8 @@ export default function PaymentPage() {
   if (itemsToDisplay.length === 0) {
     // Show a helpful message instead of just redirecting
     return (
-      <section className="w-full min-h-screen px-6 md:px-12 lg:px-20 py-16 bg-gradient-to-br from-gray-50 to-indigo-50">
-        <div className="max-w-2xl mx-auto text-center">
+      <section className="w-full min-h-screen max-w-[100vw] overflow-x-hidden px-3 sm:px-6 md:px-12 lg:px-20 py-8 sm:py-16 bg-gradient-to-br from-gray-50 to-indigo-50">
+        <div className="max-w-2xl mx-auto text-center min-w-0 px-1">
           <div className="bg-white rounded-xl shadow-lg p-8">
             <h1 className="text-2xl font-bold text-gray-900 mb-4">No Items to Checkout</h1>
             <p className="text-gray-600 mb-6">
@@ -652,8 +788,8 @@ export default function PaymentPage() {
   }
 
   return (
-    <section className="w-full min-h-screen px-6 md:px-12 lg:px-20 py-16 bg-gradient-to-br from-gray-50 to-indigo-50">
-      <div className="max-w-4xl mx-auto">
+    <section className="w-full min-h-screen max-w-[100vw] overflow-x-hidden px-3 sm:px-6 md:px-12 lg:px-20 py-8 sm:py-16 bg-gradient-to-br from-gray-50 to-indigo-50">
+      <div className="max-w-4xl mx-auto min-w-0 w-full">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
@@ -673,7 +809,7 @@ export default function PaymentPage() {
         </div>
 
 
-        <div className="grid md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 min-w-0">
           {/* Order Summary and Delivery Details */}
           <div className="md:col-span-2 space-y-6">
             {/* Delivery Details Section */}
@@ -691,6 +827,39 @@ export default function PaymentPage() {
                   </div>
                 ) : (
                   <div className="space-y-4">
+                    {checkoutMode === "guest" && (
+                      <div className="rounded-lg border border-indigo-200 bg-indigo-50/80 p-4 space-y-3">
+                        <p className="text-sm text-indigo-900 font-medium">Checkout as a guest</p>
+                        <p className="text-xs text-indigo-800">
+                          No account needed. You can also{" "}
+                          <Link href="/loginpage" className="underline font-semibold">
+                            sign in
+                          </Link>{" "}
+                          to use saved addresses.
+                        </p>
+                      </div>
+                    )}
+
+                    {checkoutMode === "guest" && (
+                      <div>
+                        <Label htmlFor="guestFullName" className="text-sm font-medium text-gray-700">
+                          Full name <span className="text-red-500">*</span>
+                        </Label>
+                        <Input
+                          id="guestFullName"
+                          value={guestCustomerName}
+                          onChange={(e) =>
+                            !isPaymentLocked && setGuestCustomerName(e.target.value)
+                          }
+                          disabled={isPaymentLocked}
+                          placeholder="Your name"
+                          className="mt-1 bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11 disabled:opacity-50 disabled:cursor-not-allowed"
+                          autoComplete="name"
+                          required
+                        />
+                      </div>
+                    )}
+
                     <div>
                       <Label htmlFor="deliveryAddress" className="text-sm font-medium text-gray-700">
                         Street Address <span className="text-red-500">*</span>
@@ -882,6 +1051,20 @@ export default function PaymentPage() {
                               📍 {group.vendor.location}
                             </p>
                           )}
+                          <p className="text-sm text-gray-600 flex flex-wrap items-center gap-1.5 mt-1">
+                            <Phone className="h-3.5 w-3.5 shrink-0 text-indigo-600" aria-hidden />
+                            <span className="font-medium text-gray-700">Vendor phone number:</span>
+                            {group.vendor?.phone_number?.trim() ? (
+                              <a
+                                href={`tel:${group.vendor.phone_number.replace(/\s/g, "")}`}
+                                className="text-indigo-600 hover:underline font-medium break-all"
+                              >
+                                {group.vendor.phone_number.trim()}
+                              </a>
+                            ) : (
+                              <span className="text-gray-500">Not available</span>
+                            )}
+                          </p>
                         </div>
                       </div>
 
@@ -957,7 +1140,7 @@ export default function PaymentPage() {
 
           {/* Payment Summary */}
           <div className="md:col-span-1">
-            <Card className="rounded-xl shadow-lg border-2 border-indigo-200 sticky top-4">
+            <Card className="rounded-xl shadow-lg border-2 border-indigo-200 md:sticky md:top-24 lg:top-28 z-10">
               <CardHeader className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
                 <CardTitle className="flex items-center gap-2">
                   <CreditCard className="h-5 w-5" />

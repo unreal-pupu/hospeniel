@@ -24,6 +24,7 @@ import {
   MessageSquare,
   ChefHat,
   Store,
+  Phone,
 } from "lucide-react";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
@@ -65,6 +66,7 @@ interface Order {
     name: string;
     image_url: string;
     location?: string;
+    phone_number?: string | null;
   };
 }
 
@@ -88,6 +90,7 @@ interface ServiceRequest {
     id: string;
     name: string | null;
     category: string | null;
+    phone_number?: string | null;
   } | null;
 }
 
@@ -95,6 +98,7 @@ interface VendorProfileRow {
   id: string;
   name: string | null;
   category: string | null;
+  phone_number?: string | null;
 }
 
 export default function OrdersPage() {
@@ -181,7 +185,7 @@ export default function OrdersPage() {
         ];
         const { data: vendorProfiles } = await supabase
           .from("profiles")
-          .select("id, name, category")
+          .select("id, name, category, phone_number")
           .in("id", vendorIds);
 
         const vendorRows: VendorProfileRow[] = vendorProfiles ?? [];
@@ -234,19 +238,39 @@ export default function OrdersPage() {
         image_url: string | null;
         location: string | null;
         profile_id: string;
+        phone_number?: string | null;
       }
-      
+
+      interface VendorProfileForOrder {
+        id: string;
+        name: string | null;
+        location: string | null;
+        phone_number: string | null;
+      }
+
       const vendorIds = [...new Set(ordersData.map((order: OrderData) => order.vendor_id))];
 
-      // Fetch vendor information
-      const { data: vendorsData, error: vendorsError } = await supabase
-        .from("vendors")
-        .select("id, name, image_url, location, profile_id")
-        .in("profile_id", vendorIds);
+      // Vendor row + profiles (source of truth for phone and fallback name/location)
+      const [{ data: vendorsData, error: vendorsError }, { data: vendorProfilesData }] = await Promise.all([
+        supabase
+          .from("vendors")
+          .select("id, name, image_url, location, profile_id, phone_number")
+          .in("profile_id", vendorIds),
+        supabase
+          .from("profiles")
+          .select("id, name, location, phone_number")
+          .in("id", vendorIds),
+      ]);
 
       if (vendorsError) {
         console.error("Error fetching vendors:", vendorsError);
       }
+
+      const vendorProfileMap = new Map<string, VendorProfileForOrder>();
+      const vendorProfileRows: VendorProfileForOrder[] = vendorProfilesData ?? [];
+      vendorProfileRows.forEach((row: VendorProfileForOrder) => {
+        vendorProfileMap.set(row.id, row);
+      });
 
       // Create a map of vendor_id (auth.users id) to vendor data
       const vendorsMap = new Map<string, VendorData>();
@@ -259,6 +283,18 @@ export default function OrdersPage() {
       // Combine orders with vendor information
       const ordersWithVendors: Order[] = ordersData.map((order: OrderData) => {
         const vendor = vendorsMap.get(order.vendor_id);
+        const profileRow = vendorProfileMap.get(order.vendor_id);
+        const vendorPhoneFromRow = vendor?.phone_number?.trim() || "";
+        const vendorPhoneFromProfile = profileRow?.phone_number?.trim() || "";
+        const resolvedVendorPhone = vendorPhoneFromRow || vendorPhoneFromProfile || null;
+        const resolvedVendorName =
+          (vendor?.name && String(vendor.name).trim()) ||
+          (profileRow?.name && String(profileRow.name).trim()) ||
+          undefined;
+        const resolvedVendorLocation =
+          (vendor?.location && String(vendor.location).trim()) ||
+          (profileRow?.location && String(profileRow.location).trim()) ||
+          undefined;
         // Store previous status for comparison
         previousStatuses.current.set(order.id, order.status);
         return {
@@ -279,14 +315,16 @@ export default function OrdersPage() {
           delivery_phone_number: order.delivery_phone_number || undefined,
           delivery_charge: order.delivery_charge || undefined,
           menu_items: order.menu_items,
-          vendors: vendor
-            ? {
-                id: vendor.id,
-                name: vendor.name,
-                image_url: vendor.image_url || "",
-                location: vendor.location || undefined,
-              }
-            : undefined,
+          vendors:
+            vendor || resolvedVendorName || resolvedVendorLocation || resolvedVendorPhone
+              ? {
+                  id: vendor?.id ?? order.vendor_id,
+                  name: resolvedVendorName || vendor?.name || "Unknown Vendor",
+                  image_url: vendor?.image_url || "",
+                  location: resolvedVendorLocation,
+                  phone_number: resolvedVendorPhone,
+                }
+              : undefined,
         };
       });
 
@@ -642,6 +680,22 @@ export default function OrdersPage() {
                             </Badge>
                           )}
                         </div>
+                        <div className="mb-3 flex flex-wrap items-start gap-x-2 gap-y-0.5 text-sm text-gray-600">
+                          <span className="inline-flex items-center gap-1.5 font-medium text-gray-800 shrink-0">
+                            <Phone className="h-3.5 w-3.5 text-gray-500" aria-hidden />
+                            Vendor phone number:
+                          </span>
+                          {request.vendor?.phone_number?.trim() ? (
+                            <a
+                              href={`tel:${request.vendor.phone_number.replace(/\s/g, "")}`}
+                              className="text-indigo-600 hover:underline font-medium break-all"
+                            >
+                              {request.vendor.phone_number.trim()}
+                            </a>
+                          ) : (
+                            <span className="text-gray-400">Not available</span>
+                          )}
+                        </div>
                         <p className="text-gray-600 mb-3 text-sm line-clamp-2">{request.message}</p>
                         {(request.amount_paid ?? request.final_price) && (
                           <div className="flex items-center gap-2 text-sm text-gray-700 mb-2">
@@ -767,6 +821,22 @@ export default function OrdersPage() {
                           <span className="text-gray-400">
                             • {order.vendors.location}
                           </span>
+                        )}
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-start gap-x-2 gap-y-0.5 text-sm text-gray-600">
+                        <span className="inline-flex items-center gap-1.5 font-medium text-gray-800 shrink-0">
+                          <Phone className="h-3.5 w-3.5 text-gray-500" aria-hidden />
+                          Vendor phone number:
+                        </span>
+                        {order.vendors?.phone_number?.trim() ? (
+                          <a
+                            href={`tel:${order.vendors.phone_number.replace(/\s/g, "")}`}
+                            className="text-indigo-600 hover:underline font-medium break-all"
+                          >
+                            {order.vendors.phone_number.trim()}
+                          </a>
+                        ) : (
+                          <span className="text-gray-400">Not available</span>
                         )}
                       </div>
                       <div className="flex items-center gap-4 text-sm text-gray-600">

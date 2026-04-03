@@ -15,6 +15,7 @@ interface Vendor {
   email: string;
   category: string;
   location: string;
+  phone_number?: string | null;
   subscription_plan: string;
   is_premium: boolean;
   approval_status: "pending" | "approved" | "rejected" | null;
@@ -87,10 +88,37 @@ export default function AdminVendorsPage() {
       if (error) throw error;
       const vendorProfiles = (data || []) as Vendor[];
 
-      const merged = vendorProfiles.map((vendor) => ({
-        ...vendor,
-        verified: vendor.verified ?? false,
-      }));
+      const profileIds = vendorProfiles.map((v) => v.id);
+      const vendorPhoneByProfileId = new Map<string, string>();
+
+      if (profileIds.length > 0) {
+        const { data: vendorRows, error: vendorsError } = await supabase
+          .from("vendors")
+          .select("profile_id, phone_number")
+          .in("profile_id", profileIds);
+
+        if (vendorsError) {
+          console.error("Error fetching vendor phone numbers:", vendorsError);
+        } else if (vendorRows) {
+          for (const row of vendorRows as { profile_id: string; phone_number: string | null }[]) {
+            const t = row.phone_number?.trim();
+            if (t && !vendorPhoneByProfileId.has(row.profile_id)) {
+              vendorPhoneByProfileId.set(row.profile_id, t);
+            }
+          }
+        }
+      }
+
+      const merged = vendorProfiles.map((vendor) => {
+        const fromProfile = vendor.phone_number?.trim() || "";
+        const fromVendorRow = vendorPhoneByProfileId.get(vendor.id)?.trim() || "";
+        const resolved = fromProfile || fromVendorRow || null;
+        return {
+          ...vendor,
+          verified: vendor.verified ?? false,
+          phone_number: resolved,
+        };
+      });
 
       setVendors(merged);
       await fetchPremiumToolsForVendors(merged.map((v) => v.id));
@@ -215,6 +243,12 @@ export default function AdminVendorsPage() {
     }
   };
 
+  const formatPhoneDisplay = (phone: string | null | undefined) => {
+    const t = phone?.trim();
+    if (!t) return "N/A";
+    return t;
+  };
+
   const getCategoryLabel = (category: string | null) => {
     if (!category) return "N/A";
     return category
@@ -300,10 +334,15 @@ export default function AdminVendorsPage() {
   };
 
   const filteredVendors = vendors.filter((vendor) => {
+    const q = searchTerm.toLowerCase();
+    const phoneDigits = vendor.phone_number?.replace(/\D/g, "") ?? "";
+    const searchDigits = searchTerm.replace(/\D/g, "");
     const matchesSearch =
-      vendor.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      vendor.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      vendor.location?.toLowerCase().includes(searchTerm.toLowerCase());
+      vendor.name?.toLowerCase().includes(q) ||
+      vendor.email?.toLowerCase().includes(q) ||
+      vendor.location?.toLowerCase().includes(q) ||
+      vendor.phone_number?.toLowerCase().includes(q) ||
+      (searchDigits.length > 0 && phoneDigits.includes(searchDigits));
     
     const matchesCategory =
       categoryFilter === "all" || vendor.category === categoryFilter;
@@ -376,6 +415,9 @@ export default function AdminVendorsPage() {
                 <tr className="border-b">
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Name</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Email</th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700 min-w-[8rem] whitespace-nowrap">
+                    Phone Number
+                  </th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Category</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Location</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700">Status</th>
@@ -387,7 +429,7 @@ export default function AdminVendorsPage() {
               <tbody>
                 {filteredVendors.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-8 text-gray-500">
+                    <td colSpan={9} className="text-center py-8 text-gray-500">
                       No vendors found
                     </td>
                   </tr>
@@ -405,6 +447,18 @@ export default function AdminVendorsPage() {
                         </div>
                       </td>
                       <td className="py-3 px-4">{vendor.email}</td>
+                      <td className="py-3 px-4 align-top">
+                        {vendor.phone_number ? (
+                          <a
+                            href={`tel:${vendor.phone_number.replace(/\s/g, "")}`}
+                            className="font-mono text-sm text-indigo-700 hover:underline tabular-nums break-all"
+                          >
+                            {formatPhoneDisplay(vendor.phone_number)}
+                          </a>
+                        ) : (
+                          <span className="text-gray-500 text-sm">N/A</span>
+                        )}
+                      </td>
                       <td className="py-3 px-4">
                         <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs">
                           {getCategoryLabel(vendor.category)}

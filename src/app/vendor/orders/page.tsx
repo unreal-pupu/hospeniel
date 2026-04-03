@@ -46,7 +46,10 @@ const calculateNetEarnings = (amount: number): number => {
 interface Order {
   id: string;
   vendor_id: string;
-  user_id: string;
+  user_id: string | null;
+  guest_id?: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
   product_id: string;
   quantity: number;
   total_price: number;
@@ -140,6 +143,9 @@ export default function OrdersPage() {
           delivery_charge,
           special_instructions,
           payment_reference,
+          guest_id,
+          customer_name,
+          customer_phone,
           menu_items (
             id,
             title,
@@ -173,20 +179,21 @@ export default function OrdersPage() {
 
       const orderRows: Order[] = ordersData ?? [];
 
-      // Get unique user IDs
-      const userIds = [...new Set(orderRows.map((order: Order) => order.user_id))];
+      const userIds = [
+        ...new Set(
+          orderRows
+            .map((order: Order) => order.user_id)
+            .filter((id): id is string => typeof id === "string" && id.length > 0)
+        ),
+      ];
 
-      // Fetch user profiles and settings
-      const [profilesResult, settingsResult] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, name")
-          .in("id", userIds),
-        supabase
-          .from("user_settings")
-          .select("user_id, avatar_url")
-          .in("user_id", userIds)
-      ]);
+      const [profilesResult, settingsResult] =
+        userIds.length > 0
+          ? await Promise.all([
+              supabase.from("profiles").select("id, name").in("id", userIds),
+              supabase.from("user_settings").select("user_id, avatar_url").in("user_id", userIds),
+            ])
+          : [{ data: [] as { id: string; name: string }[] }, { data: [] as { user_id: string; avatar_url: string | null }[] }];
 
       // Create maps for quick lookup
       interface Profile {
@@ -258,7 +265,10 @@ interface DeliveryTaskRow {
         const baseOrder: Order = {
           id: order.id as string,
           vendor_id: order.vendor_id as string,
-          user_id: order.user_id as string,
+          user_id: (order.user_id as string | null) ?? null,
+          guest_id: order.guest_id as string | null | undefined,
+          customer_name: order.customer_name as string | null | undefined,
+          customer_phone: order.customer_phone as string | null | undefined,
           product_id: order.product_id as string,
           quantity: order.quantity as number,
           total_price: order.total_price as number,
@@ -277,8 +287,8 @@ interface DeliveryTaskRow {
           menu_items: resolvedMenuItem,
         };
 
-        const profile = profilesMap.get(order.user_id);
-        const setting = settingsMap.get(order.user_id);
+        const profile = order.user_id ? profilesMap.get(order.user_id) : undefined;
+        const setting = order.user_id ? settingsMap.get(order.user_id) : undefined;
 
         return {
           ...baseOrder,
@@ -325,7 +335,10 @@ interface DeliveryTaskRow {
       filtered = filtered.filter((order) => {
         const productName = order.menu_items?.title?.toLowerCase() || "";
         const userName = order.profiles?.name?.toLowerCase() || "";
-        return productName.includes(query) || userName.includes(query);
+        const guestName = order.customer_name?.toLowerCase() || "";
+        return (
+          productName.includes(query) || userName.includes(query) || guestName.includes(query)
+        );
       });
     }
 
@@ -751,9 +764,13 @@ interface DeliveryTaskRow {
                   </div>
                   <div>
                     <p className="font-semibold text-gray-800 font-header">
-                      {order.profiles?.name || "Unknown Customer"}
+                      {order.customer_name?.trim() ||
+                        order.profiles?.name ||
+                        (order.guest_id ? "Guest customer" : "Unknown Customer")}
                     </p>
-                    <p className="text-xs text-gray-600 font-body">Customer</p>
+                    <p className="text-xs text-gray-600 font-body">
+                      {order.guest_id ? "Guest checkout" : "Customer"}
+                    </p>
                   </div>
                 </div>
 
@@ -841,9 +858,9 @@ interface DeliveryTaskRow {
                             <span> {order.delivery_postal_code}</span>
                           )}
                         </p>
-                        {order.delivery_phone_number && (
+                        {(order.delivery_phone_number || order.customer_phone) && (
                           <p className="text-gray-600 mt-1 font-body">
-                            Phone: {order.delivery_phone_number}
+                            Phone: {order.delivery_phone_number || order.customer_phone}
                           </p>
                         )}
                       </div>

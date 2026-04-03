@@ -36,7 +36,7 @@ export default function Footer() {
 
   return (
     <footer className="bg-white border-t border-gray-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-10 sm:py-16 w-full min-w-0 max-w-full overflow-x-hidden">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 sm:gap-10 lg:gap-12">
           
           {/* Brand Section */}
@@ -44,9 +44,9 @@ export default function Footer() {
   {/* Logo */}
   <div className="mb-4">
     <img
-      src="/new.jpeg"            // your logo in public folder
+      src="/new.jpeg"
       alt="Hospeniel"
-      className="h-40 w-auto"     // adjust height as needed
+      className="h-24 sm:h-32 md:h-36 w-auto max-w-full object-contain"
     />
   </div>
 

@@ -26,7 +26,10 @@ const NIGERIAN_STATES = [
 interface Order {
   id: string;
   vendor_id: string;
-  user_id: string;
+  user_id: string | null;
+  guest_id?: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
   product_id: string | null;
   quantity: number;
   total_price: number;
@@ -156,6 +159,7 @@ export default function AdminOrdersPage() {
           order.id.toLowerCase().includes(query) ||
           order.profiles?.name?.toLowerCase().includes(query) ||
           order.profiles?.email?.toLowerCase().includes(query) ||
+          order.customer_name?.toLowerCase().includes(query) ||
           order.vendor_profiles?.name?.toLowerCase().includes(query) ||
           order.vendor_profiles?.business_name?.toLowerCase().includes(query) ||
           order.menu_items?.title?.toLowerCase().includes(query) ||
@@ -247,7 +251,7 @@ export default function AdminOrdersPage() {
         },
         body: JSON.stringify({
           ...deliveryForm,
-          user_id: selectedOrder.user_id,
+          user_id: selectedOrder.user_id || undefined,
         }),
       });
 

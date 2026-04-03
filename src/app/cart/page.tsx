@@ -68,26 +68,13 @@ export default function CartPage() {
   // Calculate total items count
   const totalItems = cartItems.reduce((sum, item) => sum + item.quantity, 0);
 
-  // Handle checkout - redirect to payment page or login if not authenticated
+  // Handle checkout — authenticated users and guests both use /payment
   const handleCheckout = async () => {
     if (cartItems.length === 0) {
       alert("Your cart is empty.");
       return;
     }
 
-    // Verify user is authenticated
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-      // Store return URL in sessionStorage for redirect after login
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("returnUrl", "/payment");
-      }
-      alert("Please login to checkout.");
-      router.push("/loginpage");
-      return;
-    }
-
-    // Redirect to payment page
     router.push("/payment");
   };
 
@@ -101,7 +88,7 @@ export default function CartPage() {
   }
 
   return (
-    <section className="w-full min-h-screen px-6 md:px-12 lg:px-20 py-16 bg-gradient-to-br from-gray-50 to-indigo-50">
+    <section className="w-full min-h-screen max-w-[100vw] overflow-x-hidden px-3 sm:px-6 md:px-12 lg:px-20 py-8 sm:py-16 bg-gradient-to-br from-gray-50 to-indigo-50">
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl md:text-4xl font-bold text-gray-900">
@@ -144,7 +131,7 @@ export default function CartPage() {
                       💡 You&apos;re shopping as a guest
                     </p>
                     <p className="text-xs text-blue-700 mt-1">
-                      Sign in or create an account to save your cart and checkout securely
+                      You can checkout as a guest, or sign in to save your cart to your account
                     </p>
                   </div>
                   <div className="flex gap-2">

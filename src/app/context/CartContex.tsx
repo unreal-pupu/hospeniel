@@ -26,6 +26,7 @@ export type CartItem = {
     name: string;
     image_url: string;
     location?: string;
+    phone_number?: string | null;
   };
 };
 
@@ -248,18 +249,34 @@ export function CartProvider({ children }: { children: ReactNode }) {
         image_url: string | null;
         location: string | null;
         profile_id: string;
+        phone_number?: string | null;
       }
-      
+
+      interface ProfileRow {
+        id: string;
+        name: string | null;
+        location: string | null;
+        phone_number: string | null;
+      }
+
       const vendorIds = [...new Set(cartData.map((item: CartDataItem) => item.vendor_id))];
 
-      // Fetch vendor information
-      const { data: vendorsData, error: vendorsError } = await supabase
-        .from("vendors")
-        .select("id, name, image_url, location, profile_id")
-        .in("profile_id", vendorIds);
+      const [vendorsResult, profilesResult] = await Promise.all([
+        supabase
+          .from("vendors")
+          .select("id, name, image_url, location, profile_id, phone_number")
+          .in("profile_id", vendorIds),
+        supabase.from("profiles").select("id, name, location, phone_number").in("id", vendorIds),
+      ]);
 
+      const { data: vendorsData, error: vendorsError } = vendorsResult;
       if (vendorsError) {
         console.error("Error fetching vendors:", vendorsError);
+      }
+
+      const profilesMap = new Map<string, ProfileRow>();
+      if (profilesResult.data) {
+        profilesResult.data.forEach((row: ProfileRow) => profilesMap.set(row.id, row));
       }
 
       // Create a map of vendor_id (auth.users id) to vendor data
@@ -273,6 +290,29 @@ export function CartProvider({ children }: { children: ReactNode }) {
       // Combine cart items with vendor information
       const cartItemsWithVendors: CartItem[] = cartData.map((item: CartDataItem) => {
         const vendor = vendorsMap.get(item.vendor_id);
+        const profileRow = profilesMap.get(item.vendor_id);
+        const resolvedPhone =
+          vendor?.phone_number?.trim() || profileRow?.phone_number?.trim() || "";
+
+        const vendorsPayload =
+          vendor
+            ? {
+                id: vendor.id,
+                name: vendor.name,
+                image_url: vendor.image_url || "",
+                location: vendor.location || undefined,
+                phone_number: resolvedPhone || undefined,
+              }
+            : profileRow
+              ? {
+                  id: item.vendor_id,
+                  name: profileRow.name || "Vendor",
+                  image_url: "",
+                  location: profileRow.location || undefined,
+                  phone_number: resolvedPhone || undefined,
+                }
+              : undefined;
+
         return {
           id: item.id,
           user_id: item.user_id,
@@ -283,14 +323,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           created_at: item.created_at,
           updated_at: item.updated_at,
           menu_items: item.menu_items,
-          vendors: vendor
-            ? {
-                id: vendor.id,
-                name: vendor.name,
-                image_url: vendor.image_url || "",
-                location: vendor.location || undefined,
-              }
-            : undefined,
+          vendors: vendorsPayload,
         };
       });
 

@@ -169,7 +169,7 @@ function ProductsShowcase() {
   if (loading) {
     return (
       <section className="w-full pt-8 sm:pt-12 md:pt-16 pb-16 bg-hospineil-base-bg">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 w-full min-w-0 max-w-full">
           <div className="flex justify-center items-center py-12">
             <Loader2 className="animate-spin text-hospineil-primary h-8 w-8" />
           </div>
@@ -184,7 +184,7 @@ function ProductsShowcase() {
 
   return (
     <section className="w-full pt-8 sm:pt-12 md:pt-16 pb-16 bg-hospineil-base-bg">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 w-full min-w-0 max-w-full">
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold text-hospineil-primary font-header mb-4">
             Trending / Popular Meals

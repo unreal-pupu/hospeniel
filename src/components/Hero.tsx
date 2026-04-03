@@ -21,7 +21,7 @@ export default function Hero() {
   return (
     <section 
       id="home" 
-      className="relative w-full max-w-7xl mx-auto min-h-[80vh] sm:min-h-[90vh] md:min-h-[100vh] flex flex-col lg:flex-row lg:items-center lg:justify-between items-center justify-center px-4 sm:px-6 md:px-12 lg:px-20 bg-white pb-8 sm:pb-12 md:pb-16 pt-24 sm:pt-16 md:pt-0 overflow-hidden rounded-[56px]"
+      className="relative w-full max-w-7xl mx-auto min-h-[80vh] sm:min-h-[90vh] md:min-h-[100vh] flex flex-col lg:flex-row lg:items-center lg:justify-between items-center justify-center px-3 sm:px-6 md:px-12 lg:px-20 bg-white pb-8 sm:pb-12 md:pb-16 pt-20 sm:pt-16 md:pt-0 overflow-hidden rounded-2xl sm:rounded-3xl md:rounded-[56px] max-w-[100%]"
       style={{ 
         contain: 'layout style paint',
         transform: 'translateZ(0)',
@@ -36,7 +36,7 @@ export default function Hero() {
           animate={{ opacity: 1, y: 0 }}
           transition={prefersReducedMotion ? {} : { duration: 0.8 }}
           style={{ willChange: prefersReducedMotion ? 'auto' : 'transform, opacity' }}
-          className="text-5xl sm:text-5xl md:text-6xl lg:text-7xl font-header italic font-bold text-hospineil-primary leading-tight mt-0 sm:mt-0 md:mt-12 mb-3 sm:mb-4 md:mb-4"
+          className="text-[clamp(1.65rem,5.5vw+0.6rem,4rem)] sm:text-5xl md:text-6xl lg:text-7xl font-header italic font-bold text-hospineil-primary leading-[1.15] sm:leading-tight mt-0 sm:mt-0 md:mt-12 mb-3 sm:mb-4 md:mb-4 break-words"
         >
           Discover{" "}
           <span className="text-hospineil-primary">Food</span>,{" "}
@@ -52,7 +52,7 @@ export default function Hero() {
           animate={{ opacity: 1, y: 0 }}
           transition={prefersReducedMotion ? {} : { delay: 0.4, duration: 0.8 }}
           style={{ willChange: prefersReducedMotion ? 'auto' : 'transform, opacity' }}
-          className="mt-2 sm:mt-3 md:mt-6 text-sm sm:text-base md:text-lg lg:text-xl text-[#333333] font-body max-w-2xl px-4 sm:px-0"
+          className="mt-2 sm:mt-3 md:mt-6 text-sm sm:text-base md:text-lg lg:text-xl text-[#333333] font-body max-w-2xl px-0 sm:px-0 break-words"
         >
           From local food vendors and professional chefs for hire, to creative
           bakers and delightful pastry vendors — our platform brings the best
@@ -136,8 +136,8 @@ export default function Hero() {
       </div>
 
       {/* Glovo-inspired layered images (style/layout only) */}
-      <div className="relative z-0 w-full lg:w-1/2 flex items-center justify-center lg:justify-end mt-10 lg:mt-0">
-        <div className="relative w-full max-w-md lg:max-w-lg h-[320px] sm:h-[380px] lg:h-[460px] overflow-hidden rounded-[40px] bg-white/40">
+      <div className="relative z-0 w-full max-w-full min-w-0 lg:w-1/2 flex items-center justify-center lg:justify-end mt-10 lg:mt-0 px-0">
+        <div className="relative w-full max-w-md lg:max-w-lg h-[260px] sm:h-[380px] lg:h-[460px] overflow-hidden rounded-3xl sm:rounded-[40px] bg-white/40 mx-auto">
           <div
             className="absolute -left-6 -top-6 w-56 h-56 rounded-full bg-white/10 blur-2xl z-0"
             aria-hidden

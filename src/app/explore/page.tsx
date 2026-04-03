@@ -869,12 +869,12 @@ export default function ExplorePage() {
         }
       />
 
-      <div className="min-h-screen bg-hospineil-base-bg flex">
+      <div className="min-h-screen bg-hospineil-base-bg flex w-full max-w-full min-w-0 overflow-x-hidden">
         {/* ✅ Left Sidebar */}
         <aside
         className={`
-          fixed lg:static top-32 bottom-0 left-0 z-40
-          w-64 bg-hospineil-primary shadow-xl
+          fixed lg:static top-24 sm:top-28 bottom-0 left-0 z-40
+          w-[min(18rem,85vw)] max-w-[85vw] sm:w-64 bg-hospineil-primary shadow-xl
           transform transition-transform duration-300 ease-in-out
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
         `}
@@ -938,7 +938,7 @@ export default function ExplorePage() {
       {/* ✅ Overlay for mobile sidebar */}
       {sidebarOpen && (
         <div
-          className="fixed inset-x-0 bottom-0 top-32 bg-black bg-opacity-50 z-30 lg:hidden"
+          className="fixed inset-x-0 bottom-0 top-24 sm:top-28 bg-black bg-opacity-50 z-30 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -946,7 +946,7 @@ export default function ExplorePage() {
       {/* ✅ Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Header */}
-        <header className="bg-white shadow-sm border-b border-gray-200 sticky top-32 z-30">
+        <header className="bg-white shadow-sm border-b border-gray-200 sticky top-24 sm:top-28 z-30">
           <div className="px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex items-center justify-between">
               {/* Mobile Menu Button */}
@@ -987,7 +987,7 @@ export default function ExplorePage() {
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 pt-6 sm:pt-8 lg:pt-10 overflow-y-auto">
+        <main className="flex-1 p-3 sm:p-6 lg:p-8 pt-4 sm:pt-8 lg:pt-10 overflow-y-auto overflow-x-hidden min-w-0 w-full max-w-full">
           {/* ✅ Service Profile Vendors Section (Chefs & Home Cooks) */}
           {(() => {
             // Show loading state
@@ -1057,7 +1057,7 @@ export default function ExplorePage() {
             
             return (
               <div className="mb-8 pt-2 sm:pt-4">
-                <h2 className="text-2xl font-bold text-gray-800 mb-4 font-header relative z-10">
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-800 mb-4 font-header relative z-10 break-words px-0.5">
                   Chef and Home Cooks Too
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -1095,12 +1095,12 @@ export default function ExplorePage() {
 
                       {/* Vendor Info */}
                       <div className="p-5 pt-4 flex flex-col h-full">
-                        <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-lg font-bold text-gray-800 font-header flex items-center gap-2">
-                          <span>{vendor.name}</span>
-                          <VerifiedBadge verified={vendor.verified} />
+                        <div className="flex flex-wrap items-start justify-between gap-2 mb-2 min-w-0">
+                        <h3 className="text-lg font-bold text-gray-800 font-header flex items-center gap-2 min-w-0 flex-1 break-words">
+                          <span className="min-w-0">{vendor.name}</span>
+                          <VerifiedBadge verified={vendor.verified} className="shrink-0" />
                         </h3>
-                          <span className="px-2 py-1 bg-hospineil-primary/10 text-hospineil-primary text-xs font-semibold rounded-full">
+                          <span className="px-2 py-1 bg-hospineil-primary/10 text-hospineil-primary text-xs font-semibold rounded-full shrink-0 max-w-full">
                             {getCategoryLabel(vendor.category)}
                           </span>
                         </div>
@@ -1159,20 +1159,20 @@ export default function ExplorePage() {
 
           {/* ✅ Vendor Directory Section */}
               <div className="mb-6">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-                  <div>
-                    <h2 className="text-3xl font-bold text-hospineil-primary mb-2 font-header">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 min-w-0">
+                  <div className="min-w-0">
+                    <h2 className="text-2xl sm:text-3xl font-bold text-hospineil-primary mb-2 font-header break-words">
                   Explore Vendors
                     </h2>
-                    <p className="text-gray-600 font-body">
+                    <p className="text-gray-600 font-body text-sm sm:text-base break-words">
                   Browse vendor profiles and explore their menus
                     </p>
                   </div>
                   
-                  <div className="flex items-center gap-3 flex-wrap">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto sm:flex-wrap min-w-0">
                     {/* Location Filter */}
-                    <div className="flex items-center gap-3 bg-hospineil-primary/10 px-4 py-2 rounded-lg border border-hospineil-primary/20">
-                      <label htmlFor="location-filter" className="text-sm font-semibold text-hospineil-primary whitespace-nowrap flex items-center gap-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 bg-hospineil-primary/10 px-3 sm:px-4 py-2 rounded-lg border border-hospineil-primary/20 min-w-0 flex-1 sm:flex-initial">
+                      <label htmlFor="location-filter" className="text-sm font-semibold text-hospineil-primary sm:whitespace-nowrap flex items-center gap-2 shrink-0">
                         <span>📍</span>
                         <span>Location:</span>
                       </label>
@@ -1180,7 +1180,7 @@ export default function ExplorePage() {
                         id="location-filter"
                         value={selectedLocation}
                         onChange={(e) => setSelectedLocation(e.target.value)}
-                        className="px-4 py-2 border border-hospineil-primary/30 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary min-w-[180px] font-medium font-body"
+                        className="px-3 sm:px-4 py-2 border border-hospineil-primary/30 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary w-full min-w-0 sm:min-w-[140px] sm:max-w-[220px] font-medium font-body text-sm sm:text-base"
                       >
                         {LOCATIONS.map((loc) => (
                           <option key={loc} value={loc}>
@@ -1191,8 +1191,8 @@ export default function ExplorePage() {
                     </div>
 
                     {/* Category Filter */}
-                    <div className="flex items-center gap-3 bg-hospineil-accent/10 px-4 py-2 rounded-lg border border-hospineil-accent/20">
-                      <label htmlFor="category-filter" className="text-sm font-semibold text-hospineil-accent whitespace-nowrap flex items-center gap-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 bg-hospineil-accent/10 px-3 sm:px-4 py-2 rounded-lg border border-hospineil-accent/20 min-w-0 flex-1 sm:flex-initial">
+                      <label htmlFor="category-filter" className="text-sm font-semibold text-hospineil-accent sm:whitespace-nowrap flex items-center gap-2 shrink-0">
                         <span>🏷️</span>
                         <span>Category:</span>
                       </label>
@@ -1200,7 +1200,7 @@ export default function ExplorePage() {
                         id="category-filter"
                         value={selectedCategory}
                         onChange={(e) => setSelectedCategory(e.target.value)}
-                        className="px-4 py-2 border border-hospineil-accent/30 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-hospineil-accent focus:border-hospineil-accent min-w-[180px] font-medium font-body"
+                        className="px-3 sm:px-4 py-2 border border-hospineil-accent/30 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-hospineil-accent focus:border-hospineil-accent w-full min-w-0 sm:min-w-[140px] sm:max-w-[220px] font-medium font-body text-sm sm:text-base"
                       >
                         {CATEGORIES.map((cat) => (
                           <option key={cat.value} value={cat.value}>
@@ -1272,13 +1272,13 @@ export default function ExplorePage() {
                       </div>
 
                   <div className="p-5 flex flex-col flex-1">
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      <h3 className="text-lg font-semibold text-gray-800 line-clamp-1 font-header flex items-center gap-1">
-                        <span>{vendor.name}</span>
-                          <VerifiedBadge verified={vendor.verified} />
+                    <div className="flex flex-wrap items-start justify-between gap-2 mb-2 min-w-0">
+                      <h3 className="text-base sm:text-lg font-semibold text-gray-800 font-header flex items-start gap-1 min-w-0 flex-1">
+                        <span className="min-w-0 break-words line-clamp-2">{vendor.name}</span>
+                          <VerifiedBadge verified={vendor.verified} className="shrink-0 mt-0.5" />
                       </h3>
                       {vendor.category && (
-                        <span className="px-2 py-1 bg-hospineil-accent/10 text-hospineil-accent text-xs font-semibold rounded-full whitespace-nowrap">
+                        <span className="px-2 py-1 bg-hospineil-accent/10 text-hospineil-accent text-xs font-semibold rounded-full shrink-0 max-w-full break-words">
                           {getCategoryLabel(vendor.category)}
                         </span>
                           )}

@@ -27,6 +27,8 @@ interface DeliveryDetailsPayload {
   delivery_phone_number?: string;
   delivery_charge?: number;
   special_instructions?: string;
+  customer_name?: string;
+  customer_phone?: string;
 }
 
 async function logPaymentAuditEntry(
@@ -105,6 +107,11 @@ export async function POST(req: Request) {
     const deliveryPostalCode = deliveryDetails?.postal_code || deliveryDetails?.delivery_postal_code || "";
     const deliveryPhone = deliveryDetails?.phone || deliveryDetails?.delivery_phone_number || "";
     const deliveryCharge = deliveryDetails?.delivery_charge || 0;
+    const checkoutCustomerName =
+      typeof deliveryDetails?.customer_name === "string" ? deliveryDetails.customer_name.trim() : "";
+    const checkoutCustomerPhone =
+      (typeof deliveryDetails?.customer_phone === "string" ? deliveryDetails.customer_phone.trim() : "") ||
+      deliveryPhone;
 
     console.log("🔔 Paystack verify request received:", {
       reference,
@@ -250,7 +257,9 @@ export async function POST(req: Request) {
     interface CreatedOrder {
       id: string;
       vendor_id: string;
-      user_id: string;
+      user_id: string | null;
+      guest_id?: string | null;
+      customer_name?: string | null;
       product_id: string;
       quantity: number;
       total_price: number;
@@ -272,11 +281,14 @@ export async function POST(req: Request) {
         const orderCount = vendorOrders.length;
 
         let customerName = "a customer";
-        if (vendorOrders[0]?.user_id) {
+        const first = vendorOrders[0];
+        if (first?.customer_name && String(first.customer_name).trim()) {
+          customerName = String(first.customer_name).trim();
+        } else if (first?.user_id) {
           const { data: customerProfile } = await supabaseAdmin
             .from("profiles")
             .select("name, email")
-            .eq("id", vendorOrders[0].user_id)
+            .eq("id", first.user_id)
             .single();
 
           if (customerProfile) {
@@ -325,7 +337,8 @@ export async function POST(req: Request) {
     
     interface PendingOrder {
       vendor_id?: string;
-      user_id?: string;
+      user_id?: string | null;
+      guest_id?: string | null;
       product_id?: string;
       quantity?: number;
       total_price?: number;
@@ -334,6 +347,8 @@ export async function POST(req: Request) {
       delivery_state?: string;
       delivery_postal_code?: string;
       delivery_phone_number?: string;
+      customer_name?: string | null;
+      customer_phone?: string | null;
       [key: string]: unknown;
     }
     
@@ -349,13 +364,20 @@ export async function POST(req: Request) {
       // Validate and prepare orders with all required fields
       const ordersWithRef = pendingOrdersArray
         .filter((order) => {
-          // Filter out invalid orders instead of throwing
           if (!order.vendor_id) {
             console.error("❌ Order missing vendor_id, skipping:", order);
             return false;
           }
-          if (!order.user_id) {
-            console.error("❌ Order missing user_id, skipping:", order);
+          const uid = order.user_id;
+          const gid = order.guest_id;
+          const hasUser = typeof uid === "string" && uid.length > 0;
+          const hasGuest = typeof gid === "string" && gid.length > 0;
+          if (!hasUser && !hasGuest) {
+            console.error("❌ Order missing user_id and guest_id, skipping:", order);
+            return false;
+          }
+          if (hasUser && hasGuest) {
+            console.error("❌ Order has both user_id and guest_id, skipping:", order);
             return false;
           }
           if (!order.product_id) {
@@ -365,11 +387,6 @@ export async function POST(req: Request) {
           return true;
         })
         .map((order) => {
-          // Runtime type guards to ensure required fields are strings
-          // These checks are necessary even after filter because TypeScript doesn't narrow types across filter
-          if (!order.user_id || typeof order.user_id !== "string") {
-            throw new Error(`Invalid user_id for order: ${JSON.stringify(order)}`);
-          }
           if (!order.vendor_id || typeof order.vendor_id !== "string") {
             throw new Error(`Invalid vendor_id for order: ${JSON.stringify(order)}`);
           }
@@ -377,14 +394,29 @@ export async function POST(req: Request) {
             throw new Error(`Invalid product_id for order: ${JSON.stringify(order)}`);
           }
 
+          const uid = typeof order.user_id === "string" && order.user_id ? order.user_id : null;
+          const gid = typeof order.guest_id === "string" && order.guest_id ? order.guest_id : null;
+
           // Use extracted delivery details
           const orderTotalPrice = Number(order.total_price) || 0;
           const vatShare = totalFoodAmount > 0
             ? (orderTotalPrice / totalFoodAmount) * vatTotal
             : 0;
 
+          const resolvedCustomerName =
+            (typeof order.customer_name === "string" && order.customer_name.trim()) ||
+            checkoutCustomerName ||
+            "";
+          const resolvedCustomerPhone =
+            (typeof order.customer_phone === "string" && order.customer_phone.trim()) ||
+            checkoutCustomerPhone ||
+            "";
+
           const preparedOrder: {
-            user_id: string;
+            user_id: string | null;
+            guest_id: string | null;
+            customer_name?: string;
+            customer_phone?: string;
             vendor_id: string;
             product_id: string;
             quantity: number;
@@ -396,19 +428,28 @@ export async function POST(req: Request) {
             delivery_zone?: string;
             delivery_postal_code?: string;
             delivery_phone?: string;
+            delivery_phone_number?: string;
             special_instructions?: string;
             payment_reference: string;
             status: string;
             [key: string]: unknown;
           } = {
-            user_id: order.user_id,
-            vendor_id: order.vendor_id, // This should be the vendor's auth.users.id
+            user_id: uid,
+            guest_id: gid,
+            vendor_id: order.vendor_id,
             product_id: order.product_id,
             quantity: order.quantity || 1,
             total_price: orderTotalPrice,
             payment_reference: reference,
-            status: "Pending", // Set to Pending so vendor can see and accept it
+            status: "Pending",
           };
+
+          if (resolvedCustomerName) {
+            preparedOrder.customer_name = resolvedCustomerName;
+          }
+          if (resolvedCustomerPhone) {
+            preparedOrder.customer_phone = resolvedCustomerPhone;
+          }
 
           // Add delivery address fields only if they have values
           // Map to correct column names in orders table
@@ -429,6 +470,7 @@ export async function POST(req: Request) {
           }
           if (deliveryPhone) {
             preparedOrder.delivery_phone = deliveryPhone;
+            preparedOrder.delivery_phone_number = deliveryPhone;
           }
           if (deliveryCharge && deliveryCharge > 0) {
             preparedOrder.delivery_charge = deliveryCharge;
@@ -471,7 +513,7 @@ export async function POST(req: Request) {
           // Fetch existing orders to create notifications (select all fields required by CreatedOrder)
           const { data: existingOrdersFull } = await supabaseAdmin
             .from("orders")
-            .select("id, vendor_id, user_id, product_id, quantity, total_price")
+            .select("id, vendor_id, user_id, guest_id, customer_name, product_id, quantity, total_price")
             .eq("payment_reference", reference);
           
           if (existingOrdersFull) {
@@ -480,6 +522,8 @@ export async function POST(req: Request) {
               id: order.id,
               vendor_id: order.vendor_id,
               user_id: order.user_id,
+              guest_id: order.guest_id,
+              customer_name: order.customer_name,
               product_id: order.product_id,
               quantity: order.quantity || 1,
               total_price: order.total_price || 0,
@@ -506,13 +550,15 @@ export async function POST(req: Request) {
               console.warn("⚠️ Duplicate orders detected for this payment. Using existing orders.");
               const { data: existingOrdersFull } = await supabaseAdmin
                 .from("orders")
-                .select("id, vendor_id, user_id, product_id, quantity, total_price")
+                .select("id, vendor_id, user_id, guest_id, customer_name, product_id, quantity, total_price")
                 .eq("payment_reference", reference);
               if (existingOrdersFull) {
                 createdOrders = existingOrdersFull.map((order) => ({
                   id: order.id,
                   vendor_id: order.vendor_id,
                   user_id: order.user_id,
+                  guest_id: order.guest_id,
+                  customer_name: order.customer_name,
                   product_id: order.product_id,
                   quantity: order.quantity || 1,
                   total_price: order.total_price || 0,
@@ -548,13 +594,15 @@ export async function POST(req: Request) {
                   console.warn("⚠️ Duplicate orders detected on retry. Using existing orders.");
                   const { data: existingOrdersFull } = await supabaseAdmin
                     .from("orders")
-                    .select("id, vendor_id, user_id, product_id, quantity, total_price")
+                    .select("id, vendor_id, user_id, guest_id, customer_name, product_id, quantity, total_price")
                     .eq("payment_reference", reference);
                   if (existingOrdersFull) {
                     createdOrders = existingOrdersFull.map((order) => ({
                       id: order.id,
                       vendor_id: order.vendor_id,
                       user_id: order.user_id,
+                      guest_id: order.guest_id,
+                      customer_name: order.customer_name,
                       product_id: order.product_id,
                       quantity: order.quantity || 1,
                       total_price: order.total_price || 0,
@@ -618,7 +666,7 @@ export async function POST(req: Request) {
     if (!vendorsNotified) {
       const { data: paidOrders } = await supabaseAdmin
         .from("orders")
-        .select("id, vendor_id, user_id, product_id, quantity, total_price")
+        .select("id, vendor_id, user_id, guest_id, customer_name, product_id, quantity, total_price")
         .eq("payment_reference", reference);
 
       await notifyVendorsForOrders((paidOrders as CreatedOrder[]) || []);
