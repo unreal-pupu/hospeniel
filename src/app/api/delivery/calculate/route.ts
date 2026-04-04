@@ -4,11 +4,8 @@ import { getDeliveryFeeByState, getDeliveryZoneByState } from "@/lib/deliveryFee
 /**
  * Calculate delivery charge based on state selection
  * 
- * Fixed pricing based on delivery zones (states):
- * - Bayelsa (Yenagoa): ₦2,000
- * - Rivers (Port Harcourt): ₦2,000
- * - Abuja (FCT): ₦2,500
- * - Lagos: ₦3,000
+ * State-based helper uses `getDeliveryFeeByState` / DELIVERY_ZONES in `deliveryFees.ts`
+ * (Bayelsa default aligns with landmark tier: base + ₦200 surcharge).
  */
 
 interface CalculateDeliveryRequest {

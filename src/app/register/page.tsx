@@ -23,29 +23,9 @@ import { Eye, EyeOff, Mail, Lock } from "lucide-react";
 import Link from "next/link";
 import { validatePassword, getPasswordRequirements } from "@/lib/passwordValidation";
 import { VENDOR_CATEGORIES } from "@/lib/vendorCategories";
+import { getAvailableLandmarks } from "@/lib/deliveryFees";
 
-// Delivery landmarks for registration (place names only, no zone numbers)
-// These are the actual locations within each delivery zone
-const DELIVERY_LANDMARKS = [
-  "Azikoro",
-  "Swali",
-  "Prosco",
-  "Kpansia",
-  "Yenezuegene",
-  "Ekeki",
-  "Amarata",
-  "Ovom",
-  "Biogbolo",
-  "Opolo",
-  "Etegwe",
-  "Tombia",
-  "Edepie",
-  "Agudama",
-  "Akenfa",
-  "Yenegwe",
-  "Okaki",
-  "Igbogene",
-].sort(); // Sort alphabetically for easier selection
+const DELIVERY_LANDMARKS = getAvailableLandmarks();
 
 export default function RegisterPage() {
   const [role, setRole] = useState("user");

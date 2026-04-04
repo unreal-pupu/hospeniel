@@ -19,33 +19,37 @@ export interface Landmark {
 
 const DELIVERY_FEE_SURCHARGE = 200;
 
-// Landmark-based delivery zones for Bayelsa
+// Landmark-based zones for Bayelsa: `fee` is before DELIVERY_FEE_SURCHARGE; customer pays fee + 200.
+// Zone totals: 1 → ₦2,000, 2 → ₦2,500, 3 → ₦2,700, 4 → ₦3,000.
 export const BAYELSA_LANDMARKS: Landmark[] = [
-  // Zone 1 - ₦1,500
-  { name: "Azikoro", zone: 1, fee: 1500 },
-  { name: "Swali", zone: 1, fee: 1500 },
-  { name: "Prosco", zone: 1, fee: 1500 },
-  { name: "Kpansia", zone: 1, fee: 1500 },
-  { name: "Yenezuegene", zone: 1, fee: 1500 },
-  
-  // Zone 2 - ₦1,000
-  { name: "Ekeki", zone: 2, fee: 1000 },
-  { name: "Amarata", zone: 2, fee: 1000 },
-  { name: "Ovom", zone: 2, fee: 1000 },
-  { name: "Biogbolo", zone: 2, fee: 1000 },
-  { name: "Opolo", zone: 2, fee: 1000 },
-  
-  // Zone 3 - ₦1,500
-  { name: "Etegwe", zone: 3, fee: 1500 },
-  { name: "Tombia", zone: 3, fee: 1500 },
-  { name: "Edepie", zone: 3, fee: 1500 },
-  { name: "Agudama", zone: 3, fee: 1500 },
-  { name: "Akenfa", zone: 3, fee: 1500 },
-  
-  // Zone 4 - ₦2,000
-  { name: "Yenegwe", zone: 4, fee: 2000 },
-  { name: "Okaki", zone: 4, fee: 2000 },
-  { name: "Igbogene", zone: 4, fee: 2000 },
+  // Zone 1 — ₦2,000
+  { name: "Swali", zone: 1, fee: 1800 },
+  { name: "Ekeki", zone: 1, fee: 1800 },
+  { name: "Ovom", zone: 1, fee: 1800 },
+  { name: "Amarata", zone: 1, fee: 1800 },
+  { name: "Kpansia", zone: 1, fee: 1800 },
+  { name: "Yenezuegene", zone: 1, fee: 1800 },
+  { name: "Otiotio", zone: 1, fee: 1800 },
+  { name: "Prosco", zone: 1, fee: 1800 },
+
+  // Zone 2 — ₦2,500
+  { name: "Biogbolo", zone: 2, fee: 2300 },
+  { name: "Opolo", zone: 2, fee: 2300 },
+  { name: "Etegwe", zone: 2, fee: 2300 },
+  { name: "Azikoro", zone: 2, fee: 2300 },
+
+  // Zone 3 — ₦2,700
+  { name: "Tombia", zone: 3, fee: 2500 },
+  { name: "Edepie", zone: 3, fee: 2500 },
+  { name: "Akenpai", zone: 3, fee: 2500 },
+  { name: "Agudama", zone: 3, fee: 2500 },
+  { name: "Agbura", zone: 3, fee: 2500 },
+  { name: "Akenfa", zone: 3, fee: 2500 },
+
+  // Zone 4 — ₦3,000
+  { name: "Yenegwe", zone: 4, fee: 2800 },
+  { name: "Okaki", zone: 4, fee: 2800 },
+  { name: "Igbogene", zone: 4, fee: 2800 },
 ];
 
 // State-based zones (only Bayelsa is available)
@@ -53,7 +57,7 @@ export const DELIVERY_ZONES: DeliveryZone[] = [
   {
     state: "Bayelsa",
     city: "Yenagoa",
-    fee: 1500, // Default fee, but should use landmark-based pricing
+    fee: 1800, // Default when only state is known (Zone 1 equivalent: ₦2,000 with surcharge)
   },
 ];
 

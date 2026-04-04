@@ -176,6 +176,13 @@ export default function VendorProfilePage() {
           .eq("id", vendorProfileId)
           .maybeSingle();
 
+        // Chefs/home cooks store their Explore-facing photo on vendor_service_profiles; vendors table may have no image_url.
+        const { data: serviceProfileData } = await supabase
+          .from("vendor_service_profiles")
+          .select("image_url")
+          .eq("profile_id", vendorProfileId)
+          .maybeSingle();
+
         const resolvedName = resolveVendorName(profileData as ProfileRow | null, vendorData as VendorRow | null);
         let resolvedVendorRecordId = vendorData?.id ? String(vendorData.id) : null;
 
@@ -195,7 +202,7 @@ export default function VendorProfilePage() {
           profileId: vendorProfileId,
           vendorRecordId: resolvedVendorRecordId,
           name: resolvedName,
-          imageUrl: vendorData?.image_url || null,
+          imageUrl: vendorData?.image_url || serviceProfileData?.image_url || null,
           location: vendorData?.location || profileData?.location || null,
           description: vendorData?.description || null,
           category: profileData?.category || vendorData?.category || null,
@@ -588,6 +595,12 @@ export default function VendorProfilePage() {
                 alt={vendor.name}
                 fill
                 className="object-cover"
+                sizes="128px"
+                unoptimized={/^https?:\/\//i.test(vendor.imageUrl || "")}
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.src = "/default-vendor.png";
+                }}
               />
             </div>
             <div className="space-y-2 text-center md:text-left">
