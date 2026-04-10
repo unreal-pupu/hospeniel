@@ -26,6 +26,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { menuItemFormSchema } from "@/lib/validation/schemas";
+import { uploadImageViaApi, IMAGE_FILE_INPUT_ACCEPT } from "@/lib/uploads/clientUpload";
 
 interface MenuItem {
   id: string;
@@ -204,13 +206,16 @@ export default function MenuPage() {
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Validate file type
-      if (!file.type.startsWith("image/")) {
-        alert("Please select a valid image file.");
+      const okMime =
+        file.type === "image/jpeg" ||
+        file.type === "image/png" ||
+        file.type === "image/webp" ||
+        file.type === "";
+      if (!okMime) {
+        alert("Please use a JPG, PNG, or WebP image.");
         return;
       }
 
-      // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
         alert("Image size must be less than 5MB.");
         return;
@@ -227,76 +232,23 @@ export default function MenuPage() {
     }
   };
 
-  const uploadImage = async (file: File, userId: string): Promise<string | null> => {
+  const uploadImage = async (file: File): Promise<string | null> => {
     try {
       setUploading(true);
-      
-      // Ensure user is authenticated - use getUser() for more reliable auth check
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError) {
-        console.error("getUser error:", userError);
-        throw new Error(`Authentication error: ${userError.message}`);
-      }
-      if (!user) {
-        console.error("No user found");
-        throw new Error("User not authenticated. Please log in again.");
-      }
 
-      // Verify session is still valid and contains access token
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) {
-        console.error("Session error:", sessionError);
-        throw new Error(`Session error: ${sessionError.message}`);
-      }
-      if (!session) {
-        console.error("No session found");
-        throw new Error("No active session found. Please log in again.");
-      }
-      if (!session.access_token) {
-        console.error("Session missing access token");
-        throw new Error("Session is invalid. Please log in again.");
+      if (sessionError || !session?.access_token) {
+        throw new Error("Please sign in again to upload images.");
       }
 
-      console.log("User authenticated:", user.id, "Session valid:", !!session.access_token);
-      
-      // Generate unique filename
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${userId}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-
-      // Upload to Supabase Storage (menu-images bucket)
-      const { error: uploadError } = await supabase.storage
-        .from("menu-images")
-        .upload(fileName, file, {
-          cacheControl: "3600",
-          upsert: false,
-        });
-
-      if (uploadError) {
-        console.error("Upload error:", uploadError);
-        
-        // Provide specific error messages
-        if (uploadError.message?.includes("not found") || uploadError.message?.includes("Bucket")) {
-          throw new Error("Storage bucket 'menu-images' not found. Please create it in Supabase Storage settings and configure RLS policies.");
-        }
-        if (uploadError.message?.includes("new row violates row-level security") || uploadError.message?.includes("RLS")) {
-          throw new Error("Storage upload denied by security policy. Please check that authenticated users have upload permissions on the 'menu-images' bucket.");
-        }
-        if (uploadError.message?.includes("JWT")) {
-          throw new Error("Authentication token is invalid or expired. Please log in again.");
-        }
-        
-        throw new Error(`Upload failed: ${uploadError.message || "Unknown error"}`);
-      }
-
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from("menu-images")
-        .getPublicUrl(fileName);
-
-      return urlData.publicUrl;
+      const { publicUrl } = await uploadImageViaApi({
+        file,
+        purpose: "menu_item",
+        accessToken: session.access_token,
+      });
+      return publicUrl;
     } catch (error) {
       console.error("Error uploading image:", error);
-      // Error message is already set in the catch block above
       throw error;
     } finally {
       setUploading(false);
@@ -334,18 +286,19 @@ export default function MenuPage() {
   };
 
   const handleSave = async () => {
-    // Validation
-    if (!formData.title.trim()) {
-      alert("Please enter a product title.");
-      return;
-    }
-
-    if (!formData.price || parseFloat(formData.price) <= 0) {
-      alert("Please enter a valid price.");
+    const validated = menuItemFormSchema.safeParse({
+      title: formData.title,
+      description: formData.description,
+      price: formData.price,
+    });
+    if (!validated.success) {
+      alert(validated.error.errors[0]?.message ?? "Please check the menu item fields.");
       return;
     }
 
     setSaving(true);
+
+    const { title: safeTitle, description: safeDescription, price: safePrice } = validated.data;
 
     try {
       // Verify user authentication
@@ -381,7 +334,7 @@ export default function MenuPage() {
             await deleteImage(editingItem.image_url);
           }
 
-          imageUrl = await uploadImage(imageFile, user.id);
+          imageUrl = await uploadImage(imageFile);
           if (!imageUrl) {
             alert("Failed to upload image. Please try again.");
             setSaving(false);
@@ -401,9 +354,9 @@ export default function MenuPage() {
         const { error } = await supabase
           .from("menu_items")
           .update({
-            title: formData.title.trim(),
-            description: formData.description.trim() || null,
-            price: parseFloat(formData.price),
+            title: safeTitle,
+            description: safeDescription.trim() ? safeDescription : null,
+            price: safePrice,
             image_url: imageUrl,
             availability: formData.availability,
           })
@@ -430,9 +383,9 @@ export default function MenuPage() {
           .from("menu_items")
           .insert([
             {
-              title: formData.title.trim(),
-              description: formData.description.trim() || null,
-              price: parseFloat(formData.price),
+              title: safeTitle,
+              description: safeDescription.trim() ? safeDescription : null,
+              price: safePrice,
               image_url: imageUrl,
               availability: formData.availability,
               vendor_id: user.id,
@@ -752,13 +705,13 @@ export default function MenuPage() {
                   >
                     <Upload className="h-8 w-8 text-gray-400 mb-2" />
                     <span className="text-sm text-gray-600">Click to upload image</span>
-                    <span className="text-xs text-gray-500">PNG, JPG up to 5MB</span>
+                    <span className="text-xs text-gray-500">JPG, PNG, WebP up to 5MB</span>
                   </label>
                 )}
                 <input
                   id="image-upload"
                   type="file"
-                  accept="image/*"
+                  accept={IMAGE_FILE_INPUT_ACCEPT}
                   className="hidden"
                   onChange={handleImageChange}
                   disabled={uploading}

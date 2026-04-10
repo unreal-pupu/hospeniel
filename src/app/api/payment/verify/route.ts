@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { logValidationFailure, zodErrorToUserMessage } from "@/lib/validation/http";
+import { paymentVerifySchema } from "@/lib/validation/schemas";
 
 const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY!;
 
@@ -60,22 +62,16 @@ export async function POST(req: Request) {
   try {
     const supabaseAdmin = getSupabaseAdminClient();
     requestBody = await req.json();
-    const { reference, pending_orders, delivery_details, service_request_id } = requestBody as {
-      reference?: string;
-      pending_orders?: unknown;
-      delivery_details?: unknown;
-      service_request_id?: string | null;
-    };
+    const verified = paymentVerifySchema.safeParse(requestBody);
+    if (!verified.success) {
+      logValidationFailure("POST /api/payment/verify", verified.error.flatten());
+      return NextResponse.json({ error: zodErrorToUserMessage(verified.error) }, { status: 400 });
+    }
+
+    const { reference, pending_orders, delivery_details, service_request_id } = verified.data;
 
     let resolvedPendingOrders: unknown = pending_orders;
     let resolvedDeliveryDetails: unknown = delivery_details;
-
-    if (!reference) {
-      return NextResponse.json(
-        { error: "Payment reference is required" },
-        { status: 400 }
-      );
-    }
 
     if (!Array.isArray(resolvedPendingOrders) || resolvedPendingOrders.length === 0) {
       const { data: paymentPayload, error: paymentPayloadError } = await supabaseAdmin

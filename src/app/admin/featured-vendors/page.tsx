@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Loader2, Search, Star, StarOff, Upload } from "lucide-react";
 import Image from "next/image";
+import { uploadImageViaApi, IMAGE_FILE_INPUT_ACCEPT } from "@/lib/uploads/clientUpload";
 
 interface Vendor {
   id: string;
@@ -110,58 +111,33 @@ export default function FeaturedVendorsPage() {
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!editingVendor || !event.target.files?.[0]) return;
 
+    const file = event.target.files[0];
     try {
-      const file = event.target.files[0];
-      const fileExt = file.name.split(".").pop();
-      const fileName = `featured-${editingVendor.id}-${Date.now()}.${fileExt}`;
-      const filePath = `featured-vendors/${fileName}`;
-
-      // Upload to Supabase Storage (using a featured-vendors bucket)
-      // If the bucket doesn't exist, we'll use a public URL or vendor's existing image
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         throw new Error("User not authenticated");
       }
 
-      // Try to upload to storage, if it fails, we can use a public URL
-      let imageUrl = editingVendor.featured_image;
-
-      try {
-        // Check if featured-vendors bucket exists, if not, use menu-images or avatars
-        const { error: uploadError } = await supabase.storage
-          .from("menu-images")
-          .upload(filePath, file, { upsert: true });
-
-        if (!uploadError) {
-          const { data: urlData } = supabase.storage
-            .from("menu-images")
-            .getPublicUrl(filePath);
-          imageUrl = urlData.publicUrl;
-        } else {
-          // If upload fails, we can allow admins to paste a URL instead
-          console.warn("Storage upload failed, using file reader as fallback");
-          // For now, we'll use a data URL or allow URL input
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            // For production, you'd want to upload to a proper storage solution
-            // For now, we'll allow URL input in the form
-          };
-          reader.readAsDataURL(file);
-        }
-      } catch (storageError) {
-        console.error("Storage error:", storageError);
-        // Allow manual URL input as fallback
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.access_token) {
+        throw new Error("Your session expired. Please sign in again.");
       }
 
-      if (imageUrl && editingVendor) {
-        setEditingVendor({
-          ...editingVendor,
-          featured_image: imageUrl,
-        });
-      }
+      const { publicUrl } = await uploadImageViaApi({
+        file,
+        purpose: "admin_featured",
+        accessToken: session.access_token,
+        vendorProfileId: editingVendor.id,
+      });
+
+      setEditingVendor({
+        ...editingVendor,
+        featured_image: publicUrl,
+      });
     } catch (error) {
       console.error("Error uploading image:", error);
-      alert("Failed to upload image. You can paste an image URL instead.");
+      const message = error instanceof Error ? error.message : "Upload failed.";
+      alert(`${message} You can paste an image URL instead.`);
     }
   };
 
@@ -261,7 +237,7 @@ export default function FeaturedVendorsPage() {
                               <Upload className="h-5 w-5 text-gray-600" />
                               <input
                                 type="file"
-                                accept="image/*"
+                                accept={IMAGE_FILE_INPUT_ACCEPT}
                                 onChange={handleImageUpload}
                                 className="hidden"
                               />

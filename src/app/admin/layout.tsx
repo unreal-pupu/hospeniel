@@ -23,6 +23,7 @@ import {
   Settings,
   Truck,
   HandCoins,
+  Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -198,6 +199,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
   const navItems = [
     { href: "/admin", label: "Dashboard Home", icon: LayoutDashboard },
+    { href: "/admin/operations", label: "Operations", icon: Activity },
     { href: "/admin/users", label: "Users", icon: Users },
     { href: "/admin/vendors", label: "Vendors", icon: Store },
     { href: "/admin/riders", label: "Riders", icon: Users },

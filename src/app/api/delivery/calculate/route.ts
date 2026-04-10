@@ -1,48 +1,26 @@
 import { NextResponse } from "next/server";
 import { getDeliveryFeeByState, getDeliveryZoneByState } from "@/lib/deliveryFees";
+import { parseJsonBody } from "@/lib/validation/http";
+import { deliveryCalculateSchema } from "@/lib/validation/schemas";
 
 /**
  * Calculate delivery charge based on state selection
- * 
- * State-based helper uses `getDeliveryFeeByState` / DELIVERY_ZONES in `deliveryFees.ts`
+ *
+ * State-based helper uses `getDeliveryFeeByState` / `DELIVERY_ZONES` in `deliveryFees.ts`
  * (Bayelsa default aligns with landmark tier: base + ₦200 surcharge).
  */
 
-interface CalculateDeliveryRequest {
-  delivery_address: string;
-  delivery_city: string;
-  delivery_state: string;
-  delivery_postal_code?: string;
-  vendor_location?: string;
-  vendor_city?: string;
-  vendor_state?: string;
-  order_total?: number;
-  item_count?: number;
-}
-
 export async function POST(req: Request) {
   try {
-    const body: CalculateDeliveryRequest = await req.json();
-    const {
-      delivery_state,
-      item_count = 1,
-    } = body;
+    const parsed = await parseJsonBody(req, deliveryCalculateSchema, "POST /api/delivery/calculate");
+    if (!parsed.ok) return parsed.response;
 
-    // Validate required fields
-    if (!delivery_state) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Missing required delivery information (state)",
-        },
-        { status: 400 }
-      );
-    }
+    const { delivery_state, item_count: itemCountInput } = parsed.data;
+    const item_count = itemCountInput ?? 1;
 
-    // Calculate delivery charge based on state selection (state-based pricing)
     const deliveryCharge = getDeliveryFeeByState(delivery_state);
     const deliveryZoneInfo = getDeliveryZoneByState(delivery_state);
-    
+
     if (deliveryCharge === 0 || !deliveryZoneInfo) {
       return NextResponse.json(
         {
@@ -83,8 +61,3 @@ export async function POST(req: Request) {
     );
   }
 }
-
-
-
-
-

@@ -1,25 +1,14 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
-
-interface InitializePaymentRequest {
-  email: string;
-  amount: number; // Amount in Naira (will be converted to kobo)
-  food_amount?: number; // Food subtotal in Naira
-  delivery_fee?: number; // Delivery fee in Naira
-  vat_amount?: number; // VAT on food in Naira
-  service_charge?: number; // Service charge in Naira
-  vendor_id: string; // Vendor's profile_id (auth.users.id)
-  order_id?: string;
-  payment_id?: string;
-  metadata?: Record<string, unknown>;
-  pending_orders?: unknown;
-  delivery_details?: unknown;
-}
+import { parseJsonBody } from "@/lib/validation/http";
+import { paymentInitializeSchema } from "@/lib/validation/schemas";
 
 export async function POST(req: Request) {
   try {
     const supabaseAdmin = getSupabaseAdminClient();
-    const body: InitializePaymentRequest = await req.json();
+    const parsed = await parseJsonBody(req, paymentInitializeSchema, "POST /api/payment/initialize");
+    if (!parsed.ok) return parsed.response;
+
     const {
       email,
       amount,
@@ -33,23 +22,7 @@ export async function POST(req: Request) {
       metadata,
       pending_orders,
       delivery_details,
-    } = body;
-
-    // Validate required fields
-    if (!email || !amount || !vendor_id) {
-      return NextResponse.json(
-        { error: "Missing required fields: email, amount, and vendor_id are required" },
-        { status: 400 }
-      );
-    }
-
-    // Validate amount
-    if (amount <= 0) {
-      return NextResponse.json(
-        { error: "Amount must be greater than 0" },
-        { status: 400 }
-      );
-    }
+    } = parsed.data;
 
     // Get Paystack secret key from environment
     const secretKey = process.env.PAYSTACK_SECRET_KEY;

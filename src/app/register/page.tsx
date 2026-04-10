@@ -24,6 +24,7 @@ import Link from "next/link";
 import { validatePassword, getPasswordRequirements } from "@/lib/passwordValidation";
 import { VENDOR_CATEGORIES } from "@/lib/vendorCategories";
 import { getAvailableLandmarks } from "@/lib/deliveryFees";
+import { registerRequestSchema } from "@/lib/validation/schemas";
 
 const DELIVERY_LANDMARKS = getAvailableLandmarks();
 
@@ -181,11 +182,18 @@ export default function RegisterPage() {
         // Password is intentionally NOT logged for security
       });
 
+      const validatedRegister = registerRequestSchema.safeParse(requestBody);
+      if (!validatedRegister.success) {
+        alert(validatedRegister.error.errors[0]?.message ?? "Please check your registration details.");
+        setLoading(false);
+        return;
+      }
+
       // Send registration request
       const res = await fetch("/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify(validatedRegister.data),
       });
 
       // Check if response is ok before trying to parse JSON

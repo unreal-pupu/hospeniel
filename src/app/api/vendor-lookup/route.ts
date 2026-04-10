@@ -1,17 +1,21 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { logValidationFailure } from "@/lib/validation/http";
+import { profileIdQuerySchema } from "@/lib/validation/schemas";
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const profileId = searchParams.get("profile_id");
-
-    if (!profileId) {
+    const rawProfileId = searchParams.get("profile_id");
+    const idParsed = profileIdQuerySchema.safeParse(rawProfileId ?? "");
+    if (!idParsed.success) {
+      logValidationFailure("GET /api/vendor-lookup", idParsed.error.flatten());
       return NextResponse.json(
-        { success: false, error: "profile_id is required" },
+        { success: false, error: "A valid profile is required." },
         { status: 400 }
       );
     }
+    const profileId = idParsed.data;
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;

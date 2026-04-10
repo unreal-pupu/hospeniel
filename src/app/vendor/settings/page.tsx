@@ -19,6 +19,8 @@ import { Loader2, Upload, CheckCircle2, XCircle, Image as ImageIcon, Plus, X } f
 import Image from "next/image";
 import { VENDOR_LOCATIONS } from "@/lib/vendorLocations";
 import { VENDOR_CATEGORIES } from "@/lib/vendorCategories";
+import { vendorSettingsCoreSchema } from "@/lib/validation/schemas";
+import { uploadImageViaApi, IMAGE_FILE_INPUT_ACCEPT } from "@/lib/uploads/clientUpload";
 
 const LOCATIONS = VENDOR_LOCATIONS;
 const CATEGORIES = VENDOR_CATEGORIES;
@@ -360,13 +362,16 @@ export default function VendorSettingsPage() {
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Validate file type
-      if (!file.type.startsWith("image/")) {
-        setMessage({ type: "error", text: "Please select a valid image file" });
+      const okMime =
+        file.type === "image/jpeg" ||
+        file.type === "image/png" ||
+        file.type === "image/webp" ||
+        file.type === "";
+      if (!okMime) {
+        setMessage({ type: "error", text: "Please use a JPG, PNG, or WebP image." });
         return;
       }
 
-      // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
         setMessage({ type: "error", text: "Image size must be less than 5MB" });
         return;
@@ -391,61 +396,29 @@ export default function VendorSettingsPage() {
         throw new Error("User not authenticated");
       }
 
-      // Verify session
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !session || !session.access_token) {
+      if (sessionError || !session?.access_token) {
         throw new Error("Session is invalid. Please log in again.");
       }
 
-      // Generate unique filename
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${userId}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-
-      // Delete old image if exists
       if (settings.image_url && settings.image_url.includes("vendor-images")) {
         try {
-          // Extract the file path from the URL
-          // URL format: https://[project].supabase.co/storage/v1/object/public/vendor-images/[path]
           const urlParts = settings.image_url.split("/vendor-images/");
           if (urlParts.length > 1) {
             const oldFilePath = urlParts[1];
-            await supabase.storage
-              .from("vendor-images")
-              .remove([oldFilePath]);
+            await supabase.storage.from("vendor-images").remove([oldFilePath]);
           }
         } catch (error) {
           console.warn("Error deleting old image:", error);
-          // Continue even if deletion fails
         }
       }
 
-      // Upload to Supabase Storage (vendor-images bucket)
-      const { error: uploadError } = await supabase.storage
-        .from("vendor-images")
-        .upload(fileName, file, {
-          cacheControl: "3600",
-          upsert: false,
-        });
-
-      if (uploadError) {
-        console.error("Upload error:", uploadError);
-        
-        if (uploadError.message?.includes("not found") || uploadError.message?.includes("Bucket")) {
-          throw new Error("Storage bucket 'vendor-images' not found. Please create it in Supabase Storage settings.");
-        }
-        if (uploadError.message?.includes("row-level security") || uploadError.message?.includes("RLS")) {
-          throw new Error("Storage upload denied by security policy. Please check RLS policies.");
-        }
-        
-        throw new Error(`Upload failed: ${uploadError.message || "Unknown error"}`);
-      }
-
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from("vendor-images")
-        .getPublicUrl(fileName);
-
-      return urlData.publicUrl;
+      const { publicUrl } = await uploadImageViaApi({
+        file,
+        purpose: "vendor_profile",
+        accessToken: session.access_token,
+      });
+      return publicUrl;
     } catch (error) {
       console.error("Error uploading image:", error);
       throw error;
@@ -463,14 +436,20 @@ export default function VendorSettingsPage() {
         return;
       }
 
-      // Validate required fields
-      if (!settings.business_name.trim()) {
-        setMessage({ type: "error", text: "Business name is required" });
-        return;
-      }
-
-      if (!settings.email.trim()) {
-        setMessage({ type: "error", text: "Email is required" });
+      const coreValidated = vendorSettingsCoreSchema.safeParse({
+        business_name: settings.business_name,
+        email: settings.email,
+        phone_number: settings.phone_number,
+        location: settings.location,
+        category: settings.category,
+        description: settings.description,
+        address: settings.address,
+      });
+      if (!coreValidated.success) {
+        setMessage({
+          type: "error",
+          text: coreValidated.error.errors[0]?.message ?? "Please check your business details.",
+        });
         return;
       }
 
@@ -499,7 +478,7 @@ export default function VendorSettingsPage() {
       // Update vendor record
       // Build update data object, only including fields that have values
       // Always set name to match business_name to satisfy NOT NULL constraint
-      const businessName = settings.business_name.trim() || "Vendor";
+      const businessName = coreValidated.data.business_name.trim() || "Vendor";
       interface UpdateData {
         name: string;
         business_name?: string;
@@ -521,11 +500,11 @@ export default function VendorSettingsPage() {
       };
 
       // Only add optional fields if they have values or are being explicitly set
-      if (settings.email?.trim()) {
-        updateData.email = settings.email.trim();
+      if (coreValidated.data.email?.trim()) {
+        updateData.email = coreValidated.data.email.trim();
       }
-      if (settings.phone_number?.trim()) {
-        updateData.phone_number = settings.phone_number.trim();
+      if (coreValidated.data.phone_number?.trim()) {
+        updateData.phone_number = coreValidated.data.phone_number.trim();
       }
       if (settings.location) {
         updateData.location = settings.location;
@@ -533,14 +512,14 @@ export default function VendorSettingsPage() {
       if (settings.category) {
         updateData.category = settings.category;
       }
-      if (settings.description?.trim()) {
-        updateData.description = settings.description.trim();
+      if (coreValidated.data.description?.trim()) {
+        updateData.description = coreValidated.data.description.trim();
       }
       if (imageUrl !== null && imageUrl !== undefined) {
         updateData.image_url = imageUrl;
       }
-      if (settings.address?.trim()) {
-        updateData.address = settings.address.trim();
+      if (coreValidated.data.address?.trim()) {
+        updateData.address = coreValidated.data.address.trim();
       }
       
       // Boolean fields
@@ -610,7 +589,7 @@ export default function VendorSettingsPage() {
           base_price: existingServiceProfile?.base_price || 0,
           service_mode: existingServiceProfile?.service_mode || [],
           specialties: specialtiesList,
-          bio: settings.description?.trim() || existingServiceProfile?.bio || "",
+          bio: coreValidated.data.description?.trim() || existingServiceProfile?.bio || "",
           image_url: imageUrl ?? (existingServiceProfile?.image_url || null),
         };
 
@@ -791,7 +770,7 @@ export default function VendorSettingsPage() {
                   <input
                     id="image-upload"
                     type="file"
-                    accept="image/*"
+                    accept={IMAGE_FILE_INPUT_ACCEPT}
                     onChange={handleImageChange}
                     className="hidden"
                     disabled={uploading}

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { parseJsonBody } from "@/lib/validation/http";
+import { vendorRatingSubmitSchema } from "@/lib/validation/schemas";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -46,18 +48,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json();
-    const vendorId = body?.vendor_id;
-    const rating = Number(body?.rating);
-    const review = typeof body?.review === "string" ? body.review.trim() : null;
+    const parsed = await parseJsonBody(req, vendorRatingSubmitSchema, "POST /api/vendor-ratings");
+    if (!parsed.ok) return parsed.response;
 
-    if (!vendorId) {
-      return NextResponse.json({ success: false, error: "vendor_id is required" }, { status: 400 });
-    }
-
-    if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
-      return NextResponse.json({ success: false, error: "Rating must be between 1 and 5" }, { status: 400 });
-    }
+    const { vendor_id: vendorId, rating, review } = parsed.data;
 
     const { error: upsertError, data: upsertData } = await supabase
       .from("vendor_ratings")
@@ -66,7 +60,7 @@ export async function POST(req: Request) {
           vendor_id: vendorId,
           user_id: userData.user.id,
           rating,
-          review: review || null,
+          review,
         },
         { onConflict: "vendor_id,user_id" }
       )

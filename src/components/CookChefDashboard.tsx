@@ -27,6 +27,7 @@ import {
   ChefHat
 } from "lucide-react";
 import { VendorPremiumToolsSection } from "@/components/vendor-premium-tools-section";
+import { uploadImageViaApi, IMAGE_FILE_INPUT_ACCEPT } from "@/lib/uploads/clientUpload";
 
 interface VendorProfile {
   id: string;
@@ -212,55 +213,29 @@ export default function CookChefDashboard({
         throw new Error('Vendor ID is required');
       }
 
-      // Get file extension
-      const fileExt = file.name.split('.').pop();
-      if (!fileExt) {
-        throw new Error('Invalid file type');
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.access_token) {
+        throw new Error('Please sign in again to upload images.');
       }
 
-      // Generate unique filename
-      const fileName = `${vendorId}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-
-      // Delete old image if exists
       if (serviceProfile.image_url && serviceProfile.image_url.includes("vendor-images")) {
         try {
           const urlParts = serviceProfile.image_url.split("/vendor-images/");
           if (urlParts.length > 1) {
             const oldFilePath = urlParts[1];
-            await supabase.storage
-              .from("vendor-images")
-              .remove([oldFilePath]);
+            await supabase.storage.from("vendor-images").remove([oldFilePath]);
           }
         } catch (error) {
           console.warn("Error deleting old image:", error);
         }
       }
 
-      // Upload to Supabase Storage
-      const { error: uploadError } = await supabase.storage
-        .from("vendor-images")
-        .upload(fileName, file, {
-          cacheControl: "3600",
-          upsert: false,
-        });
-
-      if (uploadError) {
-        console.error("Upload error:", uploadError);
-        if (uploadError.message?.includes("not found") || uploadError.message?.includes("Bucket")) {
-          throw new Error("Storage bucket 'vendor-images' not found. Please create it in Supabase Storage settings.");
-        }
-        if (uploadError.message?.includes("row-level security") || uploadError.message?.includes("RLS")) {
-          throw new Error("Storage upload denied by security policy. Please check RLS policies.");
-        }
-        throw new Error(`Upload failed: ${uploadError.message || "Unknown error"}`);
-      }
-
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from("vendor-images")
-        .getPublicUrl(fileName);
-
-      return urlData.publicUrl;
+      const { publicUrl } = await uploadImageViaApi({
+        file,
+        purpose: "vendor_profile",
+        accessToken: session.access_token,
+      });
+      return publicUrl;
     } catch (error) {
       console.error("Error uploading image:", error);
       throw error;
@@ -273,13 +248,16 @@ export default function CookChefDashboard({
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      alert('Please select an image file');
+    const okMime =
+      file.type === "image/jpeg" ||
+      file.type === "image/png" ||
+      file.type === "image/webp" ||
+      file.type === "";
+    if (!okMime) {
+      alert("Please use a JPG, PNG, or WebP image.");
       return;
     }
 
-    // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       alert('Image size must be less than 5MB');
       return;
@@ -859,7 +837,7 @@ export default function CookChefDashboard({
                 <div className="flex items-center gap-4">
                   <Input
                     type="file"
-                    accept="image/*"
+                    accept={IMAGE_FILE_INPUT_ACCEPT}
                     onChange={handleImageChange}
                     disabled={uploadingImage}
                     className="font-body"

@@ -13,7 +13,27 @@ import {
   Package,
   UserCheck,
   Loader2,
+  Sun,
+  Truck,
+  CheckCircle,
+  Clock,
 } from "lucide-react";
+import Link from "next/link";
+
+interface DailyOperations {
+  reportDate: string;
+  timezone: string;
+  pendingNewToday: number;
+  acceptedNewToday: number;
+  outForDeliveryNow: number;
+  deliveredToday: number;
+  description?: string;
+}
+
+interface VendorAvailability {
+  open: number;
+  closed: number;
+}
 
 interface DashboardStats {
   totalUsers: number;
@@ -24,6 +44,8 @@ interface DashboardStats {
   pendingPayouts: number;
   freeTrialVendors: number;
   professionalVendors: number;
+  dailyOperations?: DailyOperations;
+  vendorAvailability?: VendorAvailability;
 }
 
 export default function AdminDashboard() {
@@ -36,6 +58,8 @@ export default function AdminDashboard() {
     pendingPayouts: 0,
     freeTrialVendors: 0,
     professionalVendors: 0,
+    dailyOperations: undefined,
+    vendorAvailability: undefined,
   });
   const [loading, setLoading] = useState(true);
 
@@ -53,6 +77,8 @@ export default function AdminDashboard() {
             pendingPayouts: 0,
             freeTrialVendors: 0,
             professionalVendors: 0,
+            dailyOperations: undefined,
+            vendorAvailability: undefined,
           });
           return;
         }
@@ -158,6 +184,89 @@ export default function AdminDashboard() {
         <h1 className="text-3xl font-bold text-gray-900">Dashboard Overview</h1>
         <p className="text-gray-600 mt-2">Welcome to the Admin Dashboard</p>
       </div>
+
+      {stats.dailyOperations && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <Sun className="h-5 w-5 text-amber-500" />
+              Today&apos;s operations
+              <span className="text-sm font-normal text-gray-500">
+                ({stats.dailyOperations.reportDate}, {stats.dailyOperations.timezone})
+              </span>
+            </h2>
+            <Link
+              href="/admin/operations"
+              className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+            >
+              Full operations monitor →
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="border-amber-100 bg-amber-50/40">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-amber-900 flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  Pending (new today)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-amber-950">{stats.dailyOperations.pendingNewToday}</p>
+                <p className="text-xs text-amber-800/80 mt-1">Placed today, still pending / paid</p>
+              </CardContent>
+            </Card>
+            <Card className="border-blue-100 bg-blue-50/40">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-blue-900 flex items-center gap-2">
+                  <Package className="h-4 w-4" />
+                  Accepted (new today)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-blue-950">{stats.dailyOperations.acceptedNewToday}</p>
+                <p className="text-xs text-blue-800/80 mt-1">Placed today, accepted / confirmed</p>
+              </CardContent>
+            </Card>
+            <Card className="border-indigo-100 bg-indigo-50/40">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-indigo-900 flex items-center gap-2">
+                  <Truck className="h-4 w-4" />
+                  Out for delivery
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-indigo-950">{stats.dailyOperations.outForDeliveryNow}</p>
+                <p className="text-xs text-indigo-800/80 mt-1">Live tasks (assigned / picked up)</p>
+              </CardContent>
+            </Card>
+            <Card className="border-green-100 bg-green-50/40">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-green-900 flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4" />
+                  Delivered today
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-green-950">{stats.dailyOperations.deliveredToday}</p>
+                <p className="text-xs text-green-800/80 mt-1">Tasks completed today</p>
+              </CardContent>
+            </Card>
+          </div>
+          {stats.vendorAvailability && (
+            <div className="flex flex-wrap gap-4 text-sm text-gray-700">
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-3 py-1.5">
+                <Store className="h-4 w-4 text-green-700" />
+                <strong className="text-green-900">{stats.vendorAvailability.open}</strong> vendors open
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5">
+                <Store className="h-4 w-4 text-gray-500" />
+                <strong className="text-gray-800">{stats.vendorAvailability.closed}</strong> vendors closed
+              </span>
+            </div>
+          )}
+          <p className="text-xs text-gray-500 max-w-4xl">{stats.dailyOperations.description}</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statCards.map((card) => {

@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Eye, EyeOff, Mail, Lock } from "lucide-react";
+import { loginCredentialsSchema } from "@/lib/validation/schemas";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -393,11 +394,19 @@ export default function LoginPage() {
     setIsLoggingIn(true); // Prevent session check from interfering
 
     try {
+      const loginParsed = loginCredentialsSchema.safeParse({ email, password });
+      if (!loginParsed.success) {
+        alert(loginParsed.error.errors[0]?.message ?? "Please enter a valid email and password.");
+        setLoading(false);
+        setIsLoggingIn(false);
+        return;
+      }
+
       // Step 1: Sign in with email and password
       console.log("🔵 Calling signInWithPassword...");
       const { data: authData, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+        email: loginParsed.data.email,
+        password: loginParsed.data.password,
       });
 
       console.log("🔵 signInWithPassword response:", { 

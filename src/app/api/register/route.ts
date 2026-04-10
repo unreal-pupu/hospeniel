@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { checkRateLimit, RateLimitConfigs } from "@/lib/rateLimiter";
 import { validatePassword } from "@/lib/passwordValidation";
+import { parseJsonBody } from "@/lib/validation/http";
+import { registerRequestSchema } from "@/lib/validation/schemas";
 
 export async function POST(req: Request) {
   const supabaseAdmin = getSupabaseAdminClient();
@@ -32,39 +34,28 @@ export async function POST(req: Request) {
     );
   }
   try {
-    const body = await req.json();
-    
-    // Use explicit property access to prevent "address is not defined" errors
-    // This ensures all variables are always defined, even if missing from body
-    // IMPORTANT: Use body.property directly to avoid any variable reference errors
-    const email = body.email || "";
-    const password = body.password || "";
-    const name = body.name || "";
-    const role = body.role || "user";
-    // DO NOT create an 'address' variable - use body.address directly everywhere
-    const category = body.category || null;
-    const bank_code = body.bank_code || null;
-    const account_number = body.account_number || null;
-    const business_name = body.business_name || null;
-    const phone_number = body.phone_number || null;
+    const parsed = await parseJsonBody(req, registerRequestSchema, "POST /api/register");
+    if (!parsed.ok) return parsed.response;
+
+    const body = parsed.data;
+    const email = body.email;
+    const password = body.password;
+    const name = body.name;
+    const role = body.role;
+    const category = body.category ?? null;
+    const bank_code = body.bank_code ?? null;
+    const account_number = body.account_number ?? null;
+    const business_name = body.business_name ?? null;
+    const phone_number = body.phone_number ?? null;
 
     // ✅ SECURITY: Never log passwords - only log non-sensitive data
-    // Use body.address directly to avoid any reference errors
-    console.log("🟢 Registering user with data:", { 
-      email, 
-      role, 
-      address: body.address || "(empty)", 
-      category: body.category || "(empty)",
-      phone_number: body.phone_number || "(empty)",
+    console.log("🟢 Registering user with data:", {
+      email,
+      role,
+      address: body.address ?? "(empty)",
+      category: category ?? "(empty)",
+      phone_number: phone_number ?? "(empty)",
     });
-
-    // ✅ Validate input
-    if (!email || !password || !name) {
-      return NextResponse.json(
-        { success: false, error: "Missing required fields" },
-        { status: 400 }
-      );
-    }
 
     // ✅ SECURITY: Validate password strength before creating user
     const passwordValidation = validatePassword(password);
@@ -101,26 +92,11 @@ export async function POST(req: Request) {
 
     const user = authData.user;
 
-    // ✅ SECURITY: Prevent admin registration - explicitly reject if role is admin
-    if (role === "admin" || body.is_admin) {
-      console.error("❌ SECURITY: Attempt to register as admin blocked");
-      // Delete the user that was just created
-      await supabaseAdmin.auth.admin.deleteUser(user.id);
-      return NextResponse.json(
-        { success: false, error: "Admin registration is not allowed through this endpoint" },
-        { status: 403 }
-      );
-    }
-
     // ✅ Step 2: Upsert profile record
     // ✅ SECURITY: Never store password in profile - passwords are only in auth.users
     // Build profile data object conditionally to avoid schema cache issues
     
-    // Ensure address is always a string (never undefined or null)
-    // Use body.address directly with safe fallback to prevent any reference errors
-    const addressValue = (body.address && typeof body.address === "string") 
-      ? body.address.trim() 
-      : (body.address ? String(body.address).trim() : "");
+    const addressValue = body.address ?? "";
     
     // Build profile data object - ensure all fields are always defined
     const profileData: {
@@ -149,10 +125,7 @@ export async function POST(req: Request) {
     
     // Add location for vendors and riders - use body.location directly
     if (role === "vendor" || role === "rider") {
-      const locationValue = (body.location && typeof body.location === "string") 
-        ? body.location.trim() || null 
-        : null;
-      profileData.location = locationValue;
+      profileData.location = body.location ?? null;
     } else {
       profileData.location = null;
     }
@@ -167,7 +140,7 @@ export async function POST(req: Request) {
 
     // Add phone number for users, riders, and vendors (ensure it's always a string or null)
     if (role === "user" || role === "rider" || role === "vendor") {
-      profileData.phone_number = typeof phone_number === "string" ? phone_number.trim() || null : null;
+      profileData.phone_number = phone_number ?? null;
     }
 
     // Set rider approval status to pending for new rider registrations
@@ -235,13 +208,9 @@ export async function POST(req: Request) {
       const vendorName = business_name || name || "Vendor"; // Ensure we have a name
       // Use addressValue directly (already defined above) - it's safe to use here
       const vendorAddress = addressValue || "";
-      const vendorLocation = (body.location && typeof body.location === "string") 
-        ? body.location.trim() || null 
-        : null;
-      const vendorCategory = (body.category && typeof body.category === "string") 
-        ? body.category.trim() || null 
-        : null;
-      const vendorPhoneNumber = typeof phone_number === "string" ? phone_number.trim() || null : null;
+      const vendorLocation = body.location ?? null;
+      const vendorCategory = body.category ?? null;
+      const vendorPhoneNumber = phone_number ?? null;
       
       const vendorData = {
         profile_id: user.id, // link to profiles.id

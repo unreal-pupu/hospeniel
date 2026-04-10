@@ -3,6 +3,19 @@ import { getSupabaseAdminClient } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
+interface DeliveryTaskRow {
+  order_id: string;
+  rider_id: string | null;
+  status: string;
+}
+
+interface AssignedRider {
+  id: string;
+  name: string | null;
+  email: string | null;
+  phone_number: string | null;
+}
+
 interface OrderWithDetails {
   id: string;
   vendor_id: string;
@@ -23,6 +36,8 @@ interface OrderWithDetails {
   delivery_postal_code?: string | null;
   delivery_phone_number?: string | null;
   delivery_charge?: number | null;
+  /** Legacy / direct assignment on orders row when present */
+  rider_id?: string | null;
   menu_items?: {
     id: string;
     title: string;
@@ -41,6 +56,38 @@ interface OrderWithDetails {
     image_url: string | null;
     location: string | null;
   };
+  /** Delivery task workflow (preferred source for rider assignment) */
+  delivery_task?: {
+    status: string;
+    rider_id: string | null;
+  } | null;
+  /** Resolved rider profile when assigned */
+  assigned_rider?: AssignedRider | null;
+  /** UX hint only: early-order statuses typically have no rider yet */
+  rider_visibility_hint?: "not_expected_yet" | "active_delivery";
+}
+
+function pickDeliveryTaskForOrder(tasks: DeliveryTaskRow[], orderId: string): DeliveryTaskRow | null {
+  const forOrder = tasks.filter((t) => t.order_id === orderId);
+  if (forOrder.length === 0) return null;
+  const withRider = forOrder.find((t) => t.rider_id);
+  return withRider ?? forOrder[0];
+}
+
+function resolveRiderIdForOrder(
+  order: OrderWithDetails,
+  task: DeliveryTaskRow | null
+): string | null {
+  const fromTask = task?.rider_id ?? null;
+  if (fromTask) return fromTask;
+  const fromOrder = order.rider_id ?? null;
+  return fromOrder;
+}
+
+/** Order statuses where a rider is not expected yet (UX hint only; data still shown if present). */
+function shouldExpectNoRiderYet(orderStatus: string): boolean {
+  const s = orderStatus?.trim() ?? "";
+  return s === "Pending" || s === "Paid" || s === "Accepted";
 }
 
 // GET /api/admin/orders - Get all orders with vendor and user information
@@ -136,9 +183,51 @@ export async function GET(req: Request) {
       return NextResponse.json({ orders: [] });
     }
 
+    const orderIds = orders.map((o: OrderWithDetails) => o.id);
+
+    const { data: deliveryTaskRows, error: tasksError } = await supabaseAdmin
+      .from("delivery_tasks")
+      .select("order_id, rider_id, status")
+      .in("order_id", orderIds);
+
+    if (tasksError) {
+      console.error("Error fetching delivery tasks for admin orders:", tasksError);
+    }
+
+    const deliveryTasks = (deliveryTaskRows || []) as DeliveryTaskRow[];
+
     // Get unique user IDs and vendor IDs
     const userIds = [...new Set(orders.map((o: OrderWithDetails) => o.user_id).filter(Boolean))];
     const vendorIds = [...new Set(orders.map((o: OrderWithDetails) => o.vendor_id).filter(Boolean))];
+
+    const riderIds = new Set<string>();
+    for (const o of orders as OrderWithDetails[]) {
+      const task = pickDeliveryTaskForOrder(deliveryTasks, o.id);
+      const rid = resolveRiderIdForOrder(o, task);
+      if (rid) riderIds.add(rid);
+    }
+    const riderIdList = [...riderIds];
+
+    const riderProfileMap = new Map<string, AssignedRider>();
+    if (riderIdList.length > 0) {
+      const { data: riderProfiles, error: ridersErr } = await supabaseAdmin
+        .from("profiles")
+        .select("id, name, email, phone_number, role")
+        .in("id", riderIdList);
+
+      if (ridersErr) {
+        console.error("Error fetching rider profiles for admin orders:", ridersErr);
+      } else {
+        (riderProfiles || []).forEach((p: { id: string; name: string | null; email: string | null; phone_number: string | null; role: string | null }) => {
+          riderProfileMap.set(p.id, {
+            id: p.id,
+            name: p.name,
+            email: p.email,
+            phone_number: p.phone_number,
+          });
+        });
+      }
+    }
 
     // Fetch user profiles
     const { data: userProfiles } = await supabaseAdmin
@@ -177,8 +266,9 @@ export async function GET(req: Request) {
       }
     });
 
-    // Combine orders with user and vendor information
-    const ordersWithDetails: OrderWithDetails[] = orders.map((order: OrderWithDetails) => {
+    // Combine orders with user, vendor, and rider information
+    const ordersWithDetails: OrderWithDetails[] = orders.map((raw: OrderWithDetails) => {
+      const order = { ...raw };
       const userProfile = order.user_id ? userProfileMap.get(order.user_id) : null;
       const vendorProfile = vendorProfileMap.get(order.vendor_id);
       const vendorInfo = vendorMap.get(order.vendor_id);
@@ -192,8 +282,29 @@ export async function GET(req: Request) {
               email: "N/A",
             };
 
+      const task = pickDeliveryTaskForOrder(deliveryTasks, order.id);
+      const delivery_task =
+        task
+          ? {
+              status: task.status,
+              rider_id: task.rider_id,
+            }
+          : null;
+
+      const resolvedRiderId = resolveRiderIdForOrder(order, task);
+      const assigned_rider: AssignedRider | null = resolvedRiderId
+        ? riderProfileMap.get(resolvedRiderId) ?? {
+            id: resolvedRiderId,
+            name: null,
+            email: null,
+            phone_number: null,
+          }
+        : null;
+
       return {
         ...order,
+        delivery_task,
+        assigned_rider,
         profiles: profilesForOrder,
         vendor_profiles: vendorProfile && vendorInfo
           ? {
@@ -204,6 +315,9 @@ export async function GET(req: Request) {
               location: vendorInfo.location,
             }
           : { id: order.vendor_id, name: "Unknown Vendor", business_name: "N/A", image_url: null, location: null },
+        rider_visibility_hint: shouldExpectNoRiderYet(order.status)
+          ? "not_expected_yet"
+          : "active_delivery",
       };
     });
 
@@ -212,6 +326,7 @@ export async function GET(req: Request) {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filteredOrders = ordersWithDetails.filter((order) => {
+        const rider = order.assigned_rider;
         return (
           order.id.toLowerCase().includes(query) ||
           order.profiles?.name?.toLowerCase().includes(query) ||
@@ -219,7 +334,11 @@ export async function GET(req: Request) {
           order.vendor_profiles?.name?.toLowerCase().includes(query) ||
           order.vendor_profiles?.business_name?.toLowerCase().includes(query) ||
           order.menu_items?.title?.toLowerCase().includes(query) ||
-          order.status?.toLowerCase().includes(query)
+          order.status?.toLowerCase().includes(query) ||
+          rider?.id.toLowerCase().includes(query) ||
+          rider?.name?.toLowerCase().includes(query) ||
+          rider?.email?.toLowerCase().includes(query) ||
+          rider?.phone_number?.toLowerCase().includes(query)
         );
       });
     }

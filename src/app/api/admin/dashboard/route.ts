@@ -1,45 +1,17 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { ensureAdminRequest } from "@/lib/admin/ensureAdminRequest";
+import { getLagosDayBounds } from "@/lib/admin/lagosDayBounds";
 
 export const dynamic = "force-dynamic";
-
-async function ensureAdmin(req: Request) {
-  const supabaseAdmin = getSupabaseAdminClient();
-  const authHeader = req.headers.get("authorization");
-  if (!authHeader) {
-    return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
-  }
-
-  const token = authHeader.replace("Bearer ", "");
-  const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(token);
-
-  if (authError || !authData?.user) {
-    return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
-  }
-
-  const { data: profile, error: profileError } = await supabaseAdmin
-    .from("profiles")
-    .select("is_admin, role")
-    .eq("id", authData.user.id)
-    .single();
-
-  if (profileError || !profile) {
-    return { error: NextResponse.json({ error: "User profile not found" }, { status: 404 }) };
-  }
-
-  const isAdmin = profile.is_admin === true || profile.role?.toLowerCase().trim() === "admin";
-  if (!isAdmin) {
-    return { error: NextResponse.json({ error: "Forbidden. Admin access required." }, { status: 403 }) };
-  }
-
-  return { userId: authData.user.id };
-}
 
 export async function GET(req: Request) {
   try {
     const supabaseAdmin = getSupabaseAdminClient();
-    const authResult = await ensureAdmin(req);
-    if ("error" in authResult) return authResult.error;
+    const authResult = await ensureAdminRequest(req);
+    if (!authResult.ok) return authResult.response;
+
+    const bounds = getLagosDayBounds();
 
     const [
       userCountResult,
@@ -49,6 +21,12 @@ export async function GET(req: Request) {
       serviceRequestsResult,
       pendingPayoutsResult,
       subscriptionsResult,
+      pendingNewToday,
+      acceptedNewToday,
+      outForDeliveryNow,
+      deliveredToday,
+      vendorsOpenCount,
+      vendorsClosedCount,
     ] = await Promise.all([
       supabaseAdmin
         .from("profiles")
@@ -79,6 +57,33 @@ export async function GET(req: Request) {
         .from("profiles")
         .select("subscription_plan")
         .eq("role", "vendor"),
+      supabaseAdmin
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", bounds.startUtc)
+        .lte("created_at", bounds.endUtc)
+        .in("status", ["Pending", "Paid"]),
+      supabaseAdmin
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", bounds.startUtc)
+        .lte("created_at", bounds.endUtc)
+        .in("status", ["Accepted", "Confirmed"]),
+      supabaseAdmin
+        .from("delivery_tasks")
+        .select("id", { count: "exact", head: true })
+        .in("status", ["Assigned", "PickedUp"]),
+      supabaseAdmin
+        .from("delivery_tasks")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "Delivered")
+        .gte("delivered_at", bounds.startUtc)
+        .lte("delivered_at", bounds.endUtc),
+      supabaseAdmin
+        .from("vendors")
+        .select("profile_id", { count: "exact", head: true })
+        .or("is_open.is.null,is_open.eq.true"),
+      supabaseAdmin.from("vendors").select("profile_id", { count: "exact", head: true }).eq("is_open", false),
     ]);
 
     const paymentRevenue = (paymentsResult.data || []).reduce(
@@ -118,6 +123,24 @@ export async function GET(req: Request) {
       pendingPayouts,
       freeTrialVendors,
       professionalVendors,
+      dailyOperations: {
+        reportDate: bounds.reportDate,
+        timezone: "Africa/Lagos",
+        /** Orders placed today still in Pending / Paid */
+        pendingNewToday: pendingNewToday.count || 0,
+        /** Orders placed today in Accepted / Confirmed */
+        acceptedNewToday: acceptedNewToday.count || 0,
+        /** Live pipeline: delivery tasks currently Assigned or PickedUp */
+        outForDeliveryNow: outForDeliveryNow.count || 0,
+        /** Tasks marked Delivered today (Lagos calendar day) */
+        deliveredToday: deliveredToday.count || 0,
+        description:
+          "Pending and Accepted counts are for orders created today. Out for delivery is the current open delivery pipeline. Delivered counts completed tasks today.",
+      },
+      vendorAvailability: {
+        open: vendorsOpenCount.count || 0,
+        closed: vendorsClosedCount.count || 0,
+      },
     });
   } catch (error) {
     console.error("Error in GET /api/admin/dashboard:", error);

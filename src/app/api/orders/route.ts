@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { checkRateLimit, RateLimitConfigs } from "@/lib/rateLimiter";
+import { parseJsonBody } from "@/lib/validation/http";
+import { legacyOrdersRequestSchema } from "@/lib/validation/schemas";
 
 export const dynamic = "force-dynamic";
 
@@ -34,16 +36,10 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json();
-    const { name, email, phone, address, paymentMethod, cartItems, createdAt } = body;
+    const parsed = await parseJsonBody(req, legacyOrdersRequestSchema, "POST /api/orders");
+    if (!parsed.ok) return parsed.response;
 
-    // Validate input
-    if (!name || !email || !phone || !address || !paymentMethod || !cartItems || cartItems.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "Missing required fields" },
-        { status: 400 }
-      );
-    }
+    const { name, email, phone, address, paymentMethod, cartItems, createdAt } = parsed.data;
 
     // Get authenticated user if available
     const authHeader = req.headers.get("authorization");
@@ -77,7 +73,7 @@ export async function POST(req: Request) {
       price: number;
     }>>();
     
-    for (const item of cartItems as CartItem[]) {
+    for (const item of cartItems as unknown as CartItem[]) {
       const vendorId = item.vendor_id || item.vendors?.id;
       if (!vendorId) continue;
 

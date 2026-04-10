@@ -27,6 +27,7 @@ import SEOHead from "@/components/SEOHead";
 import { generateBreadcrumbSchema } from "@/lib/seo";
 import { getLocationsWithAll } from "@/lib/vendorLocations";
 import { getCategoriesWithAll, getCategoryLabel } from "@/lib/vendorCategories";
+import { isVendorExploreVisible } from "@/lib/vendorAvailability";
 
 interface MenuItem {
   id: string;
@@ -86,6 +87,7 @@ interface VendorRow {
   verified?: boolean | null;
   is_premium?: boolean | null;
   subscription_plan?: string | null;
+  is_open?: boolean | null;
 }
 interface UserProfile {
   name: string;
@@ -256,8 +258,23 @@ export default function ExplorePage() {
       // Also fetch profiles to get location if vendors.location is not available
       const { data: vendorsData, error: vendorsError } = await supabase
         .from("vendors")
-        .select("id, name, business_name, image_url, location, profile_id, description, category, is_premium, subscription_plan, verified")
+        .select("id, name, business_name, image_url, location, profile_id, description, category, is_premium, subscription_plan, verified, is_open")
         .in("profile_id", vendorIds);
+
+      const { data: serviceProfileImages, error: serviceProfileImagesError } = await supabase
+        .from("vendor_service_profiles")
+        .select("profile_id, image_url")
+        .in("profile_id", vendorIds);
+
+      if (serviceProfileImagesError) {
+        console.warn("Explore: could not load service profile images (fallback only):", serviceProfileImagesError);
+      }
+      const serviceProfileImageByProfileId = new Map<string, string | null>();
+      (serviceProfileImages || []).forEach((row: { profile_id: string; image_url: string | null }) => {
+        if (row.profile_id) {
+          serviceProfileImageByProfileId.set(row.profile_id, row.image_url ?? null);
+        }
+      });
 
       // Fetch profiles - CRITICAL: Don't filter by role initially to catch all profiles
       // Some profiles might not have role set correctly, but we still need their names
@@ -343,6 +360,7 @@ export default function ExplorePage() {
 
       // Combine menu items with vendor information
       // Filter out items that are not available (handle both boolean and text)
+      // Exclude vendors explicitly closed (is_open === false on vendors table)
       const itemsWithVendors = menuItems
         .filter((item: MenuItem) => {
           // Only show available items
@@ -351,6 +369,11 @@ export default function ExplorePage() {
                               item.availability === "available" ||
                               item.availability === "Available";
           return isAvailable;
+        })
+        .filter((item: MenuItem) => {
+          const v = vendorMap.get(item.vendor_id);
+          if (v && !isVendorExploreVisible(v.is_open)) return false;
+          return true;
         })
         .map((item: MenuItem) => {
           const vendor = vendorMap.get(item.vendor_id);
@@ -430,11 +453,16 @@ export default function ExplorePage() {
           
           // Always create vendors object, even if data is incomplete
           // This ensures vendor info is always available for display
+          const fromServiceProfile = serviceProfileImageByProfileId.get(item.vendor_id);
+          const tableImage = typeof vendor?.image_url === "string" ? vendor.image_url.trim() : "";
+          const spImage = typeof fromServiceProfile === "string" ? fromServiceProfile.trim() : "";
+          const resolvedImageUrl = tableImage || spImage || null;
+
           const vendorInfo = {
             id: vendor?.id || profile?.id || null,
             // Use the resolved vendor name
             name: finalVendorName,
-            image_url: vendor?.image_url || null,
+            image_url: resolvedImageUrl,
             location: vendorLocation || null,
             category: vendorCategory || null,
             description: vendor?.description || null,
@@ -575,11 +603,35 @@ export default function ExplorePage() {
         }
       });
 
+    const vendorsOpenChannel = supabase
+      .channel("vendors_is_open_explore")
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "vendors",
+        },
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
+          console.log("Vendor row updated (e.g. is_open):", payload.eventType, payload);
+          debouncedFetchMenuItems();
+          fetchServiceProfileVendors();
+        }
+      )
+      .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
+        if (status === "SUBSCRIBED") {
+          console.log("✅ Successfully subscribed to vendors changes for Explore");
+        } else if (status === "CHANNEL_ERROR") {
+          console.error("❌ Error subscribing to vendors changes");
+        }
+      });
+
     return () => {
       subscription.unsubscribe();
       menuItemsChannel.unsubscribe();
       serviceProfilesChannel.unsubscribe();
       profilesChannel.unsubscribe();
+      vendorsOpenChannel.unsubscribe();
       window.removeEventListener('vendor-service-profile-updated', handleServiceProfileUpdate);
     };
   }, [fetchAllMenuItems, fetchServiceProfileVendors]);
@@ -1056,11 +1108,11 @@ export default function ExplorePage() {
             }
             
             return (
-              <div className="mb-8 pt-2 sm:pt-4">
-                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-800 mb-4 font-header relative z-10 break-words px-0.5">
+              <section className="mb-10 sm:mb-14 pt-2 sm:pt-4 relative isolate overflow-visible">
+                <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-800 mb-6 sm:mb-8 md:mb-10 font-header relative z-20 break-words px-0.5 pr-3 sm:pr-4">
                   Chef and Home Cooks Too
                 </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <div className="relative z-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {filteredServiceVendors.map((vendor) => {
                     const priceLabel = vendor.pricing_model === 'per_meal' ? 'per meal' :
                                      vendor.pricing_model === 'per_hour' ? 'per hour' :
@@ -1070,7 +1122,7 @@ export default function ExplorePage() {
                     return (
                     <div
                       key={vendor.id}
-                      className="relative bg-white rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:scale-[1.02] hover:z-10 border border-gray-100"
+                      className="relative z-0 bg-white rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:scale-[1.01] border border-gray-100"
                     >
                       {/* Vendor Image */}
                       <div className="relative w-full h-48 overflow-hidden bg-gray-200">
@@ -1153,7 +1205,7 @@ export default function ExplorePage() {
                     );
                   })}
                 </div>
-              </div>
+              </section>
             );
           })()}
 

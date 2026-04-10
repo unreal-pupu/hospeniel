@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Megaphone, ShieldCheck, Trash2, Upload, RefreshCw } from "lucide-react";
+import { uploadImageViaApi, IMAGE_FILE_INPUT_ACCEPT } from "@/lib/uploads/clientUpload";
 
 type VendorToolRow = {
   tool_name: string;
@@ -136,24 +137,17 @@ export default function VendorBannersPage() {
     return imageUrl.slice(idx + marker.length);
   };
 
-  const uploadBannerImageToStorage = async (file: File, vendorId: string) => {
-    // Reuse `menu-images` because it already has authenticated upload + public read policies.
-    const fileExt = file.name.split(".").pop() || "img";
-    const objectPath = `${vendorId}/sponsored-banners/${Date.now()}_${Math.random()
-      .toString(36)
-      .slice(2, 8)}.${fileExt}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("menu-images")
-      .upload(objectPath, file, { cacheControl: "3600", upsert: false });
-
-    if (uploadError) {
-      console.error("Banner image upload error:", uploadError);
-      throw new Error(uploadError.message || "Failed to upload banner image");
+  const uploadBannerImageToStorage = async (file: File, _vendorId: string) => {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session?.access_token) {
+      throw new Error("Please sign in again to upload images.");
     }
-
-    const { data: urlData } = supabase.storage.from("menu-images").getPublicUrl(objectPath);
-    return urlData.publicUrl as string;
+    const { publicUrl } = await uploadImageViaApi({
+      file,
+      purpose: "sponsored_banner",
+      accessToken: session.access_token,
+    });
+    return publicUrl;
   };
 
   const setFileAndPreview = (file: File | null) => {
@@ -451,7 +445,7 @@ export default function VendorBannersPage() {
                   <input
                     id="banner-image-input"
                     type="file"
-                    accept="image/jpeg,image/png,image/webp"
+                    accept={IMAGE_FILE_INPUT_ACCEPT}
                     className="hidden"
                     onChange={(e) => {
                       const file = e.target.files?.[0] ?? null;

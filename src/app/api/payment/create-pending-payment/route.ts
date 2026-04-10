@@ -1,38 +1,16 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
-import { isValidGuestId } from "@/lib/guestCheckoutValidation";
-
-interface Body {
-  guest_id?: string;
-  subtotal?: number;
-  tax_amount?: number;
-  commission_amount?: number;
-  total_amount?: number;
-}
+import { parseJsonBody } from "@/lib/validation/http";
+import { createPendingPaymentSchema } from "@/lib/validation/schemas";
 
 export async function POST(req: Request) {
   try {
     const supabaseAdmin = getSupabaseAdminClient();
-    const body = (await req.json()) as Body;
-    const guestId = typeof body.guest_id === "string" ? body.guest_id.trim() : "";
-    const subtotal = Number(body.subtotal);
-    const taxAmount = Number(body.tax_amount);
-    const commissionAmount = Number(body.commission_amount);
-    const totalAmount = Number(body.total_amount);
+    const parsed = await parseJsonBody(req, createPendingPaymentSchema, "POST /api/payment/create-pending-payment");
+    if (!parsed.ok) return parsed.response;
 
-    if (!isValidGuestId(guestId)) {
-      return NextResponse.json({ error: "Invalid or missing guest_id" }, { status: 400 });
-    }
-
-    if (
-      !Number.isFinite(subtotal) ||
-      !Number.isFinite(taxAmount) ||
-      !Number.isFinite(commissionAmount) ||
-      !Number.isFinite(totalAmount) ||
-      totalAmount <= 0
-    ) {
-      return NextResponse.json({ error: "Invalid payment amounts" }, { status: 400 });
-    }
+    const { guest_id: guestId, subtotal, tax_amount: taxAmount, commission_amount: commissionAmount, total_amount: totalAmount } =
+      parsed.data;
 
     const { data, error } = await supabaseAdmin
       .from("payments")

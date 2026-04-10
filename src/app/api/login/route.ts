@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { checkRateLimit, RateLimitConfigs } from "@/lib/rateLimiter";
+import { parseJsonBody } from "@/lib/validation/http";
+import { loginCredentialsSchema } from "@/lib/validation/schemas";
 
 export async function POST(req: Request) {
   const supabaseAdmin = getSupabaseAdminClient();
@@ -32,16 +34,10 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json();
-    const { email, password } = body;
+    const parsed = await parseJsonBody(req, loginCredentialsSchema, "POST /api/login");
+    if (!parsed.ok) return parsed.response;
 
-    // Validate input
-    if (!email || !password) {
-      return NextResponse.json(
-        { success: false, error: "Email and password are required" },
-        { status: 400 }
-      );
-    }
+    const { email, password } = parsed.data;
 
     // Attempt login
     const { data, error } = await supabaseAdmin.auth.signInWithPassword({

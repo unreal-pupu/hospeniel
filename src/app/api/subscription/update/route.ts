@@ -1,30 +1,17 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { parseJsonBody } from "@/lib/validation/http";
+import { subscriptionUpdateSchema } from "@/lib/validation/schemas";
 
 export async function POST(req: Request) {
   try {
     const supabaseAdmin = getSupabaseAdminClient();
-    const body = await req.json();
-    const { userId, subscriptionPlan, paymentReference } = body;
+    const parsed = await parseJsonBody(req, subscriptionUpdateSchema, "POST /api/subscription/update");
+    if (!parsed.ok) return parsed.response;
+
+    const { userId, subscriptionPlan, paymentReference } = parsed.data;
 
     console.log("🔄 Subscription update request:", { userId, subscriptionPlan, paymentReference });
-
-    // Validate input
-    if (!userId || !subscriptionPlan) {
-      return NextResponse.json(
-        { success: false, error: "Missing required fields: userId and subscriptionPlan" },
-        { status: 400 }
-      );
-    }
-
-    // Validate subscription plan value
-    const validPlans = ["free_trial", "starter", "professional"];
-    if (!validPlans.includes(subscriptionPlan)) {
-      return NextResponse.json(
-        { success: false, error: `Invalid subscription plan. Must be one of: ${validPlans.join(", ")}` },
-        { status: 400 }
-      );
-    }
 
     // Calculate is_premium based on plan
     const isPremium = subscriptionPlan === "professional";

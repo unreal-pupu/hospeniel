@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
 import { validatePassword, getPasswordRequirements } from "@/lib/passwordValidation";
+import { uploadImageViaApi, IMAGE_FILE_INPUT_ACCEPT } from "@/lib/uploads/clientUpload";
 
 interface AdminProfile {
   name: string;
@@ -98,22 +99,16 @@ export default function AdminSettingsPage() {
         throw new Error("User not authenticated.");
       }
 
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(fileName, file, { upsert: true });
-
-      if (uploadError) {
-        throw uploadError;
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.access_token) {
+        throw new Error("Your session expired. Please sign in again.");
       }
 
-      const { data: publicUrlData } = supabase.storage
-        .from("avatars")
-        .getPublicUrl(fileName);
-
-      const publicUrl = publicUrlData?.publicUrl || "";
+      const { publicUrl } = await uploadImageViaApi({
+        file,
+        purpose: "user_avatar",
+        accessToken: session.access_token,
+      });
 
       const { data: existingSettings } = await supabase
         .from("user_settings")
@@ -138,7 +133,8 @@ export default function AdminSettingsPage() {
       setMessage({ type: "success", text: "Avatar updated successfully." });
     } catch (error) {
       console.error("Avatar upload error:", error);
-      setMessage({ type: "error", text: "Failed to upload avatar." });
+      const text = error instanceof Error ? error.message : "Failed to upload avatar.";
+      setMessage({ type: "error", text });
     } finally {
       setUploading(false);
     }
@@ -275,7 +271,13 @@ export default function AdminSettingsPage() {
             </div>
             <div>
               <Label htmlFor="avatar">Upload new photo</Label>
-              <Input id="avatar" type="file" accept="image/*" onChange={handleAvatarUpload} disabled={uploading} />
+              <Input
+                id="avatar"
+                type="file"
+                accept={IMAGE_FILE_INPUT_ACCEPT}
+                onChange={handleAvatarUpload}
+                disabled={uploading}
+              />
               <p className="text-xs text-gray-500 mt-1">PNG, JPG up to 2MB</p>
               {uploading && <p className="text-sm text-gray-600 mt-2">Uploading...</p>}
             </div>

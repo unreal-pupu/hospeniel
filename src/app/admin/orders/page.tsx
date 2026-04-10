@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Search, Filter, Package, User, Store, MapPin, Edit } from "lucide-react";
+import { Loader2, Search, Filter, Package, User, Store, MapPin, Edit, Bike } from "lucide-react";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 
@@ -63,6 +63,17 @@ interface Order {
     image_url: string | null;
     location: string | null;
   };
+  delivery_task?: {
+    status: string;
+    rider_id: string | null;
+  } | null;
+  assigned_rider?: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    phone_number: string | null;
+  } | null;
+  rider_visibility_hint?: "not_expected_yet" | "active_delivery";
 }
 
 export default function AdminOrdersPage() {
@@ -155,6 +166,7 @@ export default function AdminOrdersPage() {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter((order) => {
+        const r = order.assigned_rider;
         return (
           order.id.toLowerCase().includes(query) ||
           order.profiles?.name?.toLowerCase().includes(query) ||
@@ -164,7 +176,11 @@ export default function AdminOrdersPage() {
           order.vendor_profiles?.business_name?.toLowerCase().includes(query) ||
           order.menu_items?.title?.toLowerCase().includes(query) ||
           order.order_type?.toLowerCase().includes(query) ||
-          order.status?.toLowerCase().includes(query)
+          order.status?.toLowerCase().includes(query) ||
+          r?.id.toLowerCase().includes(query) ||
+          r?.name?.toLowerCase().includes(query) ||
+          r?.email?.toLowerCase().includes(query) ||
+          r?.phone_number?.toLowerCase().includes(query)
         );
       });
     }
@@ -402,7 +418,7 @@ export default function AdminOrdersPage() {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
               <Input
                 type="text"
-                placeholder="Search by order ID, customer, vendor, or product..."
+                placeholder="Search orders, customers, vendors, riders..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10 bg-hospineil-base-bg border-gray-300 focus:ring-hospineil-primary focus:border-hospineil-primary font-body"
@@ -476,6 +492,7 @@ export default function AdminOrdersPage() {
                     <th className="text-left py-3 px-4 font-semibold text-hospineil-primary font-header">Amount</th>
                     <th className="text-left py-3 px-4 font-semibold text-hospineil-primary font-header">Status</th>
                     <th className="text-left py-3 px-4 font-semibold text-hospineil-primary font-header">Delivery</th>
+                    <th className="text-left py-3 px-4 font-semibold text-hospineil-primary font-header">Rider</th>
                     <th className="text-left py-3 px-4 font-semibold text-hospineil-primary font-header">Date</th>
                     <th className="text-left py-3 px-4 font-semibold text-hospineil-primary font-header">Actions</th>
                   </tr>
@@ -574,6 +591,40 @@ export default function AdminOrdersPage() {
                           <div className="text-xs text-gray-400 font-body italic">Not set</div>
                         )}
                       </td>
+                      <td className="py-3 px-4 max-w-[200px]">
+                        {order.assigned_rider ? (
+                          <div className="flex items-start gap-2">
+                            <Bike className="h-4 w-4 text-hospineil-primary shrink-0 mt-0.5" />
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium text-gray-800 font-body truncate" title={order.assigned_rider.name || undefined}>
+                                {order.assigned_rider.name || "Rider"}
+                              </div>
+                              {(order.assigned_rider.phone_number || order.assigned_rider.email) && (
+                                <div className="text-xs text-gray-500 font-body truncate" title={[order.assigned_rider.phone_number, order.assigned_rider.email].filter(Boolean).join(" · ")}>
+                                  {order.assigned_rider.phone_number || order.assigned_rider.email}
+                                </div>
+                              )}
+                              <div className="text-[10px] text-gray-400 font-mono truncate" title={order.assigned_rider.id}>
+                                {order.assigned_rider.id.substring(0, 8)}…
+                              </div>
+                              {order.delivery_task?.status && (
+                                <div className="text-[10px] text-gray-500 font-body mt-0.5">
+                                  Task: {order.delivery_task.status}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-gray-500 font-body">
+                            <span className="text-gray-600">No rider assigned</span>
+                            {order.rider_visibility_hint === "not_expected_yet" && (
+                              <div className="text-[10px] text-gray-400 mt-1 leading-snug">
+                                Usually assigned once the order is ready for dispatch
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </td>
                       <td className="py-3 px-4">
                         <div className="text-sm text-gray-600 font-body">
                           {dayjs(order.created_at).format("MMM DD, YYYY")}
@@ -630,6 +681,31 @@ export default function AdminOrdersPage() {
               Update delivery details for order {selectedOrder?.id.substring(0, 8)}...
             </DialogDescription>
           </DialogHeader>
+
+          {selectedOrder?.assigned_rider && (
+            <div className="rounded-lg border border-gray-200 bg-hospineil-base-bg/80 px-4 py-3 text-sm">
+              <div className="font-medium text-hospineil-primary font-header flex items-center gap-2">
+                <Bike className="h-4 w-4" />
+                Assigned rider
+              </div>
+              <p className="mt-1 text-gray-800 font-body">{selectedOrder.assigned_rider.name || "Rider"}</p>
+              <p className="text-xs text-gray-600 font-body">
+                {[selectedOrder.assigned_rider.phone_number, selectedOrder.assigned_rider.email].filter(Boolean).join(" · ") || "No contact on profile"}
+              </p>
+              <p className="text-[11px] text-gray-400 font-mono mt-1">ID: {selectedOrder.assigned_rider.id}</p>
+              {selectedOrder.delivery_task?.status && (
+                <p className="text-xs text-gray-500 mt-1">Delivery task: {selectedOrder.delivery_task.status}</p>
+              )}
+            </div>
+          )}
+          {selectedOrder && !selectedOrder.assigned_rider && (
+            <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/80 px-4 py-3 text-xs text-gray-600 font-body">
+              No rider assigned for this order yet.
+              {selectedOrder.rider_visibility_hint === "not_expected_yet" && (
+                <span className="block text-gray-500 mt-1">Riders are usually linked when a delivery task is accepted.</span>
+              )}
+            </div>
+          )}
 
           <div className="space-y-4 mt-4">
             <div>

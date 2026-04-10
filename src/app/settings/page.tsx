@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import Image from "next/image";
 import type { User } from "@supabase/supabase-js";
+import { uploadImageViaApi, IMAGE_FILE_INPUT_ACCEPT } from "@/lib/uploads/clientUpload";
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
@@ -116,27 +117,11 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
       throw new Error("Session is invalid. Please log in again.");
     }
 
-    console.log("User authenticated:", user.id, "Session valid:", !!session.access_token);
-
-    // ✅ Generate unique file path (per user)
-    // Don't include "avatars/" prefix since we're already specifying the bucket
-    const fileExt = file.name.split(".").pop();
-    const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-    const filePath = fileName;
-
-    // ✅ Upload to Supabase Storage
-    const { error: uploadError } = await supabase.storage
-      .from("avatars")
-      .upload(filePath, file, { upsert: true });
-
-    if (uploadError) throw uploadError;
-
-    // ✅ Get Public URL
-    const { data: publicUrlData } = supabase.storage
-      .from("avatars")
-      .getPublicUrl(filePath);
-
-    const publicUrl = publicUrlData?.publicUrl || "";
+    const { publicUrl } = await uploadImageViaApi({
+      file,
+      purpose: "user_avatar",
+      accessToken: session.access_token,
+    });
 
     // ✅ Save avatar URL to database - use safer pattern for RLS
     // First check if settings row exists (handle case where row doesn't exist)
@@ -263,7 +248,7 @@ const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) =>
               {uploading ? "..." : "Edit"}
               <input
                 type="file"
-                accept="image/*"
+                accept={IMAGE_FILE_INPUT_ACCEPT}
                 onChange={handleAvatarUpload}
                 className="hidden"
               />
