@@ -57,6 +57,48 @@ export const CATEGORY_LABELS: Record<string, string> = {
   home_cook: "Home Cook",
 };
 
+const SERVICE_REQUEST_RECIPIENT_CATEGORY_VALUES = new Set<string>(
+  VENDOR_CATEGORIES.map((c) => c.value)
+);
+
+/** Normalize category strings for comparisons (matches vendor settings / DB style). */
+export function normalizeVendorCategoryValue(category: string | null | undefined): string {
+  if (!category) return "";
+  return category.toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+/** Chef / home cook — used for service-request copy (wording), not access control. */
+export function isChefOrHomeCookVendorCategory(category: string | null | undefined): boolean {
+  const n = normalizeVendorCategoryValue(category);
+  return n === "chef" || n === "home_cook";
+}
+
+/**
+ * Whether a marketplace vendor category may receive customer service requests.
+ * All standard vendor categories (food vendor, chef, baker, small chops, home cook) qualify.
+ * Unknown / empty category is treated as eligible for backwards compatibility.
+ */
+export function vendorCategoryMayReceiveServiceRequests(category: string | null | undefined): boolean {
+  const n = normalizeVendorCategoryValue(category);
+  if (!n) return true;
+  return SERVICE_REQUEST_RECIPIENT_CATEGORY_VALUES.has(n);
+}
+
+/** Vendor dashboard: service requests page for authenticated marketplace vendors. */
+export function vendorMayAccessServiceRequestsPage(
+  role: string | null | undefined,
+  category: string | null | undefined
+): boolean {
+  const normalizedRole = role?.toLowerCase().trim() ?? "";
+  const isVendorLikeRole =
+    normalizedRole === "" ||
+    normalizedRole === "vendor" ||
+    normalizedRole === "chef" ||
+    normalizedRole === "home_cook";
+  if (!isVendorLikeRole) return false;
+  return vendorCategoryMayReceiveServiceRequests(category);
+}
+
 
 
 

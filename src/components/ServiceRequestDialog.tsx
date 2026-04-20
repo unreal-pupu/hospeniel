@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { isChefOrHomeCookVendorCategory } from "@/lib/vendorCategories";
 import {
   Dialog,
   DialogContent,
@@ -21,9 +22,8 @@ interface ServiceRequestDialogProps {
   onOpenChange: (open: boolean) => void;
   vendorId: string;
   vendorName: string;
-  isPremium: boolean;
-  subscriptionPlan?: string;
-  isChefOrHomeCook?: boolean; // New prop to identify chefs/home cooks
+  /** Drives chef vs general copy only (wording). */
+  vendorCategory?: string | null;
 }
 
 export default function ServiceRequestDialog({
@@ -31,9 +31,7 @@ export default function ServiceRequestDialog({
   onOpenChange,
   vendorId,
   vendorName,
-  isPremium,
-  subscriptionPlan,
-  isChefOrHomeCook = false,
+  vendorCategory = null,
 }: ServiceRequestDialogProps) {
   const [message, setMessage] = useState("");
   const [contactInfo, setContactInfo] = useState("");
@@ -41,13 +39,14 @@ export default function ServiceRequestDialog({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  const isChefOrHomeCook = isChefOrHomeCookVendorCategory(vendorCategory);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
 
     try {
-      // Verify user is authenticated
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) {
         setError("Please log in to submit a service request.");
@@ -55,14 +54,12 @@ export default function ServiceRequestDialog({
         return;
       }
 
-      // Validate message
       if (!message.trim()) {
         setError("Please enter your message.");
         setSubmitting(false);
         return;
       }
 
-      // Submit service request
       const { data: insertData, error: insertError } = await supabase
         .from("service_requests")
         .insert([
@@ -79,38 +76,15 @@ export default function ServiceRequestDialog({
 
       if (insertError) {
         console.error("❌ Error submitting service request:", insertError);
-        console.error("❌ Error details:", {
-          message: insertError.message,
-          code: insertError.code,
-          details: insertError.details,
-          hint: insertError.hint
-        });
         setError(insertError.message || "Failed to submit request. Please try again.");
         setSubmitting(false);
         return;
       }
 
-      console.log("✅ Service request created successfully:", insertData);
-      console.log("✅ Service request details:", {
-        id: insertData.id,
-        user_id: insertData.user_id,
-        vendor_id: insertData.vendor_id,
-        message: insertData.message,
-        status: insertData.status,
-        created_at: insertData.created_at
-      });
-      
-      // Note: Notification should be created automatically by the database trigger
-      // If notification is not created, check:
-      // 1. Vendor is on professional plan (subscription_plan = 'professional' and is_premium = true)
-      // 2. Trigger function exists and is working
-      // 3. Notifications table has proper RLS policies
-      
-      // Verify the service request was created with correct vendor_id
       if (insertData.vendor_id !== vendorId) {
         console.error("❌ CRITICAL: Service request vendor_id mismatch!", {
           expected: vendorId,
-          actual: insertData.vendor_id
+          actual: insertData.vendor_id,
         });
       }
 
@@ -118,14 +92,14 @@ export default function ServiceRequestDialog({
       setMessage("");
       setContactInfo("");
 
-      // Close dialog after 2 seconds
       setTimeout(() => {
         setSuccess(false);
         onOpenChange(false);
       }, 2000);
     } catch (err) {
       console.error("Error submitting service request:", err);
-      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred. Please try again.";
+      const errorMessage =
+        err instanceof Error ? err.message : "An unexpected error occurred. Please try again.";
       setError(errorMessage);
     } finally {
       setSubmitting(false);
@@ -142,48 +116,13 @@ export default function ServiceRequestDialog({
     }
   };
 
-  // Chefs and Home Cooks can always receive service requests
-  // Regular vendors need Professional plan
-  const isProfessional = subscriptionPlan === "professional" || isPremium || isChefOrHomeCook;
-  
-  if (!isProfessional && !isChefOrHomeCook) {
-    return (
-      <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-amber-600" />
-              Professional Plan Required
-            </DialogTitle>
-            <DialogDescription>
-              This vendor is not currently accepting service requests.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <p className="text-gray-600 text-sm">
-              Upgrade to Professional Plan to receive service requests from customers.
-            </p>
-            <p className="text-gray-500 text-xs mt-2">
-              Contact the vendor directly or check back later when they upgrade to Professional Plan.
-            </p>
-          </div>
-          <DialogFooter>
-            <Button onClick={handleClose} variant="outline">
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Request Service from {vendorName}</DialogTitle>
           <DialogDescription>
-            {isChefOrHomeCook 
+            {isChefOrHomeCook
               ? "Send a message to request cooking services, meal preparation, or catering"
               : "Send a message to request catering, events, or other services"}
           </DialogDescription>
@@ -192,9 +131,7 @@ export default function ServiceRequestDialog({
         {success ? (
           <div className="py-8 text-center">
             <CheckCircle className="h-16 w-16 text-green-600 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              Request Submitted!
-            </h3>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">Request Submitted!</h3>
             <p className="text-gray-600">
               Your service request has been sent to {vendorName}. They will respond soon.
             </p>
@@ -216,9 +153,11 @@ export default function ServiceRequestDialog({
                 id="message"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder={isChefOrHomeCook 
-                  ? "Describe the service you need (e.g., meal for 10 people on Saturday, cooking for a party, special dietary requirements, etc.)"
-                  : "Describe the service you need (e.g., catering for 50 people, outdoor event setup, etc.)"}
+                placeholder={
+                  isChefOrHomeCook
+                    ? "Describe the service you need (e.g., meal for 10 people on Saturday, cooking for a party, special dietary requirements, etc.)"
+                    : "Describe the service you need (e.g., catering for 50 people, outdoor event setup, etc.)"
+                }
                 rows={6}
                 className="mt-1"
                 required
@@ -248,19 +187,10 @@ export default function ServiceRequestDialog({
             </div>
 
             <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleClose}
-                disabled={submitting}
-              >
+              <Button type="button" variant="outline" onClick={handleClose} disabled={submitting}>
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                disabled={submitting}
-                className="bg-indigo-600 hover:bg-indigo-700"
-              >
+              <Button type="submit" disabled={submitting} className="bg-indigo-600 hover:bg-indigo-700">
                 {submitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -277,4 +207,3 @@ export default function ServiceRequestDialog({
     </Dialog>
   );
 }
-

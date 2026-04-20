@@ -18,6 +18,14 @@ interface RateLimitResult {
   retryAfter?: number; // Seconds until retry is allowed
 }
 
+function readEnvInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return parsed;
+}
+
 // In-memory store for rate limiting (for production, use Redis or similar)
 // Key format: "endpoint:identifier:window"
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
@@ -202,8 +210,20 @@ export const RateLimitConfigs = {
   
   // Search/Explore: 50 per minute per IP
   SEARCH: {
-    maxRequests: 50,
-    windowMs: 60 * 1000, // 1 minute
+    maxRequests: readEnvInt("RATE_LIMIT_SEARCH_MAX_REQUESTS", 50),
+    windowMs: readEnvInt("RATE_LIMIT_SEARCH_WINDOW_MS", 60 * 1000),
+  },
+
+  // Public vendor/discovery listing endpoints
+  PUBLIC_LISTING: {
+    maxRequests: readEnvInt("RATE_LIMIT_PUBLIC_LISTING_MAX_REQUESTS", 60),
+    windowMs: readEnvInt("RATE_LIMIT_PUBLIC_LISTING_WINDOW_MS", 60 * 1000),
+  },
+
+  // Payment verification should be stricter to prevent abuse/replay noise
+  PAYMENT_VERIFY: {
+    maxRequests: readEnvInt("RATE_LIMIT_PAYMENT_VERIFY_MAX_REQUESTS", 12),
+    windowMs: readEnvInt("RATE_LIMIT_PAYMENT_VERIFY_WINDOW_MS", 60 * 1000),
   },
 };
 

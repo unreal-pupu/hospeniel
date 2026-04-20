@@ -749,7 +749,7 @@ export default function CookChefDashboard({
               Please create your Paystack subaccount with accurate details from the Settings page. This is required to receive payouts for all orders.
             </p>
             <p className="text-amber-800 font-body text-sm leading-relaxed mt-2">
-              Platform commission: <span className="font-semibold">10% per order</span> (deducted automatically).
+              Platform commission: <span className="font-semibold">2% per order</span> (deducted automatically).
             </p>
           </div>
         </div>

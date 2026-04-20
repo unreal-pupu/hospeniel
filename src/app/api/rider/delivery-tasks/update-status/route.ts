@@ -1,17 +1,29 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { ensureAuthenticatedRequest } from "@/lib/api/ensureAuthenticatedRequest";
 
 export async function POST(req: Request) {
   try {
+    const authCheck = await ensureAuthenticatedRequest(req);
+    if (!authCheck.ok) return authCheck.response;
+    const { userId, role, isAdmin } = authCheck.context;
+    if (!isAdmin && role !== "rider") {
+      return NextResponse.json(
+        { success: false, error: "Forbidden. Rider access required." },
+        { status: 403 }
+      );
+    }
+
     const supabaseAdmin = getSupabaseAdminClient();
     const body = await req.json();
-    const { deliveryTaskId, newStatus, riderId } = body;
+    const { deliveryTaskId, newStatus, riderId: bodyRiderId } = body;
+    const riderId = isAdmin && typeof bodyRiderId === "string" ? bodyRiderId : userId;
 
     console.log("🚴 Update delivery task status:", { deliveryTaskId, newStatus, riderId });
 
-    if (!deliveryTaskId || !newStatus || !riderId) {
+    if (!deliveryTaskId || !newStatus) {
       return NextResponse.json(
-        { success: false, error: "Delivery task ID, status, and rider ID are required" },
+        { success: false, error: "Delivery task ID and status are required" },
         { status: 400 }
       );
     }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { ensureAdminRequest } from "@/lib/admin/ensureAdminRequest";
 
 /**
  * PUT /api/admin/update-delivery/:orderId
@@ -19,6 +20,9 @@ export async function PUT(
   { params }: { params: Promise<{ orderId: string }> }
 ) {
   try {
+    const adminCheck = await ensureAdminRequest(req);
+    if (!adminCheck.ok) return adminCheck.response;
+
     const supabaseAdmin = getSupabaseAdminClient();
     const { orderId } = await params;
     const body = await req.json();

@@ -1,15 +1,21 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { hasFeature, resolveFeatureNameFromTool } from "@/lib/vendor-feature-entitlements";
+import { ensureAuthenticatedRequest } from "@/lib/api/ensureAuthenticatedRequest";
 
 export async function POST(req: Request) {
   try {
+    const authCheck = await ensureAuthenticatedRequest(req);
+    if (!authCheck.ok) return authCheck.response;
+
     const body = (await req.json()) as {
       userId?: string;
       paymentReference?: string;
       toolName?: string;
     };
-    const { userId, paymentReference, toolName } = body;
+    const userId =
+      authCheck.context.isAdmin && body.userId ? body.userId : authCheck.context.userId;
+    const { paymentReference, toolName } = body;
     if (!userId || !paymentReference) {
       return NextResponse.json(
         { success: false, error: "userId and paymentReference are required" },

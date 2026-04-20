@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { PLATFORM_FOOD_COMMISSION_RATE } from "@/lib/platformPricing";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { parseJsonBody } from "@/lib/validation/http";
 import { paymentInitializeSchema } from "@/lib/validation/schemas";
@@ -96,9 +97,7 @@ export async function POST(req: Request) {
         ? vat_amount
         : Math.max(amount - resolvedFoodAmount - (resolvedDeliveryFee || 0) - resolvedServiceCharge, 0);
 
-    // Commission is 10% of food amount only
-    const COMMISSION_RATE = 0.10;
-    const commissionAmount = resolvedFoodAmount * COMMISSION_RATE;
+    const commissionAmount = resolvedFoodAmount * PLATFORM_FOOD_COMMISSION_RATE;
     const platformShareAmount = commissionAmount + (resolvedDeliveryFee || 0) + resolvedVatAmount + resolvedServiceCharge;
     
     // Convert amount to kobo (Paystack uses kobo as the smallest currency unit)
@@ -136,8 +135,8 @@ export async function POST(req: Request) {
       currency: "NGN",
       reference: paymentReference,
       subaccount: vendorProfile.subaccount_code,
-      transaction_charge: transactionChargeInKobo, // Platform keeps 10% of gross
-      bearer: "account", // Platform absorbs Paystack fees; vendor gets full 90%
+      transaction_charge: transactionChargeInKobo,
+      bearer: "account", // Platform absorbs Paystack fees; vendor gets remainder after split
       callback_url: callbackUrl, // Redirect URL after payment
       metadata: {
         order_id: order_id || null,
@@ -149,7 +148,7 @@ export async function POST(req: Request) {
         delivery_fee: resolvedDeliveryFee || 0,
         vat_amount: resolvedVatAmount,
         service_charge: resolvedServiceCharge,
-        commission_amount: commissionAmount, // 10% of food amount
+        commission_amount: commissionAmount,
         platform_share_amount: platformShareAmount,
         transaction_charge_kobo: transactionChargeInKobo, // Platform share in kobo
         ...metadata,

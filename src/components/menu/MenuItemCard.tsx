@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { MessageSquare, UtensilsCrossed } from "lucide-react";
-import { getCategoryLabel } from "@/lib/vendorCategories";
+import { getCategoryLabel, vendorCategoryMayReceiveServiceRequests } from "@/lib/vendorCategories";
 import VerifiedBadge from "@/components/VerifiedBadge";
 
 export interface MenuItemVendorInfo {
@@ -13,8 +13,6 @@ export interface MenuItemVendorInfo {
   category?: string | null;
   description?: string | null;
   verified?: boolean;
-  is_premium?: boolean;
-  subscription_plan?: string;
 }
 
 export interface MenuItemWithVendor {
@@ -34,7 +32,7 @@ interface MenuItemCardProps {
   isPlacingOrder?: boolean;
   onAddToCart: (itemId: string, vendorId: string) => void;
   onPlaceOrder: (item: MenuItemWithVendor) => void;
-  onRequestService?: (vendorId: string, vendorName: string, subscriptionPlan?: string) => void;
+  onRequestService?: (vendorId: string, vendorName: string, vendorCategory?: string | null) => void;
 }
 
 function isAvailableMenuItem(availability: MenuItemWithVendor["availability"]) {
@@ -186,13 +184,16 @@ export function MenuItemCard({
             </button>
           </div>
 
-          {item.vendors && item.vendor_id && item.vendors.is_premium === true && onRequestService && (
+          {item.vendors &&
+            item.vendor_id &&
+            onRequestService &&
+            vendorCategoryMayReceiveServiceRequests(item.vendors.category) && (
             <button
               onClick={() =>
                 onRequestService(
-                  item.vendor_id,
+                  item.vendors?.id ?? item.vendor_id,
                   item.vendors?.name || "Vendor",
-                  item.vendors?.subscription_plan || "professional"
+                  item.vendors?.category ?? null
                 )
               }
               className="w-full py-2 rounded-lg transition-all font-medium border-2 border-hospineil-primary text-hospineil-primary hover:bg-hospineil-primary hover:text-white flex items-center justify-center gap-2 font-button"

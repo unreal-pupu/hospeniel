@@ -2,30 +2,46 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { checkRateLimit, RateLimitConfigs } from "@/lib/rateLimiter";
 
-function hasCompletedServiceProfile(profile: {
-  image_url: string | null;
-  specialties: string[] | null;
-  base_price: number | null;
-  pricing_model: string | null;
-  bio: string | null;
-  service_mode: string[] | null;
-}) {
-  const hasSpecialties = (profile.specialties || []).length > 0;
-  const hasServiceMode = (profile.service_mode || []).length > 0;
-  const hasImage = !!profile.image_url;
-  const hasBio = !!profile.bio?.trim();
-  const hasBasePrice = (profile.base_price || 0) > 0;
-  const hasPricingModel = !!profile.pricing_model;
-
-  return hasSpecialties || hasServiceMode || hasImage || hasBio || hasBasePrice || hasPricingModel;
-}
-
 function normalizeCategory(category: string | null | undefined) {
   if (!category) return null;
   const normalized = category.toLowerCase().replace(/[\s-]+/g, "_");
   if (normalized === "chef") return "chef";
   if (normalized === "home_cook") return "home_cook";
   return null;
+}
+
+interface ProfileRow {
+  id: string;
+  name: string | null;
+  category: string | null;
+  location: string | null;
+  featured_image: string | null;
+  featured_description: string | null;
+  is_featured: boolean | null;
+  verified?: boolean | null;
+}
+
+interface ServiceProfileRow {
+  profile_id: string;
+  image_url: string | null;
+  specialties: string[] | null;
+  bio: string | null;
+  base_price: number | null;
+  pricing_model: string | null;
+}
+
+interface FeaturedVendorRow {
+  id: string;
+  name: string | null;
+  featured_image: string | null;
+  featured_description: string | null;
+  is_featured: boolean | null;
+  category: string | null;
+  location: string | null;
+  specialties: string[];
+  base_price?: number | null;
+  pricing_model?: string | null;
+  verified?: boolean | null;
 }
 
 export async function GET(req: Request) {
@@ -56,12 +72,28 @@ export async function GET(req: Request) {
     );
   }
   try {
-    // Entitlement-driven featured vendors (Featured Placement)
-    // Fallback to the older `profiles.is_featured` logic if entitlement tables aren't available.
+    // Strict eligibility: only admin-featured OR paid featured placement.
+    // No fallback that includes non-featured vendors.
+    const nowIso = new Date().toISOString();
+    const eligibleVendorIds = new Set<string>();
+
+    // 1) Admin-featured vendors
+    const { data: adminFeaturedRows, error: adminFeaturedError } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("role", "vendor")
+      .eq("is_featured", true)
+      .limit(50);
+
+    if (adminFeaturedError) {
+      console.error("[featured-vendors] admin featured fetch error:", adminFeaturedError);
+    } else {
+      for (const row of adminFeaturedRows || []) eligibleVendorIds.add(row.id);
+    }
+
+    // 2) Paid featured placement via entitlements
     try {
       const featureName = "featured_placement";
-      const nowIso = new Date().toISOString();
-
       const { data: featureRow } = await supabase
         .from("features")
         .select("id")
@@ -69,275 +101,107 @@ export async function GET(req: Request) {
         .maybeSingle();
 
       if (featureRow?.id) {
-        const { data: entRows } = await supabase
+        const { data: entRows, error: entRowsError } = await supabase
           .from("vendor_entitlements")
           .select("vendor_id")
           .eq("feature_id", featureRow.id)
           .eq("status", "active")
-          .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
-          .order("expires_at", { ascending: false })
-          .limit(8);
+          .or(`expires_at.is.null,expires_at.gt.${nowIso}`);
 
-        const vendorIds = (entRows || []).map((r: { vendor_id: string }) => r.vendor_id);
-        if (vendorIds.length > 0) {
-          const { data: profilesData, error: profilesError } = await supabase
-            .from("profiles")
-            .select(
-              "id, name, featured_image, featured_description, category, location, verified, role"
-            )
-            .eq("role", "vendor")
-            .in("id", vendorIds);
-
-          if (!profilesError && profilesData) {
-            // Fetch service profile details for chefs/home cooks (for specialties + image)
-            const chefHomeIds = profilesData
-              .filter((p: any) => {
-                const cat = String(p.category || "").toLowerCase().trim();
-                return cat === "chef" || cat === "home_cook";
-              })
-              .map((p: any) => p.id);
-
-            const { data: serviceProfiles } = chefHomeIds.length
-              ? await supabase
-                  .from("vendor_service_profiles")
-                  .select("profile_id, image_url, specialties, bio, base_price, pricing_model, service_mode")
-                  .in("profile_id", chefHomeIds)
-              : { data: [] as any[] };
-
-            const serviceProfilesMap = new Map(
-              (serviceProfiles || []).map((sp: any) => [sp.profile_id, sp])
-            );
-
-            const vendors = (profilesData as any[]).map((profile) => {
-              const category = normalizeCategory(profile.category);
-              const serviceProfile = serviceProfilesMap.get(profile.id);
-
-              const specialties = serviceProfile?.specialties || [];
-              const isChefOrHomeCook =
-                category === "chef" || category === "home_cook";
-
-              const serviceDescription = serviceProfile
-                ? serviceProfile.bio ||
-                  (specialties.length > 0
-                    ? `Specializing in ${specialties.slice(0, 2).join(", ")}`
-                    : "Specialized culinary services")
-                : profile.featured_description;
-
-              const image =
-                (isChefOrHomeCook && serviceProfile?.image_url) ||
-                profile.featured_image;
-
-              return {
-                id: profile.id,
-                name: profile.name,
-                featured_image: image,
-                featured_description: isChefOrHomeCook && serviceProfile ? serviceDescription : profile.featured_description,
-                is_featured: true,
-                category: profile.category,
-                location: profile.location,
-                specialties,
-                verified: Boolean(profile.verified),
-                featured_image_url: image,
-              };
-            });
-
-            return NextResponse.json({ vendors: vendors.slice(0, 8) });
-          }
+        if (entRowsError) {
+          console.warn("[featured-vendors] entitlement rows fetch failed:", entRowsError);
+        } else {
+          for (const row of entRows || []) eligibleVendorIds.add(row.vendor_id);
         }
       }
     } catch (entitlementErr) {
-      console.warn("[featured-vendors] Entitlement fetch failed, falling back", entitlementErr);
+      console.warn("[featured-vendors] entitlement lookup failed:", entitlementErr);
     }
 
-    interface ServiceProfileRow {
-      profile_id: string;
-      image_url: string | null;
-      specialties: string[] | null;
-      base_price: number | null;
-      pricing_model: string | null;
-      bio: string | null;
-      service_mode: string[] | null;
+    // 3) Paid featured placement via purchased tools (reliability fallback)
+    try {
+      const { data: toolRows, error: toolRowsError } = await supabase
+        .from("vendor_purchased_tools")
+        .select("vendor_id")
+        .eq("tool_name", "Featured Placement")
+        .eq("status", "active")
+        .gt("expiry_date", nowIso);
+
+      if (toolRowsError) {
+        console.warn("[featured-vendors] purchased tools lookup failed:", toolRowsError);
+      } else {
+        for (const row of toolRows || []) eligibleVendorIds.add(row.vendor_id);
+      }
+    } catch (toolErr) {
+      console.warn("[featured-vendors] purchased tools lookup error:", toolErr);
     }
 
-    interface ProfileRow {
-      id: string;
-      name: string | null;
-      category: string | null;
-      location: string | null;
-      featured_image: string | null;
-      featured_description: string | null;
-      is_featured: boolean | null;
-      verified?: boolean | null;
-    }
+    const vendorIds = Array.from(eligibleVendorIds);
+    if (vendorIds.length === 0) return NextResponse.json({ vendors: [] });
 
-    interface ServiceProfileEntry extends ServiceProfileRow {
-      profile: ProfileRow;
-    }
-
-    interface FeaturedVendorRow {
-      id: string;
-      name: string | null;
-      featured_image: string | null;
-      featured_description: string | null;
-      is_featured: boolean | null;
-      category: string | null;
-      location: string | null;
-      specialties: string[];
-      base_price?: number | null;
-      pricing_model?: string | null;
-      verified?: boolean | null;
-    }
-
-    // Fetch featured vendors from profiles table
-    // Using service role key to bypass RLS for public access
     const { data: profilesData, error: profilesError } = await supabase
       .from("profiles")
-      .select("id, name, featured_image, featured_description, is_featured, category, location, verified")
+      .select("id, name, category, location, featured_image, featured_description, is_featured, verified")
       .eq("role", "vendor")
-      .eq("is_featured", true)
-      .order("created_at", { ascending: false })
-      .limit(8);
+      .in("id", vendorIds);
 
     if (profilesError) {
-      console.error("Error fetching featured vendors:", profilesError);
+      console.error("[featured-vendors] profile fetch error:", profilesError);
       return NextResponse.json(
         { error: "Failed to fetch featured vendors", details: profilesError.message },
         { status: 500 }
       );
     }
 
-    // Also fetch chefs and home cooks with completed service profiles (even if not featured)
-    // This ensures they appear on the homepage
-    const { data: allServiceProfiles, error: serviceProfilesError } = await supabase
-      .from("vendor_service_profiles")
-      .select("profile_id, image_url, specialties, base_price, pricing_model, bio, service_mode");
+    const chefHomeIds = (profilesData || [])
+      .filter((p: ProfileRow) => {
+        const category = normalizeCategory(p.category);
+        return category === "chef" || category === "home_cook";
+      })
+      .map((p: ProfileRow) => p.id);
 
-    const serviceProfilesMap = new Map<string, ServiceProfileEntry>();
-    
-    if (!serviceProfilesError && allServiceProfiles) {
-      const serviceProfiles = allServiceProfiles as ServiceProfileRow[];
-      const allowMissingServiceProfiles = serviceProfiles.length === 0;
+    const { data: serviceProfilesData } = chefHomeIds.length
+      ? await supabase
+          .from("vendor_service_profiles")
+          .select("profile_id, image_url, specialties, bio, base_price, pricing_model")
+          .in("profile_id", chefHomeIds)
+      : { data: [] as ServiceProfileRow[] };
 
-      // Get profile IDs with service profiles
-      const serviceProfileIds = serviceProfiles
-        .map(sp => sp.profile_id)
-        .filter(Boolean);
-      
-      if (serviceProfileIds.length > 0 || allowMissingServiceProfiles) {
-        // Fetch profiles for these service profiles (profiles is source of truth)
-        const serviceProfileUsersQuery = supabase
-          .from("profiles")
-          .select("id, name, category, location, featured_image, featured_description, is_featured, verified")
-          .eq("role", "vendor")
-          .in("category", ["chef", "home_cook"]);
+    const serviceProfileMap = new Map<string, ServiceProfileRow>(
+      (serviceProfilesData || []).map((sp: ServiceProfileRow) => [sp.profile_id, sp])
+    );
 
-        const { data: serviceProfileUsers, error: serviceProfileUsersError } = allowMissingServiceProfiles
-          ? await serviceProfileUsersQuery
-          : await serviceProfileUsersQuery.in("id", serviceProfileIds);
-
-        if (!serviceProfileUsersError && serviceProfileUsers) {
-          const serviceProfileMap = new Map(
-            serviceProfiles.map(sp => [sp.profile_id, sp])
-          );
-
-          (serviceProfileUsers as ProfileRow[]).forEach(profile => {
-            const serviceProfile = serviceProfileMap.get(profile.id);
-            const category = normalizeCategory(profile.category);
-
-            if (!category) {
-              return;
-            }
-
-            if (category !== "chef" && category !== "home_cook") {
-              return;
-            }
-
-            if (serviceProfile && !hasCompletedServiceProfile(serviceProfile)) {
-              return;
-            }
-
-            serviceProfilesMap.set(profile.id, {
-              ...(serviceProfile || {
-                profile_id: profile.id,
-                image_url: null,
-                specialties: [],
-                base_price: 0,
-                pricing_model: null,
-                bio: null,
-                service_mode: [],
-              }),
-              specialties: serviceProfile?.specialties || [],
-              profile: {
-                ...profile,
-                category,
-              }
-            });
-          });
-        }
-      }
-    }
-
-    // Combine featured vendors with service profile vendors
-    const featuredVendorIds = new Set((profilesData || []).map(p => p.id));
     const vendors: FeaturedVendorRow[] = [];
-    
-    // Add featured vendors
-    (profilesData || []).forEach(profile => {
-      const serviceProfile = serviceProfilesMap.get(profile.id);
+
+    (profilesData || []).forEach((profile: ProfileRow) => {
+      const serviceProfile = serviceProfileMap.get(profile.id);
       const category = normalizeCategory(profile.category);
       const specialties = serviceProfile?.specialties || [];
-      const serviceDescription =
-        serviceProfile?.bio || (specialties.length > 0
-          ? `Specializing in ${specialties.slice(0, 2).join(', ')}`
-          : "Specialized culinary services");
       const image = serviceProfile?.image_url || profile.featured_image;
-
       const isChefOrHomeCook = category === "chef" || category === "home_cook";
-      
+
       vendors.push({
-        ...profile,
+        id: profile.id,
+        name: profile.name,
         featured_image: image,
-        featured_description: isChefOrHomeCook && serviceProfile
-          ? serviceDescription
-          : profile.featured_description,
+        featured_description:
+          (isChefOrHomeCook && serviceProfile?.bio) || profile.featured_description,
+        is_featured: profile.is_featured,
+        category: profile.category,
+        location: profile.location,
+        verified: profile.verified,
         specialties,
-        ...(serviceProfile && {
-          base_price: serviceProfile.base_price ?? null,
-          pricing_model: serviceProfile.pricing_model ?? null,
-        })
+        base_price: serviceProfile?.base_price ?? null,
+        pricing_model: serviceProfile?.pricing_model ?? null,
       });
     });
-    
-    // Add service profile vendors that aren't already in featured list
-    // Limit to 4 additional to keep total around 8
-    const additionalServiceVendors = Array.from(serviceProfilesMap.values())
-      .filter(sp => !featuredVendorIds.has(sp.profile_id))
-      .slice(0, 4)
-      .map(sp => {
-        const specialties = sp.specialties || [];
-        const description =
-          sp.bio || (specialties.length > 0
-            ? `Specializing in ${specialties.slice(0, 2).join(', ')}`
-            : "Specialized culinary services");
 
-        return {
-          id: sp.profile_id,
-          name: sp.profile.name,
-          featured_image: sp.image_url,
-          featured_description: description,
-          is_featured: false, // Not explicitly featured, but included for visibility
-          category: sp.profile.category,
-          location: sp.profile.location,
-          verified: sp.profile.verified ?? false,
-          specialties,
-          base_price: sp.base_price,
-          pricing_model: sp.pricing_model,
-        };
-      });
-    
-    vendors.push(...additionalServiceVendors);
+    // Prioritize admin-featured first, then paid-featured.
+    const sortedVendors = vendors
+      .sort((a, b) => Number(Boolean(b.is_featured)) - Number(Boolean(a.is_featured)))
+      .slice(0, 8);
 
-    return NextResponse.json({ vendors });
+    return NextResponse.json({ vendors: sortedVendors });
   } catch (error) {
     console.error("Error in featured vendors API:", error);
     const errorMessage = error instanceof Error ? error.message : "Internal server error";

@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { vendorMayAccessServiceRequestsPage } from "@/lib/vendorCategories";
 
 interface ServiceRequest {
   id: string;
@@ -217,10 +218,9 @@ export default function ServiceRequestsPage() {
           return;
         }
 
-        // Check vendor subscription plan and category from profiles table
         const { data: profile, error: profileError } = await supabase
           .from("profiles")
-          .select("subscription_plan, is_premium, category, role")
+          .select("category, role")
           .eq("id", user.id)
           .single();
 
@@ -230,19 +230,26 @@ export default function ServiceRequestsPage() {
           return;
         }
 
-        const plan = profile?.subscription_plan || "free_trial";
-        
-        // Check if vendor is chef or home_cook
-        const isChefOrHomeCook = profile?.category === 'chef' || profile?.category === 'home_cook';
-        
-        // Allow access if: Professional plan OR chef/home_cook
-        const hasAccess = (plan === "professional" && profile?.is_premium) || isChefOrHomeCook;
-        
+        let categoryForAccess = profile?.category ?? null;
+        if (!categoryForAccess) {
+          const { data: vendorRow } = await supabase
+            .from("vendors")
+            .select("category")
+            .eq("profile_id", user.id)
+            .maybeSingle();
+          categoryForAccess = vendorRow?.category ?? null;
+        }
+
+        const hasAccess = vendorMayAccessServiceRequestsPage(profile?.role, categoryForAccess);
+
         if (hasAccess) {
-          console.log("✅ Vendor has access to service requests:", { plan, is_premium: profile?.is_premium, category: profile?.category });
+          console.log("✅ Vendor has access to service requests:", { category: categoryForAccess });
           await fetchServiceRequests();
         } else {
-          console.log("⚠️ Vendor does not have access:", { plan, is_premium: profile?.is_premium, category: profile?.category });
+          console.log("⚠️ User does not have access to vendor service requests:", {
+            role: profile?.role,
+            category: categoryForAccess,
+          });
           setRequests([]);
         }
       } catch (error) {
@@ -584,12 +591,21 @@ export default function ServiceRequestsPage() {
       
       const { data: profile } = await supabase
         .from("profiles")
-        .select("subscription_plan, is_premium, category")
+        .select("category, role")
         .eq("id", user.id)
         .single();
-      
-      const isChefOrHomeCook = profile?.category === 'chef' || profile?.category === 'home_cook';
-      const hasAccessCheck = (profile?.subscription_plan === "professional" && profile?.is_premium) || isChefOrHomeCook;
+
+      let categoryForAccess = profile?.category ?? null;
+      if (!categoryForAccess) {
+        const { data: vendorRow } = await supabase
+          .from("vendors")
+          .select("category")
+          .eq("profile_id", user.id)
+          .maybeSingle();
+        categoryForAccess = vendorRow?.category ?? null;
+      }
+
+      const hasAccessCheck = vendorMayAccessServiceRequestsPage(profile?.role, categoryForAccess);
       
       setHasAccess(hasAccessCheck);
     };
@@ -616,16 +632,10 @@ export default function ServiceRequestsPage() {
               Access Required
             </h2>
             <p className="text-gray-600 mb-6">
-              Service Requests are available for Professional Plan vendors or Chefs/Home Cooks.
+              Service requests are available to approved marketplace vendor accounts.
             </p>
-            <p className="text-gray-500 text-sm mb-6">
-              Upgrade to Professional Plan to receive and manage service requests from customers who want to hire you for events, catering, and other services.
-            </p>
-            <Button
-              onClick={() => router.push("/vendor/subscription")}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white"
-            >
-              Upgrade to Professional Plan
+            <Button onClick={() => router.push("/vendor/dashboard")} variant="outline">
+              Back to dashboard
             </Button>
           </CardContent>
         </Card>
@@ -634,7 +644,7 @@ export default function ServiceRequestsPage() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-3 sm:p-6 max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
         <div>
@@ -643,14 +653,14 @@ export default function ServiceRequestsPage() {
             Manage service requests from customers
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex w-full sm:w-auto items-center gap-3 sm:gap-4">
           {newCount > 0 && (
             <Badge variant="destructive" className="text-sm px-3 py-1">
               {newCount} New
             </Badge>
           )}
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-full sm:w-[180px]">
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
             <SelectContent>
@@ -689,16 +699,16 @@ export default function ServiceRequestsPage() {
                 request.status === "New" ? "border-l-4 border-l-blue-600 bg-blue-50/30" : ""
               }`}
             >
-              <CardContent className="p-6">
+              <CardContent className="p-4 sm:p-6">
                 <div className="flex flex-col lg:flex-row gap-6">
                   {/* Left: Request Info */}
                   <div className="flex-1 space-y-4">
                     {/* Header with Status */}
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-2">
                           <User className="h-5 w-5 text-indigo-600" />
-                          <h3 className="text-lg font-semibold text-gray-900">
+                          <h3 className="text-base sm:text-lg font-semibold text-gray-900 break-words">
                             {request.profiles?.name || "Unknown User"}
                           </h3>
                           <Badge
@@ -709,19 +719,19 @@ export default function ServiceRequestsPage() {
                           </Badge>
                         </div>
                         {request.profiles?.email && (
-                          <div className="flex items-center gap-2 text-sm text-gray-600 ml-8">
+                          <div className="flex items-center gap-2 text-sm text-gray-600 sm:ml-8 break-all">
                             <Mail className="h-4 w-4" />
                             <span>{request.profiles.email}</span>
                           </div>
                         )}
                         {request.contact_info && (
-                          <div className="flex items-center gap-2 text-sm text-gray-600 ml-8 mt-1">
+                          <div className="flex items-center gap-2 text-sm text-gray-600 sm:ml-8 mt-1 break-all">
                             <Phone className="h-4 w-4" />
                             <span>{request.contact_info}</span>
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <div className="flex items-center gap-2 text-xs text-gray-500 sm:justify-end">
                         <Calendar className="h-4 w-4" />
                         <span>{formatTimeAgo(request.created_at)}</span>
                       </div>
@@ -785,7 +795,7 @@ export default function ServiceRequestsPage() {
                           {request.status !== "Paid" && request.status !== "Completed" && !request.price_confirmed && (
                             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-3">
                               <h5 className="text-sm font-semibold text-gray-700">Set Final Price</h5>
-                              <div className="flex gap-2">
+                              <div className="flex flex-col sm:flex-row gap-2">
                                 <div className="flex-1">
                                   <Input
                                     type="number"
@@ -806,7 +816,7 @@ export default function ServiceRequestsPage() {
                                 <Button
                                   onClick={() => confirmPrice(request.id)}
                                   disabled={confirmingPrice === request.id || !priceInput.get(request.id)?.trim()}
-                                  className="bg-green-600 hover:bg-green-700 text-white"
+                                  className="bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto"
                                 >
                                   {confirmingPrice === request.id ? (
                                     <>
@@ -891,7 +901,7 @@ export default function ServiceRequestsPage() {
                   </div>
 
                   {/* Right: Actions */}
-                  <div className="lg:w-48 flex flex-col gap-2">
+                  <div className="lg:w-48 flex flex-col gap-2 lg:sticky lg:top-4 self-start">
                     <Button
                       onClick={() => handleRequestClick(request.id)}
                       variant={selectedRequest === request.id ? "default" : "outline"}

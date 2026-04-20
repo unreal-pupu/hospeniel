@@ -2,8 +2,29 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { logValidationFailure } from "@/lib/validation/http";
 import { profileIdQuerySchema } from "@/lib/validation/schemas";
+import { checkRateLimit, RateLimitConfigs } from "@/lib/rateLimiter";
 
 export async function GET(req: Request) {
+  const rateLimitResult = checkRateLimit(
+    "/api/vendor-lookup",
+    req,
+    RateLimitConfigs.PUBLIC_LISTING
+  );
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      { success: false, error: "Too many requests. Please try again later." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": rateLimitResult.retryAfter?.toString() || "60",
+          "X-RateLimit-Limit": RateLimitConfigs.PUBLIC_LISTING.maxRequests.toString(),
+          "X-RateLimit-Remaining": rateLimitResult.remaining.toString(),
+          "X-RateLimit-Reset": new Date(rateLimitResult.resetTime).toISOString(),
+        },
+      }
+    );
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const rawProfileId = searchParams.get("profile_id");

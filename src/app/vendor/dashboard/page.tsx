@@ -16,6 +16,7 @@ import type {
 import { getRoleBasedRedirect } from "@/lib/roleRouting";
 import dynamic from "next/dynamic";
 import { VendorPremiumToolsSection } from "@/components/vendor-premium-tools-section";
+import { PLATFORM_FOOD_COMMISSION_RATE } from "@/lib/platformPricing";
 
 const CookChefDashboard = dynamic(() => import('@/components/CookChefDashboard'), {
   loading: () => (
@@ -53,8 +54,8 @@ interface WindowWithVendorDashboard extends Window {
   __vendorDashboardFetchOrders?: (showRefreshing?: boolean) => Promise<void>;
 }
 
-// Commission calculation helper
-const COMMISSION_RATE = 0.10; // 10%
+// Commission calculation helper (matches platform food commission rate)
+const COMMISSION_RATE = PLATFORM_FOOD_COMMISSION_RATE;
 
 const calculateCommission = (amount: number): number => {
   return amount * COMMISSION_RATE;
@@ -724,7 +725,7 @@ const VendorDashboard: React.FC = () => {
               Please create your Paystack subaccount with accurate details from the Settings page. This is required to receive payouts for all orders.
             </p>
             <p className="text-amber-800 font-body text-sm leading-relaxed mt-2">
-              Platform commission: <span className="font-semibold">10% per order</span> (deducted automatically).
+              Platform commission: <span className="font-semibold">2% per order</span> (deducted automatically).
             </p>
           </div>
         </div>
@@ -819,7 +820,7 @@ const VendorDashboard: React.FC = () => {
 
               {/* Total Commission */}
               <div className="bg-hospineil-base-bg rounded-xl p-4 border border-gray-200">
-                <p className="text-sm text-gray-600 font-body mb-2">Total Commission (10%)</p>
+                <p className="text-sm text-gray-600 font-body mb-2">Total Commission (2%)</p>
                 <p className="text-2xl font-bold text-hospineil-accent font-header">
                   ₦{totalCommission.toLocaleString("en-NG", { minimumFractionDigits: 2 })}
                 </p>
@@ -957,7 +958,7 @@ const VendorDashboard: React.FC = () => {
                       <div className="bg-hospineil-base-bg rounded-lg p-3 border border-gray-200">
                         <p className="text-xs text-gray-600 font-body leading-relaxed">
                           <span className="font-semibold">₦{orderAmount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</span> total —{" "}
-                          <span className="font-semibold text-hospineil-accent">₦{commission.toLocaleString("en-NG", { minimumFractionDigits: 2 })} (10% Hospineil fee)</span> deducted.{" "}
+                          <span className="font-semibold text-hospineil-accent">₦{commission.toLocaleString("en-NG", { minimumFractionDigits: 2 })} (2% Hospineil fee)</span> deducted.{" "}
                           <span className="font-semibold text-green-600">₦{netEarning.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</span> credited to your wallet.
                         </p>
                       </div>

@@ -29,11 +29,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PLATFORM_FOOD_COMMISSION_RATE } from "@/lib/platformPricing";
 
 dayjs.extend(relativeTime);
 
-// Commission calculation helper
-const COMMISSION_RATE = 0.10; // 10%
+const COMMISSION_RATE = PLATFORM_FOOD_COMMISSION_RATE;
 
 const calculateCommission = (amount: number): number => {
   return amount * COMMISSION_RATE;
@@ -386,6 +386,7 @@ interface DeliveryTaskRow {
 
       // Get current user (vendor) ID
       const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
       if (!user) {
         alert("You must be logged in to request a rider");
         return;
@@ -401,6 +402,7 @@ interface DeliveryTaskRow {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
         },
         body: JSON.stringify({
           orderId,
@@ -446,6 +448,7 @@ interface DeliveryTaskRow {
       
       // Get current user (vendor) ID
       const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
       if (!user) {
         alert("You must be logged in to update orders");
         setUpdatingOrderId(null);
@@ -462,6 +465,7 @@ interface DeliveryTaskRow {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
         },
         body: JSON.stringify({
           orderId,
@@ -834,7 +838,7 @@ interface DeliveryTaskRow {
                       <div className="bg-hospineil-base-bg rounded-lg p-3 border border-gray-200 mt-3">
                         <p className="text-xs text-gray-600 font-body leading-relaxed">
                           <span className="font-semibold">₦{order.total_price.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</span> total —{" "}
-                          <span className="font-semibold text-hospineil-accent">₦{calculateCommission(order.total_price).toLocaleString("en-NG", { minimumFractionDigits: 2 })} (10% Hospineil fee)</span> deducted.{" "}
+                          <span className="font-semibold text-hospineil-accent">₦{calculateCommission(order.total_price).toLocaleString("en-NG", { minimumFractionDigits: 2 })} (2% Hospineil fee)</span> deducted.{" "}
                           <span className="font-semibold text-green-600">₦{calculateNetEarnings(order.total_price).toLocaleString("en-NG", { minimumFractionDigits: 2 })}</span> credited to your wallet.
                         </p>
                       </div>

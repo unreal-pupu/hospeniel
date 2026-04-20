@@ -1,13 +1,26 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { ensureAuthenticatedRequest } from "@/lib/api/ensureAuthenticatedRequest";
 
 export async function POST(req: Request) {
   try {
+    const authCheck = await ensureAuthenticatedRequest(req);
+    if (!authCheck.ok) return authCheck.response;
+    const { userId, role, isAdmin } = authCheck.context;
+
+    const isVendorLike = role === "vendor" || role === "chef" || role === "home_cook";
+    if (!isAdmin && !isVendorLike) {
+      return NextResponse.json(
+        { success: false, error: "Forbidden. Vendor access required." },
+        { status: 403 }
+      );
+    }
+
     const supabaseAdmin = getSupabaseAdminClient();
     const body = await req.json();
-    const { orderId, newStatus, vendorId } = body;
+    const { orderId, newStatus } = body;
 
-    console.log("📦 Order update request:", { orderId, newStatus, vendorId });
+    console.log("📦 Order update request:", { orderId, newStatus, actor: userId });
 
     if (!orderId || !newStatus) {
       console.error("❌ Missing required fields:", { orderId: !!orderId, newStatus: !!newStatus });
@@ -68,9 +81,9 @@ export async function POST(req: Request) {
       status: order.status 
     });
 
-    // Verify the order belongs to the vendor (if vendorId is provided)
-    if (vendorId && order.vendor_id !== vendorId) {
-      console.error("Order vendor mismatch:", { orderVendorId: order.vendor_id, providedVendorId: vendorId });
+    // Non-admin actors can only mutate orders assigned to them.
+    if (!isAdmin && order.vendor_id !== userId) {
+      console.error("Order vendor mismatch:", { orderVendorId: order.vendor_id, authenticatedUserId: userId });
       return NextResponse.json(
         { success: false, error: "Order does not belong to this vendor" },
         { status: 403 }

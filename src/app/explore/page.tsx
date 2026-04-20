@@ -129,8 +129,7 @@ export default function ExplorePage() {
     open: boolean;
     vendorId: string;
     vendorName: string;
-    isPremium: boolean;
-    subscriptionPlan?: string;
+    vendorCategory: string | null;
   } | null>(null);
 
   // Fetch chefs and home cooks with service profiles
@@ -1191,8 +1190,7 @@ export default function ExplorePage() {
                               open: true,
                               vendorId: vendor.profile_id,
                               vendorName: vendor.name,
-                              isPremium: true, // Set to true so dialog works (chefs/home cooks always accept requests)
-                              subscriptionPlan: 'professional', // Not used for chefs/home cooks but required by dialog
+                              vendorCategory: vendor.category,
                             });
                           }}
                           className="w-full bg-hospineil-primary text-white py-2 rounded-lg hover:bg-hospineil-primary/90 transition-colors font-button flex items-center justify-center gap-2"
@@ -1374,9 +1372,7 @@ export default function ExplorePage() {
           }}
           vendorId={serviceRequestDialog.vendorId}
           vendorName={serviceRequestDialog.vendorName}
-          isPremium={serviceRequestDialog.isPremium}
-          subscriptionPlan={serviceRequestDialog.subscriptionPlan}
-          isChefOrHomeCook={serviceProfileVendors.some(v => v.profile_id === serviceRequestDialog.vendorId)}
+          vendorCategory={serviceRequestDialog.vendorCategory}
         />
       )}
     </div>

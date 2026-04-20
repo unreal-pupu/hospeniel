@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { PLATFORM_FOOD_COMMISSION_RATE } from "@/lib/platformPricing";
 
 export const dynamic = "force-dynamic";
 
-const COMMISSION_RATE = 0.10;
+const COMMISSION_RATE = PLATFORM_FOOD_COMMISSION_RATE;
 
 async function ensureAdmin(req: Request) {
   const supabaseAdmin = getSupabaseAdminClient();

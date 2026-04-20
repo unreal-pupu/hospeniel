@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { processPremiumToolPayment, syncVendorEntitlementsFromPurchasedTools } from "@/lib/vendor-feature-entitlements";
+import { ensureAuthenticatedRequest } from "@/lib/api/ensureAuthenticatedRequest";
 
 const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY;
 
 export async function POST(req: Request) {
   try {
+    const authCheck = await ensureAuthenticatedRequest(req);
+    if (!authCheck.ok) return authCheck.response;
+
     if (!paystackSecretKey?.trim()) {
       return NextResponse.json(
         { success: false, error: "PAYSTACK_SECRET_KEY not configured" },
@@ -13,7 +17,8 @@ export async function POST(req: Request) {
       );
     }
     const body = (await req.json()) as { userId?: string };
-    const userId = body.userId;
+    const userId =
+      authCheck.context.isAdmin && body.userId ? body.userId : authCheck.context.userId;
     if (!userId) {
       return NextResponse.json({ success: false, error: "userId is required" }, { status: 400 });
     }

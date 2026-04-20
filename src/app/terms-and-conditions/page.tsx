@@ -56,7 +56,7 @@ export default function TermsAndConditionsPage() {
           <section>
             <h2 className="text-xl font-semibold mb-2">5.Fees & Payments</h2>
             <ul className="list-disc list-inside space-y-1 mt-2">
-              <li>Hospeniel charges a 10% commission on each completed order, deducted automatically before vendor payouts.</li>
+              <li>Hospeniel charges a 2% commission on each completed order, deducted automatically before vendor payouts.</li>
               <li>Vendors must provide valid bank account information to receive payouts.</li>
               <li>Payouts may be delayed if vendor accounts are unverified or if payments are under review.</li>
               <li>Hospeniel reserves the right to update fees or payment terms with prior notice..</li>

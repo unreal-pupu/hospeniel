@@ -2,14 +2,26 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { parseJsonBody } from "@/lib/validation/http";
 import { subscriptionUpdateSchema } from "@/lib/validation/schemas";
+import { ensureAuthenticatedRequest } from "@/lib/api/ensureAuthenticatedRequest";
 
 export async function POST(req: Request) {
   try {
+    const authCheck = await ensureAuthenticatedRequest(req);
+    if (!authCheck.ok) return authCheck.response;
+
     const supabaseAdmin = getSupabaseAdminClient();
     const parsed = await parseJsonBody(req, subscriptionUpdateSchema, "POST /api/subscription/update");
     if (!parsed.ok) return parsed.response;
 
     const { userId, subscriptionPlan, paymentReference } = parsed.data;
+    const canModify =
+      authCheck.context.isAdmin || authCheck.context.userId === userId;
+    if (!canModify) {
+      return NextResponse.json(
+        { success: false, error: "Forbidden. You can only update your own subscription." },
+        { status: 403 }
+      );
+    }
 
     console.log("🔄 Subscription update request:", { userId, subscriptionPlan, paymentReference });
 

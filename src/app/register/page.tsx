@@ -276,7 +276,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-hospineil-base-bg px-4">
+    <div className="flex min-h-screen items-start justify-center bg-hospineil-base-bg px-3 py-4 sm:px-4 sm:py-8">
       <Card className="w-full max-w-lg shadow-md rounded-2xl">
         <CardHeader>
           <CardTitle className="text-center">
@@ -305,7 +305,7 @@ export default function RegisterPage() {
                     : "Enter your full name"
                 }
                 required
-                className="bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11"
+                className="bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11 text-base"
               />
             </div>
 
@@ -343,7 +343,7 @@ export default function RegisterPage() {
                 }}
                 placeholder="e.g., +2348012345678 or 08012345678"
                 required
-                className="bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11"
+                className="bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11 text-base"
               />
               <p className="text-xs text-gray-500 mt-1">
                 {role === "vendor" 
@@ -366,7 +366,7 @@ export default function RegisterPage() {
                   onChange={(e) => setUserAddress(e.target.value)}
                   placeholder="Enter your full address (street, city, state)"
                   required
-                  className="bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11"
+                  className="bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11 text-base"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Include street address, city, and state for accurate delivery
@@ -413,7 +413,7 @@ export default function RegisterPage() {
                   value={category}
                   required
                 >
-                  <SelectTrigger id="category" className="w-full">
+                <SelectTrigger id="category" className="w-full bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11">
                     <SelectValue placeholder="Select your category" />
                   </SelectTrigger>
                   <SelectContent>
@@ -441,7 +441,7 @@ export default function RegisterPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="Enter your email address"
                   required
-                  className="pl-10 bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11"
+                  className="pl-10 bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11 text-base"
                 />
               </div>
             </div>
@@ -469,7 +469,7 @@ export default function RegisterPage() {
                   }}
                   placeholder="Create a strong password"
                   required
-                  className="pl-10 pr-10 bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11"
+                  className="pl-10 pr-10 bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11 text-base"
                 />
                 <button
                   type="button"
@@ -507,7 +507,7 @@ export default function RegisterPage() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Re-enter your password"
                   required
-                  className="pl-10 pr-10 bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11"
+                  className="pl-10 pr-10 bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11 text-base"
                 />
                 <button
                   type="button"
@@ -542,7 +542,7 @@ export default function RegisterPage() {
             {/* Submit Button */}
             <Button 
               type="submit" 
-              className="w-full mt-4 bg-hospineil-accent text-hospineil-light-bg hover:bg-hospineil-accent-hover transition-all duration-300 hover:scale-105 hover:shadow-lg font-button" 
+              className="w-full mt-4 bg-hospineil-accent text-hospineil-light-bg hover:bg-hospineil-accent-hover transition-all duration-300 hover:scale-105 hover:shadow-lg font-button min-h-11" 
               disabled={loading}
             >
               {loading ? "Registering..." : "Register"}

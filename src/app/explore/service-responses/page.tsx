@@ -30,9 +30,10 @@ import {
   CheckCircle,
 } from "lucide-react";
 import Image from "next/image";
+import { PLATFORM_SERVICE_CHARGE_NGN } from "@/lib/platformPricing";
 
-/** Platform service charge for service booking checkout (NGN); keep in sync with payment flows */
-const SERVICE_CHARGE_SERVICE_BOOKING = 100;
+/** Platform service charge for service booking checkout (NGN); same constant as food checkout */
+const SERVICE_CHARGE_SERVICE_BOOKING = PLATFORM_SERVICE_CHARGE_NGN;
 
 interface ServiceRequest {
   id: string;
@@ -254,7 +255,11 @@ export default function ServiceResponsesPage() {
 
       // Try API route first (bypasses RLS)
       try {
-        const apiResponse = await fetch(`/api/service-request-replies?request_id=${requestId}&user_id=${user.id}`, {
+        const { data: { session } } = await supabase.auth.getSession();
+        const apiResponse = await fetch(`/api/service-request-replies?request_id=${requestId}`, {
+          headers: {
+            Authorization: `Bearer ${session?.access_token || ""}`,
+          },
           cache: 'no-store',
         });
         

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { ensureAuthenticatedRequest } from "@/lib/api/ensureAuthenticatedRequest";
 
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -10,15 +11,28 @@ if (!serviceRoleKey) {
 
 export async function POST(req: Request) {
   try {
+    const authCheck = await ensureAuthenticatedRequest(req);
+    if (!authCheck.ok) return authCheck.response;
+    const { userId, role, isAdmin } = authCheck.context;
+
+    const isVendorLike = role === "vendor" || role === "chef" || role === "home_cook";
+    if (!isAdmin && !isVendorLike) {
+      return NextResponse.json(
+        { success: false, error: "Forbidden. Vendor access required." },
+        { status: 403 }
+      );
+    }
+
     const supabaseAdmin = getSupabaseAdminClient();
     const body = await req.json();
-    const { orderId, vendorId } = body;
+    const { orderId, vendorId: bodyVendorId } = body;
+    const vendorId = isAdmin && typeof bodyVendorId === "string" ? bodyVendorId : userId;
 
     console.log("📦 Create delivery task request:", { orderId, vendorId });
 
-    if (!orderId || !vendorId) {
+    if (!orderId) {
       return NextResponse.json(
-        { success: false, error: "Order ID and vendor ID are required" },
+        { success: false, error: "Order ID is required" },
         { status: 400 }
       );
     }

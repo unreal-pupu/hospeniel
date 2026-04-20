@@ -1,7 +1,28 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { checkRateLimit, RateLimitConfigs } from "@/lib/rateLimiter";
 
 export async function POST(req: Request) {
+  const rateLimitResult = checkRateLimit(
+    "/api/sponsored-banners/track",
+    req,
+    RateLimitConfigs.PUBLIC_LISTING
+  );
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      { ok: false, error: "Too many requests. Please try again later." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": rateLimitResult.retryAfter?.toString() || "60",
+          "X-RateLimit-Limit": RateLimitConfigs.PUBLIC_LISTING.maxRequests.toString(),
+          "X-RateLimit-Remaining": rateLimitResult.remaining.toString(),
+          "X-RateLimit-Reset": new Date(rateLimitResult.resetTime).toISOString(),
+        },
+      }
+    );
+  }
+
   try {
     const body = (await req.json()) as {
       bannerId?: string;

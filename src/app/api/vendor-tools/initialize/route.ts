@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { ensureAuthenticatedRequest } from "@/lib/api/ensureAuthenticatedRequest";
 import {
   getExpectedToolPriceKobo,
   isValidPremiumToolName,
@@ -8,12 +9,16 @@ import {
 
 export async function POST(req: Request) {
   try {
+    const authCheck = await ensureAuthenticatedRequest(req);
+    if (!authCheck.ok) return authCheck.response;
+
     const body = (await req.json()) as {
       userId?: string;
       toolName?: string;
       billing?: VendorToolBilling;
     };
-    const userId = body.userId;
+    const userId =
+      authCheck.context.isAdmin && body.userId ? body.userId : authCheck.context.userId;
     const toolName = body.toolName;
     const billing = body.billing === "yearly" ? "yearly" : "monthly";
 

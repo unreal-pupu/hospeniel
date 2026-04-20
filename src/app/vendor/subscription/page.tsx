@@ -283,11 +283,17 @@ export default function SubscriptionPage() {
     paymentReference: string,
     toolTitle: string
   ) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const authHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (session?.access_token) authHeaders.Authorization = `Bearer ${session.access_token}`;
+
     const maxAttempts = 8;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const statusResponse = await fetch("/api/vendor-tools/status", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders,
         body: JSON.stringify({ userId, paymentReference, toolName: toolTitle }),
       });
       const statusData = await statusResponse.json();
@@ -302,7 +308,7 @@ export default function SubscriptionPage() {
       // Fallback verifier (not primary path): reconcile payment if webhook is delayed/failed
       const fallbackResponse = await fetch("/api/vendor-tools/activate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders,
         body: JSON.stringify({ userId, paymentReference }),
       });
       const fallbackData = await fallbackResponse.json();
@@ -356,7 +362,10 @@ export default function SubscriptionPage() {
 
       const initializeResponse = await fetch("/api/vendor-tools/initialize", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.id ? (await supabase.auth.getSession()).data.session?.access_token || "" : ""}`,
+        },
         body: JSON.stringify({ userId: user.id, toolName: toolTitle, billing }),
       });
       const initializeData = await initializeResponse.json();
@@ -430,6 +439,7 @@ export default function SubscriptionPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ""}`,
         },
         body: JSON.stringify({
           userId,
@@ -467,6 +477,7 @@ export default function SubscriptionPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ""}`,
         },
         body: JSON.stringify({
           userId,

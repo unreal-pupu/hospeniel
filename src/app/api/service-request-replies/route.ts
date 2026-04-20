@@ -1,25 +1,21 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { ensureAuthenticatedRequest } from "@/lib/api/ensureAuthenticatedRequest";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   try {
+    const authCheck = await ensureAuthenticatedRequest(req);
+    if (!authCheck.ok) return authCheck.response;
+
     const supabase = getSupabaseAdminClient();
     const { searchParams } = new URL(req.url);
     const requestId = searchParams.get("request_id");
-    const userId = searchParams.get("user_id");
 
     if (!requestId) {
       return NextResponse.json(
         { error: "request_id is required" },
-        { status: 400 }
-      );
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: "user_id is required" },
         { status: 400 }
       );
     }
@@ -39,7 +35,10 @@ export async function GET(req: Request) {
     }
 
     // Check if user is the customer or vendor for this request
-    if (serviceRequest.user_id !== userId && serviceRequest.vendor_id !== userId) {
+    if (
+      serviceRequest.user_id !== authCheck.context.userId &&
+      serviceRequest.vendor_id !== authCheck.context.userId
+    ) {
       return NextResponse.json(
         { error: "Unauthorized access to this service request" },
         { status: 403 }

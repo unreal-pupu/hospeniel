@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Search, Filter, CreditCard, User } from "lucide-react";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
+import { PLATFORM_FOOD_COMMISSION_RATE } from "@/lib/platformPricing";
 
 dayjs.extend(relativeTime);
 
@@ -338,8 +339,7 @@ export default function AdminPaymentsPage() {
                 </thead>
                 <tbody>
                   {filteredPayments.map((payment) => {
-                    // Calculate commission (10% of order total)
-                    const COMMISSION_RATE = 0.10;
+                    const COMMISSION_RATE = PLATFORM_FOOD_COMMISSION_RATE;
                     const orderTotal = payment.orders && payment.orders.length > 0
                       ? payment.orders.reduce((sum, order) => sum + (Number(order.total_price) || 0), 0)
                       : Number(payment.total_amount || 0);

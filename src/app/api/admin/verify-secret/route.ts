@@ -6,13 +6,13 @@ export async function POST(req: Request) {
     const { secretKey } = await req.json();
     const adminSecretKey = process.env.ADMIN_SECRET_KEY; // Server-side only
 
-    // If no secret key is configured, skip verification
+    // Fail closed if secret key is not configured.
     if (!adminSecretKey) {
-      return NextResponse.json({ 
-        valid: true, 
+      return NextResponse.json({
+        valid: false,
         requiresKey: false,
-        message: "Secret key not configured" 
-      });
+        error: "Admin secret key is not configured",
+      }, { status: 500 });
     }
 
     // If empty key provided, return that key is required

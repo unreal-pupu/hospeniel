@@ -23,8 +23,6 @@ interface VendorRow {
   description?: string | null;
   category?: string | null;
   verified?: boolean | null;
-  is_premium?: boolean | null;
-  subscription_plan?: string | null;
 }
 
 interface ProfileRow {
@@ -32,8 +30,6 @@ interface ProfileRow {
   name: string | null;
   location: string | null;
   category: string | null;
-  is_premium?: boolean | null;
-  subscription_plan?: string | null;
 }
 
 interface VendorProfile {
@@ -45,16 +41,13 @@ interface VendorProfile {
   description: string | null;
   category: string | null;
   verified: boolean;
-  isPremium: boolean;
-  subscriptionPlan: string;
 }
 
 interface ServiceRequestState {
   open: boolean;
   vendorId: string;
   vendorName: string;
-  isPremium: boolean;
-  subscriptionPlan?: string;
+  vendorCategory: string | null;
 }
 
 interface VendorRating {
@@ -109,8 +102,6 @@ function toMenuItemWithVendor(item: MenuItemRow, vendor: VendorProfile): MenuIte
       category: vendor.category,
       description: vendor.description,
       verified: vendor.verified,
-      is_premium: vendor.isPremium,
-      subscription_plan: vendor.subscriptionPlan,
     },
   };
 }
@@ -166,13 +157,13 @@ export default function VendorProfilePage() {
 
         const { data: vendorData } = await supabase
           .from("vendors")
-          .select("id, name, business_name, image_url, location, profile_id, description, category, is_premium, subscription_plan, verified")
+          .select("id, name, business_name, image_url, location, profile_id, description, category, verified")
           .eq("profile_id", vendorProfileId)
           .maybeSingle();
 
         const { data: profileData } = await supabase
           .from("profiles")
-          .select("id, name, location, category, is_premium, subscription_plan, verified")
+          .select("id, name, location, category, verified")
           .eq("id", vendorProfileId)
           .maybeSingle();
 
@@ -207,8 +198,6 @@ export default function VendorProfilePage() {
           description: vendorData?.description || null,
           category: profileData?.category || vendorData?.category || null,
           verified: Boolean(profileData?.verified ?? vendorData?.verified),
-          isPremium: Boolean(profileData?.is_premium ?? vendorData?.is_premium),
-          subscriptionPlan: profileData?.subscription_plan || vendorData?.subscription_plan || "free_trial",
         };
 
         setVendor(vendorProfile);
@@ -653,13 +642,12 @@ export default function VendorProfilePage() {
                   isPlacingOrder={placingOrder}
                   onAddToCart={handleAddToCart}
                   onPlaceOrder={placeOrder}
-                  onRequestService={(vendorId, vendorName, subscriptionPlan) =>
+                  onRequestService={(vendorId, vendorName, vendorCategory) =>
                     setServiceRequestDialog({
                       open: true,
                       vendorId,
                       vendorName,
-                      isPremium: vendor.isPremium,
-                      subscriptionPlan,
+                      vendorCategory: vendorCategory ?? vendor.category ?? null,
                     })
                   }
                 />
@@ -767,9 +755,7 @@ export default function VendorProfilePage() {
           }}
           vendorId={serviceRequestDialog.vendorId}
           vendorName={serviceRequestDialog.vendorName}
-          isPremium={serviceRequestDialog.isPremium}
-          subscriptionPlan={serviceRequestDialog.subscriptionPlan}
-          isChefOrHomeCook={isChefOrHomeCook}
+          vendorCategory={serviceRequestDialog.vendorCategory}
         />
       )}
     </>

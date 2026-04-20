@@ -4,6 +4,7 @@ import { checkRateLimit, RateLimitConfigs } from "@/lib/rateLimiter";
 import { validatePassword } from "@/lib/passwordValidation";
 import { parseJsonBody } from "@/lib/validation/http";
 import { registerRequestSchema } from "@/lib/validation/schemas";
+import { PAYSTACK_VENDOR_SUBACCOUNT_PERCENTAGE_CHARGE } from "@/lib/platformPricing";
 
 export async function POST(req: Request) {
   const supabaseAdmin = getSupabaseAdminClient();
@@ -253,7 +254,7 @@ export async function POST(req: Request) {
               business_name: business_name || name,
               settlement_bank: bank_code,
               account_number,
-              percentage_charge: 10, // Hospineil keeps 10% commission
+              percentage_charge: PAYSTACK_VENDOR_SUBACCOUNT_PERCENTAGE_CHARGE,
               primary_contact_email: email,
               primary_contact_name: business_name || name,
               settlement_schedule: "AUTO", // Automatic settlement

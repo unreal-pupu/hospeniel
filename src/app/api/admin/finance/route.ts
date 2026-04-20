@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { ensureAdminRequest } from "@/lib/admin/ensureAdminRequest";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const adminCheck = await ensureAdminRequest(req);
+    if (!adminCheck.ok) return adminCheck.response;
+
     const supabaseAdmin = getSupabaseAdminClient();
-    // TODO: Add admin authentication check here
-    // For now, this endpoint is accessible - add proper admin role check in production
 
     // Get total platform revenue (sum of commissions)
     const { data: commissionData, error: commissionError } = await supabaseAdmin

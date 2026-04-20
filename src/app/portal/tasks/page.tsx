@@ -548,6 +548,7 @@ export default function RiderTasksPage() {
     setUpdating(taskId);
     try {
       const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
       if (!user) {
         alert("You must be logged in to accept tasks");
         return;
@@ -558,6 +559,7 @@ export default function RiderTasksPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
         },
         body: JSON.stringify({
           deliveryTaskId: taskId,
@@ -587,6 +589,7 @@ export default function RiderTasksPage() {
     setUpdating(taskId);
     try {
       const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
       if (!user) {
         alert("You must be logged in");
         return;
@@ -597,6 +600,7 @@ export default function RiderTasksPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
         },
         body: JSON.stringify({
           deliveryTaskId: taskId,
@@ -627,6 +631,7 @@ export default function RiderTasksPage() {
     setUpdating(taskId);
     try {
       const { data: { user } } = await supabase.auth.getUser();
+      const { data: { session } } = await supabase.auth.getSession();
       if (!user) {
         alert("You must be logged in");
         return;
@@ -637,6 +642,7 @@ export default function RiderTasksPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
         },
         body: JSON.stringify({
           deliveryTaskId: taskId,

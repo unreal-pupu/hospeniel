@@ -19,6 +19,7 @@ import {
   Clock,
 } from "lucide-react";
 import Link from "next/link";
+import { PLATFORM_FOOD_COMMISSION_RATE } from "@/lib/platformPricing";
 
 interface DailyOperations {
   reportDate: string;
@@ -350,7 +351,7 @@ export default function AdminDashboard() {
 }
 
 // Commission calculation constant
-const COMMISSION_RATE = 0.10; // 10%
+const COMMISSION_RATE = PLATFORM_FOOD_COMMISSION_RATE;
 
 interface CompletedOrder {
   id: string;

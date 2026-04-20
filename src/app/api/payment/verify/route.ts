@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { PLATFORM_FOOD_COMMISSION_RATE } from "@/lib/platformPricing";
 import { logValidationFailure, zodErrorToUserMessage } from "@/lib/validation/http";
 import { paymentVerifySchema } from "@/lib/validation/schemas";
+import { checkRateLimit, RateLimitConfigs } from "@/lib/rateLimiter";
 
 const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY!;
 
@@ -58,6 +60,31 @@ async function logPaymentAuditEntry(
 }
 
 export async function POST(req: Request) {
+  const endpointPath = new URL(req.url).pathname;
+  const rateLimitResult = checkRateLimit(
+    endpointPath,
+    req,
+    RateLimitConfigs.PAYMENT_VERIFY
+  );
+  if (!rateLimitResult.success) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Too many verification requests. Please try again later.",
+        retryAfter: rateLimitResult.retryAfter,
+      },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": rateLimitResult.retryAfter?.toString() || "60",
+          "X-RateLimit-Limit": RateLimitConfigs.PAYMENT_VERIFY.maxRequests.toString(),
+          "X-RateLimit-Remaining": rateLimitResult.remaining.toString(),
+          "X-RateLimit-Reset": new Date(rateLimitResult.resetTime).toISOString(),
+        },
+      }
+    );
+  }
+
   let requestBody: unknown = null;
   try {
     const supabaseAdmin = getSupabaseAdminClient();
@@ -188,8 +215,9 @@ export async function POST(req: Request) {
     const deliveryFee = Number(transactionData?.metadata?.delivery_fee || 0);
     const vatAmount = Number(transactionData?.metadata?.vat_amount || 0);
     const serviceCharge = Number(transactionData?.metadata?.service_charge || 0);
-    const expectedVendorPayout = foodAmount * 0.9;
-    const expectedPlatformShare = foodAmount * 0.1 + deliveryFee + vatAmount + serviceCharge;
+    const expectedVendorPayout = foodAmount * (1 - PLATFORM_FOOD_COMMISSION_RATE);
+    const expectedPlatformShare =
+      foodAmount * PLATFORM_FOOD_COMMISSION_RATE + deliveryFee + vatAmount + serviceCharge;
     const expectedPlatformPayout = expectedPlatformShare - paystackFeeKobo / 100;
     const expectedGrossTotal = foodAmount + deliveryFee + vatAmount + serviceCharge;
     const hasMismatch = Math.abs(expectedGrossTotal - grossAmount) > 0.01;
@@ -294,14 +322,13 @@ export async function POST(req: Request) {
 
         const notificationData = {
           vendor_id: vendorId,
-          type: "new_order",
-          title: "New Order Received",
+          type: "system",
           message: orderCount === 1
-            ? `Order #${vendorOrders[0].id.substring(0, 8)} from ${customerName} has been placed and paid`
-            : `You have ${orderCount} new order(s) from ${customerName} waiting for your response!`,
+            ? `A customer has made payment for your order #${vendorOrders[0].id.substring(0, 8)}`
+            : `A customer has made payment for ${orderCount} of your orders`,
           read: false,
           metadata: {
-            type: "new_order",
+            type: "new_order_paid",
             order_count: orderCount,
             order_ids: vendorOrders.map(o => o.id),
             customer_name: customerName,
@@ -846,8 +873,7 @@ export async function POST(req: Request) {
         // Create notification for vendor
         const notificationData = {
           vendor_id: resolvedRequest.vendor_id,
-          type: "service_request_paid",
-          title: "Service Request Payment Received",
+          type: "system",
           message: `Payment received for service request ${resolvedRequest.id} from ${customerName}. The request is now paid and ready for completion.`,
           read: false,
           metadata: {
@@ -927,9 +953,12 @@ export async function POST(req: Request) {
     }
 
     // Calculate commission from transaction
-    const commission = transactionData.metadata?.transaction_charge 
-      ? transactionData.metadata.transaction_charge / 100 
-      : amountPaid * 0.10; // Fallback to 10% if not in metadata
+    const metaFoodForCommission = Number(transactionData.metadata?.food_amount || 0);
+    const commission = transactionData.metadata?.transaction_charge
+      ? transactionData.metadata.transaction_charge / 100
+      : metaFoodForCommission > 0
+        ? metaFoodForCommission * PLATFORM_FOOD_COMMISSION_RATE
+        : amountPaid * PLATFORM_FOOD_COMMISSION_RATE;
 
     return NextResponse.json({
       success: true,

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { processPremiumToolPayment } from "@/lib/vendor-feature-entitlements";
+import { ensureAuthenticatedRequest } from "@/lib/api/ensureAuthenticatedRequest";
 
 const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY;
 
@@ -17,6 +18,9 @@ interface PaystackVerifyData {
 
 export async function POST(req: Request) {
   try {
+    const authCheck = await ensureAuthenticatedRequest(req);
+    if (!authCheck.ok) return authCheck.response;
+
     if (!paystackSecretKey?.trim()) {
       console.error("vendor-tools/activate: PAYSTACK_SECRET_KEY missing");
       return NextResponse.json(
@@ -26,10 +30,12 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { userId, paymentReference } = body as {
+    const { userId: bodyUserId, paymentReference } = body as {
       userId?: string;
       paymentReference?: string;
     };
+    const userId =
+      authCheck.context.isAdmin && bodyUserId ? bodyUserId : authCheck.context.userId;
 
     console.log("[vendor-tools/activate] request", { userId, paymentReference: paymentReference?.slice(0, 30) });
 

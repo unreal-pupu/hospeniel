@@ -1,39 +1,21 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { PAYSTACK_VENDOR_SUBACCOUNT_PERCENTAGE_CHARGE } from "@/lib/platformPricing";
+import { ensureAuthenticatedRequest } from "@/lib/api/ensureAuthenticatedRequest";
 
 // Paystack Subaccount API endpoint
 const PAYSTACK_SUBACCOUNT_URL = "https://api.paystack.co/subaccount";
 
 export async function POST(req: Request) {
   try {
+    const authCheck = await ensureAuthenticatedRequest(req);
+    if (!authCheck.ok) return authCheck.response;
+    const { userId: authenticatedUserId, isAdmin } = authCheck.context;
+
     const supabaseAdmin = getSupabaseAdminClient();
     // Get Paystack secret key from environment variables
     // Use server-side environment variable (not NEXT_PUBLIC_*)
     const paystackSecretKeyRaw = process.env.PAYSTACK_SECRET_KEY;
-    
-    // Debug logging - direct access to see what's actually in process.env
-    console.log("🔍 ===== ENVIRONMENT VARIABLE DEBUG =====");
-    console.log("🔍 process.env.PAYSTACK_SECRET_KEY type:", typeof paystackSecretKeyRaw);
-    console.log("🔍 process.env.PAYSTACK_SECRET_KEY exists:", !!paystackSecretKeyRaw);
-    console.log("🔍 process.env.PAYSTACK_SECRET_KEY value (raw):", paystackSecretKeyRaw);
-    console.log("🔍 process.env.PAYSTACK_SECRET_KEY length:", paystackSecretKeyRaw?.length || 0);
-    
-    if (paystackSecretKeyRaw) {
-      // Log first 15 and last 4 characters (masked middle for security)
-      const first15 = paystackSecretKeyRaw.substring(0, Math.min(15, paystackSecretKeyRaw.length));
-      const last4 = paystackSecretKeyRaw.length > 4 ? paystackSecretKeyRaw.substring(paystackSecretKeyRaw.length - 4) : paystackSecretKeyRaw;
-      console.log("🔍 First 15 chars:", JSON.stringify(first15));
-      console.log("🔍 Last 4 chars:", JSON.stringify(last4));
-      console.log("🔍 Full key (JSON stringified):", JSON.stringify(paystackSecretKeyRaw));
-      console.log("🔍 Char codes (first 20):", paystackSecretKeyRaw.substring(0, Math.min(20, paystackSecretKeyRaw.length)).split('').map((c, i) => `[${i}]: '${c}' (${c.charCodeAt(0)})`));
-    } else {
-      console.error("❌ PAYSTACK_SECRET_KEY is undefined or null");
-      console.log("🔍 All process.env keys:", Object.keys(process.env).sort());
-      console.log("🔍 Available env vars with PAYSTACK:", Object.keys(process.env).filter(k => k.includes('PAYSTACK')));
-      console.log("🔍 NODE_ENV:", process.env.NODE_ENV);
-      console.log("🔍 NEXT_PUBLIC_SUPABASE_URL exists:", !!process.env.NEXT_PUBLIC_SUPABASE_URL);
-    }
-    console.log("🔍 ===== END DEBUG =====");
     
     // Trim whitespace and remove any hidden characters
     const paystackSecretKey = paystackSecretKeyRaw 
@@ -95,7 +77,27 @@ export async function POST(req: Request) {
     console.log("✅ Paystack secret key validation passed. Key type:", isValidTestKey ? "TEST" : "LIVE");
 
     const body = await req.json();
-    const { business_name, bank_code, account_number, user_id, percentage_charge = 10 } = body;
+    const {
+      business_name,
+      bank_code,
+      account_number,
+      user_id,
+      percentage_charge = PAYSTACK_VENDOR_SUBACCOUNT_PERCENTAGE_CHARGE,
+    } = body;
+
+    if (!user_id) {
+      return NextResponse.json(
+        { success: false, error: "user_id is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!isAdmin && user_id !== authenticatedUserId) {
+      return NextResponse.json(
+        { success: false, error: "Forbidden. You can only create a subaccount for your own vendor profile." },
+        { status: 403 }
+      );
+    }
 
     // Validate required fields
     if (!business_name || !bank_code || !account_number || !user_id) {

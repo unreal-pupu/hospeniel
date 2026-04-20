@@ -21,6 +21,7 @@ import { VENDOR_LOCATIONS } from "@/lib/vendorLocations";
 import { VENDOR_CATEGORIES } from "@/lib/vendorCategories";
 import { vendorSettingsCoreSchema } from "@/lib/validation/schemas";
 import { uploadImageViaApi, IMAGE_FILE_INPUT_ACCEPT } from "@/lib/uploads/clientUpload";
+import { PAYSTACK_VENDOR_SUBACCOUNT_PERCENTAGE_CHARGE } from "@/lib/platformPricing";
 
 const LOCATIONS = VENDOR_LOCATIONS;
 const CATEGORIES = VENDOR_CATEGORIES;
@@ -646,16 +647,20 @@ export default function VendorSettingsPage() {
       }
 
       setCreatingSubaccount(true);
+      const { data: { session } } = await supabase.auth.getSession();
 
       const res = await fetch("/api/create-subaccount", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
+        },
         body: JSON.stringify({
           user_id: userId,
           business_name: settings.business_name.trim(),
           bank_code: bankCode,
           account_number: accountNumber,
-          percentage_charge: 10, // Hospineil keeps 10% commission
+          percentage_charge: PAYSTACK_VENDOR_SUBACCOUNT_PERCENTAGE_CHARGE,
         }),
       });
 
@@ -1080,7 +1085,7 @@ export default function VendorSettingsPage() {
                     Your subaccount code: <span className="font-mono font-semibold">{subaccountCode}</span>
                   </p>
                   <p className="text-xs text-green-600 mt-2 font-body">
-                    You will receive 90% of payments automatically. Hospineil retains 10% commission.
+                    You will receive 98% of payments automatically. Hospineil retains 2% commission.
                   </p>
                 </div>
               ) : (
@@ -1088,7 +1093,7 @@ export default function VendorSettingsPage() {
                   <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                     <p className="text-sm text-yellow-800 font-body">
                       <strong>Payment Setup Required:</strong> Please add your bank details to receive payments. 
-                      Once set up, you&apos;ll automatically receive 90% of each payment, with Hospineil retaining 10% commission.
+                      Once set up, you&apos;ll automatically receive 98% of each payment, with Hospineil retaining 2% commission.
                     </p>
                   </div>
 

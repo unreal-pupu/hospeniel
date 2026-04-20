@@ -163,14 +163,14 @@ export default function VendorShowcase() {
   };
 
   return (
-    <section id="vendor-showcase" className="py-16 px-6 bg-hospineil-light-bg">
+    <section id="vendor-showcase" className="py-12 sm:py-16 px-4 sm:px-6 bg-hospineil-light-bg">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="text-center mb-12">
-          <h2 className="text-4xl md:text-5xl font-header italic tracking-wide capitalize mb-4">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-header italic tracking-wide capitalize mb-4">
             Featured Vendors
           </h2>
-          <p className="text-lg text-gray-800 font-body">
+          <p className="text-base sm:text-lg text-gray-800 font-body">
             Discover our top-rated vendors ready to serve you
           </p>
         </div>
@@ -221,8 +221,8 @@ export default function VendorShowcase() {
                 {/* Vendor Info */}
                 <div className="p-6">
                   <div className="flex items-start justify-between gap-2 mb-2">
-                    <h3 className="text-xl font-bold text-gray-800 font-header flex items-center gap-2">
-                      <span>{vendor.name}</span>
+                    <h3 className="text-lg sm:text-xl font-bold text-gray-800 font-header flex items-center gap-2 min-w-0">
+                      <span className="break-words">{vendor.name}</span>
                       <VerifiedBadge verified={vendor.verified} className="h-5 w-5 text-blue-600" />
                     </h3>
                     {vendor.category && (

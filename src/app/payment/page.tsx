@@ -32,6 +32,10 @@ import {
   isValidCheckoutPhone,
   isValidCustomerName,
 } from "@/lib/guestCheckoutValidation";
+import {
+  PLATFORM_FOOD_COMMISSION_RATE,
+  PLATFORM_SERVICE_CHARGE_NGN,
+} from "@/lib/platformPricing";
 
 function buildGuestPaystackEmail(guestId: string): string {
   const domain =
@@ -373,12 +377,9 @@ export default function PaymentPage() {
   const taxAmount = taxableAmount * TAX_RATE;
 
   // Service charge (flat fee for regular orders)
-  const SERVICE_CHARGE_REGULAR = 100;
-  const serviceCharge = subtotal > 0 ? SERVICE_CHARGE_REGULAR : 0;
+  const serviceCharge = subtotal > 0 ? PLATFORM_SERVICE_CHARGE_NGN : 0;
 
-  // Calculate commission (10% of subtotal)
-  const COMMISSION_RATE = 0.10;
-  const commissionAmount = subtotal * COMMISSION_RATE;
+  const commissionAmount = subtotal * PLATFORM_FOOD_COMMISSION_RATE;
 
   // Calculate total (subtotal + delivery charge + tax + service charge)
   // Note: Commission is deducted from vendor payout, not added to user total
@@ -767,7 +768,7 @@ export default function PaymentPage() {
                 ? "Unable to load order details. The item may no longer be available."
                 : "Your cart is empty. Add some items before checking out."}
             </p>
-            <div className="flex gap-4 justify-center">
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
               <Link href="/explore">
                 <Button className="rounded-full px-6">
                   Browse Menu Items
@@ -791,8 +792,8 @@ export default function PaymentPage() {
     <section className="w-full min-h-screen max-w-[100vw] overflow-x-hidden px-3 sm:px-6 md:px-12 lg:px-20 py-8 sm:py-16 bg-gradient-to-br from-gray-50 to-indigo-50">
       <div className="max-w-4xl mx-auto min-w-0 w-full">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-8">
+          <div className="min-w-0">
             <h1 className="text-3xl md:text-4xl font-bold text-gray-900">
               Payment
             </h1>
@@ -800,8 +801,8 @@ export default function PaymentPage() {
               Complete your purchase
             </p>
           </div>
-          <Link href={isDirectOrder ? "/explore" : "/cart"}>
-            <Button variant="outline" className="rounded-full">
+          <Link href={isDirectOrder ? "/explore" : "/cart"} className="w-full sm:w-auto">
+            <Button variant="outline" className="rounded-full w-full sm:w-auto">
               <ArrowLeft className="h-4 w-4 mr-2" />
               {isDirectOrder ? "Back to Explore" : "Back to Cart"}
             </Button>
@@ -880,7 +881,7 @@ export default function PaymentPage() {
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <Label htmlFor="deliveryCity" className="text-sm font-medium text-gray-700">
                           City <span className="text-red-500">*</span>
@@ -1097,7 +1098,7 @@ export default function PaymentPage() {
                               className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg"
                             >
                               {menuItem?.image_url && (
-                                <div className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
+                      <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-lg overflow-hidden flex-shrink-0">
                                   <Image
                                     src={menuItem.image_url}
                                     alt={menuItem.title || "Product"}
@@ -1107,7 +1108,7 @@ export default function PaymentPage() {
                                 </div>
                               )}
                               <div className="flex-1 min-w-0">
-                                <h4 className="text-lg font-semibold text-gray-900 truncate">
+                                <h4 className="text-base sm:text-lg font-semibold text-gray-900 truncate">
                                   {menuItem?.title || "Product"}
                                 </h4>
                                 <p className="text-gray-600">
@@ -1194,9 +1195,9 @@ export default function PaymentPage() {
 
                   {/* Total */}
                   <div className="border-t pt-4">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-lg font-semibold text-gray-900">Total to Pay</span>
-                      <span className="text-2xl font-bold text-indigo-600">
+                    <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
+                      <span className="text-base sm:text-lg font-semibold text-gray-900">Total to Pay</span>
+                      <span className="text-xl sm:text-2xl font-bold text-indigo-600 break-all">
                         ₦{total.toLocaleString("en-NG", { minimumFractionDigits: 2 })}
                       </span>
                     </div>

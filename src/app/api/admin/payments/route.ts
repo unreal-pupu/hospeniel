@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
+import { PLATFORM_FOOD_COMMISSION_RATE } from "@/lib/platformPricing";
 
 export const dynamic = "force-dynamic";
 
@@ -325,8 +326,7 @@ export async function GET(req: Request) {
       0
     );
 
-    // Calculate commission from related orders (10% commission rate)
-    const COMMISSION_RATE = 0.10;
+    const COMMISSION_RATE = PLATFORM_FOOD_COMMISSION_RATE;
     let totalCommission = 0;
     
     // Calculate commission from orders linked to successful payments

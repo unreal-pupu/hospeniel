@@ -28,8 +28,6 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [subscriptionPlan, setSubscriptionPlan] = useState<string>("free_trial");
-  const [vendorCategory, setVendorCategory] = useState<string | null>(null);
 
   // ✅ Check auth once, but let child pages handle redirects to prevent conflicts
   // CRITICAL: Use timeout to prevent infinite loading
@@ -44,7 +42,6 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
           if (isMounted) {
             console.warn("⚠️ Auth check timeout - defaulting to authenticated state");
             setIsAuthenticated(true); // Default to true to allow layout to render
-            setSubscriptionPlan("free_trial");
           }
         }, 35_000);
 
@@ -67,15 +64,14 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
             // Use timeout for profile fetch too
             const profileTimeout = setTimeout(() => {
               if (isMounted) {
-                console.warn("⚠️ Profile fetch timeout - using default subscription plan");
-                setSubscriptionPlan("free_trial");
+                console.warn("⚠️ Profile fetch timeout");
               }
             }, 3000);
 
             try {
               const { data: profile, error: profileFetchError } = await supabase
                 .from("profiles")
-                .select("subscription_plan, role, category, approval_status")
+                .select("role, category, approval_status")
                 .eq("id", user.id)
                 .limit(1)
                 .maybeSingle();
@@ -106,16 +102,9 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
                 return;
               }
               
-              if (isMounted) {
-                setSubscriptionPlan(profile?.subscription_plan || "free_trial");
-                setVendorCategory(profile?.category || null);
-              }
             } catch (profileErr) {
               clearTimeout(profileTimeout);
               console.error("Profile fetch error:", profileErr);
-              if (isMounted) {
-                setSubscriptionPlan("free_trial");
-              }
             }
           }
         }
@@ -126,7 +115,6 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
         }
         if (isMounted) {
           setIsAuthenticated(true); // Default to true to allow layout to render
-          setSubscriptionPlan("free_trial");
         }
       }
     };
@@ -179,30 +167,17 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
     }
   };
 
-  // Check if vendor is a cook or chef (used for service requests access)
-  const isCookOrChef = vendorCategory === "chef" || vendorCategory === "home_cook";
-  // Orders should be available for all vendor categories in the vendor sidebar.
-  // (Access restrictions, if any, are handled inside the orders page itself.)
   const canManageOrders = true;
 
-  // Base links (conditionally show menu/orders based on category)
   const baseLinks = [
     { href: "/vendor/dashboard", label: "Dashboard", icon: <LayoutDashboard size={18} /> },
     { href: "/vendor/menu", label: "Menu", icon: <UtensilsCrossed size={18} /> },
     { href: "/vendor/dispatch", label: "Dispatch", icon: <Bike size={18} /> },
     ...(canManageOrders ? [{ href: "/vendor/orders", label: "Orders", icon: <Clock size={18} /> }] : []),
+    { href: "/vendor/service-requests", label: "Service Requests", icon: <MessageSquare size={18} /> },
     { href: "/vendor/notifications", label: "Notifications", icon: <Bell size={18} /> },
   ];
 
-  // Premium links (only for Professional plan vendors)
-  // Also show Service Requests for chefs/home cooks (they don't need premium plan)
-  const premiumLinks = subscriptionPlan === "professional"
-    ? [{ href: "/vendor/service-requests", label: "Service Requests", icon: <MessageSquare size={18} /> }]
-    : isCookOrChef
-    ? [{ href: "/vendor/service-requests", label: "Service Requests", icon: <MessageSquare size={18} /> }]
-    : [];
-
-  // Other links (always visible)
   const otherLinks = [
     { href: "/vendor/subscription", label: "Premium Tools", icon: <ShieldCheck size={18} /> },
     { href: "/vendor/banners", label: "Promotions", icon: <Megaphone size={18} /> },
@@ -212,7 +187,7 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
     { href: "/vendor/privacy", label: "Privacy Policy", icon: <ShieldCheck size={18} /> },
   ];
 
-  const links = [...baseLinks, ...premiumLinks, ...otherLinks];
+  const links = [...baseLinks, ...otherLinks];
 
   // Render immediately - don't wait for auth check
   // This prevents chunk loading issues and infinite loading states
