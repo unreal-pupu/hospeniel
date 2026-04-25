@@ -36,6 +36,17 @@ import {
   PLATFORM_FOOD_COMMISSION_RATE,
   PLATFORM_SERVICE_CHARGE_NGN,
 } from "@/lib/platformPricing";
+import { CheckoutAddressPlacesAssist } from "@/components/checkout/CheckoutAddressPlacesAssist";
+import { hasGoogleMapsApiKey, loadGoogleMapsScript } from "@/lib/googleMaps/loadGoogleMapsScript";
+
+interface CheckoutDeliveryDetails {
+  address: string;
+  phone: string;
+  city: string;
+  state: string;
+  lat?: number;
+  lng?: number;
+}
 
 function buildGuestPaystackEmail(guestId: string): string {
   const domain =
@@ -72,7 +83,7 @@ export default function PaymentPage() {
   const [directOrderItems, setDirectOrderItems] = useState<DirectOrderItem[]>([]);
   const [isDirectOrder, setIsDirectOrder] = useState(false);
   const [loadingOrderData, setLoadingOrderData] = useState(true);
-  const [deliveryDetails, setDeliveryDetails] = useState({
+  const [deliveryDetails, setDeliveryDetails] = useState<CheckoutDeliveryDetails>({
     address: "",
     phone: "",
     city: "",
@@ -105,6 +116,18 @@ export default function PaymentPage() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  /** Preload Maps JS in checkout so the script is in document head before the address field mounts. */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hasKey = hasGoogleMapsApiKey();
+    if (!hasKey) {
+      return;
+    }
+    loadGoogleMapsScript().catch((err) => {
+      console.error("[Checkout /payment] Google Maps script failed:", err);
+    });
   }, []);
 
   // Load delivery details from user profile (including admin-entered fields)
@@ -868,9 +891,15 @@ export default function PaymentPage() {
                       <Input
                         id="deliveryAddress"
                         value={deliveryDetails.address}
-                        onChange={(e) =>
-                          !isPaymentLocked && setDeliveryDetails({ ...deliveryDetails, address: e.target.value })
-                        }
+                        onChange={(e) => {
+                          if (isPaymentLocked) return;
+                          setDeliveryDetails((prev) => ({
+                            ...prev,
+                            address: e.target.value,
+                            lat: undefined,
+                            lng: undefined,
+                          }));
+                        }}
                         disabled={isPaymentLocked}
                         placeholder="Enter street address"
                         className="mt-1 bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -879,6 +908,19 @@ export default function PaymentPage() {
                       <p className="text-xs text-gray-500 mt-1">
                         Street address, building number, apartment number
                       </p>
+                      <CheckoutAddressPlacesAssist
+                        addressInputId="deliveryAddress"
+                        enabled={!loadingProfile}
+                        disabled={isPaymentLocked}
+                        onPlaceResolved={({ formattedAddress, lat, lng }) => {
+                          setDeliveryDetails((prev) => ({
+                            ...prev,
+                            address: formattedAddress,
+                            lat,
+                            lng,
+                          }));
+                        }}
+                      />
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

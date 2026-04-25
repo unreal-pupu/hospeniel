@@ -2,10 +2,10 @@
 
 import { useEffect, useRef } from "react";
 import {
-  loadGoogleMapsWithPlaces,
+  loadGoogleMapsScript,
   YENAGOA_DEFAULT_CENTER,
   hasGoogleMapsApiKey,
-} from "@/lib/loadGoogleMapsScript";
+} from "@/lib/googleMaps/loadGoogleMapsScript";
 
 /** Minimal typings for Maps JS API (avoids adding @types/google.maps). */
 interface MapsLatLngLiteral {
@@ -159,14 +159,28 @@ export function CheckoutAddressPlacesAssist({
 
     (async () => {
       try {
-        await loadGoogleMapsWithPlaces();
+        console.log("[CheckoutAddressPlacesAssist] Requesting Google Maps script…");
+        await loadGoogleMapsScript();
         if (cancelled) return;
+
         const maps = getMaps();
-        if (!maps?.places?.Autocomplete) return;
+        if (!maps?.places?.Autocomplete) {
+          console.error(
+            "[CheckoutAddressPlacesAssist] Script reported ready but window.google.maps.places.Autocomplete is missing — check API key (Places enabled) and callback URL restrictions.",
+          );
+          return;
+        }
+
+        console.log("[CheckoutAddressPlacesAssist] Initializing map preview and Places Autocomplete");
         initMap(maps);
         attachAutocomplete(maps);
-      } catch {
-        /* missing key or blocked load — checkout still works manually */
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(
+          "[CheckoutAddressPlacesAssist] Google Maps failed; address autocomplete disabled. Reason:",
+          message,
+          err,
+        );
       }
     })();
 
