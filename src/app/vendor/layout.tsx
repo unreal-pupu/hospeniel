@@ -185,7 +185,7 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
     { href: "/vendor/analytics", label: "Analytics", icon: <BarChart3 size={18} /> },
     { href: "/vendor/settings", label: "Settings", icon: <Settings size={18} /> },
     { href: "/vendor/help", label: "Help Center", icon: <HelpCircle size={18} /> },
-    { href: "/terms-and-conditions", label: "Legal Terms", icon: <FileText size={18} /> },
+    { href: "/vendor/terms", label: "Legal Terms", icon: <FileText size={18} /> },
     { href: "/vendor/privacy", label: "Privacy Policy", icon: <ShieldCheck size={18} /> },
   ];
 
