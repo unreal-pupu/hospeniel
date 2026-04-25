@@ -1,4 +1,5 @@
 let loadPromise: Promise<void> | null = null;
+const LOG_PREFIX = "[Hospineil Google Maps]";
 
 /** Default map center (Yenagoa, Bayelsa) — UI / preview only; not used for pricing. */
 export const YENAGOA_DEFAULT_CENTER = { lat: 4.9267, lng: 6.2676 } as const;
