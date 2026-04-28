@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { ensureAdminRequest } from "@/lib/admin/ensureAdminRequest";
 import { PAYSTACK_VENDOR_SUBACCOUNT_PERCENTAGE_CHARGE } from "@/lib/platformPricing";
+import { logPaystackAuthorizationDebug } from "@/lib/server/paystackRequestDebug";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -25,6 +26,7 @@ async function putPaystackPercentageCharge(
   subaccountCode: string,
   percentageCharge: number
 ): Promise<{ ok: boolean; status: number; message: string; raw?: unknown }> {
+  logPaystackAuthorizationDebug("admin/sync-subaccount-commission:put", secretKey);
   const url = `${PAYSTACK_BASE}/${encodeURIComponent(subaccountCode)}`;
   const res = await fetch(url, {
     method: "PUT",
@@ -49,6 +51,7 @@ async function getPaystackSubaccount(secretKey: string, subaccountCode: string):
   message: string;
   raw?: unknown;
 }> {
+  logPaystackAuthorizationDebug("admin/sync-subaccount-commission:get", secretKey);
   const url = `${PAYSTACK_BASE}/${encodeURIComponent(subaccountCode)}`;
   const res = await fetch(url, {
     method: "GET",
@@ -71,7 +74,7 @@ async function getPaystackSubaccount(secretKey: string, subaccountCode: string):
 }
 
 /**
- * One-time / occasional admin job: set Paystack `percentage_charge` to the platform default (2%)
+ * One-time / occasional admin job: set Paystack `percentage_charge` to the platform default (5%)
  * for every vendor profile that has a `subaccount_code`. Does not recreate subaccounts.
  *
  * POST /api/admin/sync-subaccount-commission
@@ -81,8 +84,10 @@ export async function POST(req: Request) {
   const auth = await ensureAdminRequest(req);
   if (!auth.ok) return auth.response;
 
-  const secretKeyRaw = process.env.PAYSTACK_SECRET_KEY;
-  const secretKey = secretKeyRaw?.trim().replace(/[\u200B-\u200D\uFEFF]/g, "") ?? "";
+  const secretKey = logPaystackAuthorizationDebug(
+    "admin/sync-subaccount-commission:entry",
+    process.env.PAYSTACK_SECRET_KEY
+  );
   if (!secretKey || (!secretKey.startsWith("sk_test_") && !secretKey.startsWith("sk_live_"))) {
     return NextResponse.json(
       { error: "PAYSTACK_SECRET_KEY is not configured or invalid." },

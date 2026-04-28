@@ -2,18 +2,28 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { POST as verifyPayment } from "@/app/api/payment/verify/route";
 import { processPremiumToolPayment } from "@/lib/vendor-feature-entitlements";
+import { logPaystackEnvDebug } from "@/lib/server/paystackEnvDebug";
+import { normalizePaystackSecret } from "@/lib/server/paystackRequestDebug";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
+  logPaystackEnvDebug("paystack/webhook:entry");
   const secret = process.env.PAYSTACK_SECRET_KEY;
   if (!secret) {
     console.error("PAYSTACK_SECRET_KEY is not set for webhook verification");
+    logPaystackEnvDebug("paystack/webhook:missing-secret");
     return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
   }
 
   const signature = req.headers.get("x-paystack-signature");
   const rawBody = await req.text();
+  const trimmedSecret = normalizePaystackSecret(secret);
+
+  if (!trimmedSecret) {
+    console.error("PAYSTACK_SECRET_KEY is empty after trimming for webhook verification");
+    return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
+  }
 
   if (!signature) {
     console.warn("Missing Paystack signature header");
@@ -21,7 +31,7 @@ export async function POST(req: Request) {
   }
 
   const computedSignature = crypto
-    .createHmac("sha512", secret.trim())
+    .createHmac("sha512", trimmedSecret)
     .update(rawBody)
     .digest("hex");
 

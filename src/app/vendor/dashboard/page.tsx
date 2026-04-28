@@ -16,7 +16,10 @@ import type {
 import { getRoleBasedRedirect } from "@/lib/roleRouting";
 import dynamic from "next/dynamic";
 import { VendorPremiumToolsSection } from "@/components/vendor-premium-tools-section";
-import { PLATFORM_FOOD_COMMISSION_RATE } from "@/lib/platformPricing";
+import {
+  PLATFORM_COMMISSION_PERCENT_LABEL,
+  PLATFORM_FOOD_COMMISSION_RATE,
+} from "@/lib/platformPricing";
 
 const CookChefDashboard = dynamic(() => import('@/components/CookChefDashboard'), {
   loading: () => (
@@ -46,6 +49,7 @@ interface MenuItem {
 interface Order {
   id: string;
   total_price: number;
+  food_subtotal?: number;
   status: string;
   created_at: string;
 }
@@ -434,7 +438,7 @@ const VendorDashboard: React.FC = () => {
             // Use explicit column selection to avoid schema mismatch errors
             const { data: ordersData, error: ordersError } = await supabase
               .from("orders")
-              .select("id, total_price, status, created_at, payment_reference")
+              .select("id, total_price, food_subtotal, status, created_at, payment_reference")
               .eq("vendor_id", vendorIdRef.current)
               .order("created_at", { ascending: false })
               .limit(100); // Add limit to prevent large queries
@@ -602,7 +606,7 @@ const VendorDashboard: React.FC = () => {
   const hasValidName = vendorName && vendorName.length > 0;
 
   // Calculate earnings summary
-  const orderAmount = (order: Order) => order.total_price || 0;
+  const orderAmount = (order: Order) => order.food_subtotal || order.total_price || 0;
   const totalSales = orders.reduce((sum, order) => sum + orderAmount(order), 0);
   const totalCommission = calculateCommission(totalSales);
   const netEarnings = calculateNetEarnings(totalSales);
@@ -725,7 +729,7 @@ const VendorDashboard: React.FC = () => {
               Please create your Paystack subaccount with accurate details from the Settings page. This is required to receive payouts for all orders.
             </p>
             <p className="text-amber-800 font-body text-sm leading-relaxed mt-2">
-              Platform commission: <span className="font-semibold">2% per order</span> (deducted automatically).
+              Platform commission: <span className="font-semibold">{PLATFORM_COMMISSION_PERCENT_LABEL} per order</span> (deducted automatically).
             </p>
           </div>
         </div>
@@ -820,7 +824,7 @@ const VendorDashboard: React.FC = () => {
 
               {/* Total Commission */}
               <div className="bg-hospineil-base-bg rounded-xl p-4 border border-gray-200">
-                <p className="text-sm text-gray-600 font-body mb-2">Total Commission (2%)</p>
+                <p className="text-sm text-gray-600 font-body mb-2">Total Commission ({PLATFORM_COMMISSION_PERCENT_LABEL})</p>
                 <p className="text-2xl font-bold text-hospineil-accent font-header">
                   ₦{totalCommission.toLocaleString("en-NG", { minimumFractionDigits: 2 })}
                 </p>
@@ -836,7 +840,7 @@ const VendorDashboard: React.FC = () => {
                   ₦{netEarnings.toLocaleString("en-NG", { minimumFractionDigits: 2 })}
                 </p>
                 <p className="text-xs text-gray-500 font-body mt-1">
-                  Amount credited to your wallet
+                  95% of food subtotal only
                 </p>
               </div>
             </div>
@@ -916,7 +920,7 @@ const VendorDashboard: React.FC = () => {
           </div>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {orders.map((order) => {
-              const orderAmount = order.total_price || 0;
+              const orderAmount = order.food_subtotal || order.total_price || 0;
               const commission = calculateCommission(orderAmount);
               const netEarning = calculateNetEarnings(orderAmount);
               
@@ -957,9 +961,9 @@ const VendorDashboard: React.FC = () => {
                       {/* Commission Breakdown */}
                       <div className="bg-hospineil-base-bg rounded-lg p-3 border border-gray-200">
                         <p className="text-xs text-gray-600 font-body leading-relaxed">
-                          <span className="font-semibold">₦{orderAmount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</span> total —{" "}
-                          <span className="font-semibold text-hospineil-accent">₦{commission.toLocaleString("en-NG", { minimumFractionDigits: 2 })} (2% Hospineil fee)</span> deducted.{" "}
-                          <span className="font-semibold text-green-600">₦{netEarning.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</span> credited to your wallet.
+                          <span className="font-semibold">₦{orderAmount.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</span> food subtotal —{" "}
+                          <span className="font-semibold text-hospineil-accent">₦{commission.toLocaleString("en-NG", { minimumFractionDigits: 2 })} ({PLATFORM_COMMISSION_PERCENT_LABEL} Hospineil fee)</span> deducted.{" "}
+                          <span className="font-semibold text-green-600">₦{netEarning.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</span> vendor earnings.
                         </p>
                       </div>
                     </div>

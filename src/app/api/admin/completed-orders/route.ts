@@ -56,7 +56,7 @@ export async function GET(req: Request) {
     const { data: orders, error: ordersError } = await supabaseAdmin
       .from("orders")
       .select(
-        "id, user_id, vendor_id, total_price, status, payment_reference, created_at, updated_at, order_type, service_request_id, menu_items (title)"
+        "id, user_id, vendor_id, total_price, food_subtotal, status, payment_reference, created_at, updated_at, order_type, service_request_id, menu_items (title)"
       )
       .in("status", ["Completed", "Paid"])
       .order("created_at", { ascending: false })

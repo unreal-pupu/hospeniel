@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { processPremiumToolPayment, syncVendorEntitlementsFromPurchasedTools } from "@/lib/vendor-feature-entitlements";
 import { ensureAuthenticatedRequest } from "@/lib/api/ensureAuthenticatedRequest";
+import { logPaystackAuthorizationDebug } from "@/lib/server/paystackRequestDebug";
 
 const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY;
 
@@ -10,7 +11,11 @@ export async function POST(req: Request) {
     const authCheck = await ensureAuthenticatedRequest(req);
     if (!authCheck.ok) return authCheck.response;
 
-    if (!paystackSecretKey?.trim()) {
+    const trimmedPaystackKey = logPaystackAuthorizationDebug(
+      "vendor-tools/reconcile:verify-request",
+      paystackSecretKey
+    );
+    if (!trimmedPaystackKey) {
       return NextResponse.json(
         { success: false, error: "PAYSTACK_SECRET_KEY not configured" },
         { status: 500 }
@@ -46,7 +51,7 @@ export async function POST(req: Request) {
         {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${paystackSecretKey.trim()}`,
+            Authorization: `Bearer ${trimmedPaystackKey}`,
             "Content-Type": "application/json",
           },
         }

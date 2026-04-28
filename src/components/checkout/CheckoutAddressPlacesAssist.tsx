@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import {
-  loadGoogleMapsScript,
+  importGoogleMapsLibraries,
   YENAGOA_DEFAULT_CENTER,
   hasGoogleMapsApiKey,
 } from "@/lib/googleMaps/loadGoogleMapsScript";
@@ -13,58 +13,14 @@ interface MapsLatLngLiteral {
   lng: number;
 }
 
-interface PlaceGeometry {
-  location?: { lat: () => number; lng: () => number };
-}
-
-interface PlaceResult {
-  formatted_address?: string;
-  geometry?: PlaceGeometry;
-}
-
-interface AutocompleteInstance {
-  addListener: (eventName: string, handler: () => void) => void;
-  getPlace: () => PlaceResult;
-}
-
 interface MapInstance {
   setCenter: (c: MapsLatLngLiteral) => void;
   setZoom: (z: number) => void;
 }
 
 interface MarkerInstance {
-  setMap: (m: MapInstance | null) => void;
+  map?: MapInstance | null;
   setPosition: (p: MapsLatLngLiteral) => void;
-}
-
-interface MapsNamespace {
-  places: {
-    Autocomplete: new (
-      input: HTMLInputElement,
-      opts?: { fields?: string[]; types?: string[] }
-    ) => AutocompleteInstance;
-  };
-  Map: new (
-    el: HTMLElement,
-    opts: {
-      center: MapsLatLngLiteral;
-      zoom: number;
-      disableDefaultUI?: boolean;
-      gestureHandling?: string;
-    }
-  ) => MapInstance;
-  Marker: new (opts: { position: MapsLatLngLiteral; map: MapInstance }) => MarkerInstance;
-  event: { clearInstanceListeners: (instance: unknown) => void };
-}
-
-function getMaps(): MapsNamespace | null {
-  if (typeof window === "undefined") return null;
-  const g = (
-    window as unknown as {
-      google?: { maps?: MapsNamespace };
-    }
-  ).google?.maps;
-  return g ?? null;
 }
 
 export interface CheckoutAddressPlacesAssistProps {
@@ -91,9 +47,11 @@ export function CheckoutAddressPlacesAssist({
   onPlaceResolved,
 }: CheckoutAddressPlacesAssistProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
+  const autocompleteContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapInstance | null>(null);
   const markerRef = useRef<MarkerInstance | null>(null);
-  const autocompleteRef = useRef<AutocompleteInstance | null>(null);
+  const autocompleteRef = useRef<google.maps.places.PlaceAutocompleteElement | null>(null);
+  const autocompleteListenerRef = useRef<((event: Event) => void) | null>(null);
   const onPlaceResolvedRef = useRef(onPlaceResolved);
   const disabledRef = useRef(disabled);
 
@@ -105,7 +63,7 @@ export function CheckoutAddressPlacesAssist({
 
     let cancelled = false;
 
-    function initMap(maps: MapsNamespace) {
+    function initMap(maps: google.maps.MapsLibrary, markerLib: google.maps.MarkerLibrary) {
       const el = mapContainerRef.current;
       if (!el || mapRef.current) return;
       const map = new maps.Map(el, {
@@ -113,37 +71,42 @@ export function CheckoutAddressPlacesAssist({
         zoom: 13,
         disableDefaultUI: true,
         gestureHandling: "cooperative",
+        mapId: "DEMO_MAP_ID",
       });
       mapRef.current = map;
-      markerRef.current = new maps.Marker({
+      markerRef.current = new markerLib.AdvancedMarkerElement({
         position: { ...YENAGOA_DEFAULT_CENTER },
         map,
       });
     }
 
-    function attachAutocomplete(maps: MapsNamespace) {
+    function attachAutocomplete(places: google.maps.PlacesLibrary) {
+      const container = autocompleteContainerRef.current;
       const input = document.getElementById(addressInputId);
-      if (!input || !(input instanceof HTMLInputElement)) return;
+      if (!container || !input || !(input instanceof HTMLInputElement)) return;
 
-      if (autocompleteRef.current) {
-        maps.event.clearInstanceListeners(autocompleteRef.current);
-        autocompleteRef.current = null;
-      }
+      container.innerHTML = "";
 
-      const autocomplete = new maps.places.Autocomplete(input, {
-        fields: ["formatted_address", "geometry", "name"],
-        types: ["address"],
-      });
+      const autocomplete = new places.PlaceAutocompleteElement();
       autocompleteRef.current = autocomplete;
+      autocomplete.setAttribute("requested-language", "en");
+      autocomplete.setAttribute("included-region-codes", "ng");
 
-      autocomplete.addListener("place_changed", () => {
+      const listener = async (event: Event) => {
         if (disabledRef.current) return;
-        const place = autocomplete.getPlace();
-        const loc = place.geometry?.location;
-        const formatted = place.formatted_address?.trim();
-        if (!loc || formatted === undefined || formatted === "") return;
-        const lat = loc.lat();
-        const lng = loc.lng();
+        const placeEvent = event as CustomEvent<{ placePrediction?: { toPlace?: () => google.maps.places.Place } }>;
+        const placePrediction = placeEvent.detail?.placePrediction;
+        if (!placePrediction?.toPlace) return;
+        const place = placePrediction.toPlace();
+        await place.fetchFields({
+          fields: ["displayName", "formattedAddress", "location"],
+        });
+        const lat = place.location?.lat();
+        const lng = place.location?.lng();
+        const formatted = place.formattedAddress?.trim();
+        if (lat == null || lng == null || !formatted) return;
+
+        input.value = formatted;
         onPlaceResolvedRef.current({ formattedAddress: formatted, lat, lng });
 
         const map = mapRef.current;
@@ -154,26 +117,29 @@ export function CheckoutAddressPlacesAssist({
           map.setZoom(16);
           marker.setPosition(pos);
         }
-      });
+      };
+
+      autocomplete.addEventListener("gmp-select", listener);
+      autocompleteListenerRef.current = listener;
+      container.appendChild(autocomplete);
     }
 
     (async () => {
       try {
         console.log("[CheckoutAddressPlacesAssist] Requesting Google Maps script…");
-        await loadGoogleMapsScript();
+        const { maps, marker, places } = await importGoogleMapsLibraries();
         if (cancelled) return;
 
-        const maps = getMaps();
-        if (!maps?.places?.Autocomplete) {
+        if (!places?.PlaceAutocompleteElement) {
           console.error(
-            "[CheckoutAddressPlacesAssist] Script reported ready but window.google.maps.places.Autocomplete is missing — check API key (Places enabled) and callback URL restrictions.",
+            "[CheckoutAddressPlacesAssist] Script reported ready but PlaceAutocompleteElement is missing.",
           );
           return;
         }
 
         console.log("[CheckoutAddressPlacesAssist] Initializing map preview and Places Autocomplete");
-        initMap(maps);
-        attachAutocomplete(maps);
+        initMap(maps, marker);
+        attachAutocomplete(places);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(
@@ -186,12 +152,17 @@ export function CheckoutAddressPlacesAssist({
 
     return () => {
       cancelled = true;
-      const maps = getMaps();
-      if (maps?.event && autocompleteRef.current) {
-        maps.event.clearInstanceListeners(autocompleteRef.current);
-        autocompleteRef.current = null;
+      if (autocompleteRef.current && autocompleteListenerRef.current) {
+        autocompleteRef.current.removeEventListener("gmp-select", autocompleteListenerRef.current);
       }
-      markerRef.current?.setMap(null);
+      if (autocompleteContainerRef.current) {
+        autocompleteContainerRef.current.innerHTML = "";
+      }
+      autocompleteRef.current = null;
+      autocompleteListenerRef.current = null;
+      if (markerRef.current) {
+        markerRef.current.map = null;
+      }
       markerRef.current = null;
       mapRef.current = null;
     };
@@ -204,9 +175,13 @@ export function CheckoutAddressPlacesAssist({
   return (
     <div className="mt-2 space-y-1">
       <p className="text-xs text-gray-500">
-        Type your street address for suggestions. Delivery zone and fee still use the landmark you
-        choose below.
+        Type your street address for suggestions. If autocomplete is unavailable, you can still
+        continue checkout by entering a nearest landmark manually.
       </p>
+      <div
+        ref={autocompleteContainerRef}
+        className="rounded-md border border-gray-200 bg-white p-2 [&>gmp-place-autocomplete]:w-full"
+      />
       <div
         ref={mapContainerRef}
         className="h-40 w-full rounded-md border border-gray-200 bg-gray-100 overflow-hidden"

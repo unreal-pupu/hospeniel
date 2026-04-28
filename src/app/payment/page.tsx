@@ -35,6 +35,7 @@ import {
 import {
   PLATFORM_FOOD_COMMISSION_RATE,
   PLATFORM_SERVICE_CHARGE_NGN,
+  calculatePlatformFoodCommission,
 } from "@/lib/platformPricing";
 import { CheckoutAddressPlacesAssist } from "@/components/checkout/CheckoutAddressPlacesAssist";
 import { hasGoogleMapsApiKey, loadGoogleMapsScript } from "@/lib/googleMaps/loadGoogleMapsScript";
@@ -44,6 +45,7 @@ interface CheckoutDeliveryDetails {
   phone: string;
   city: string;
   state: string;
+  nearest_landmark?: string;
   lat?: number;
   lng?: number;
 }
@@ -90,6 +92,7 @@ export default function PaymentPage() {
     state: "Bayelsa", // Default to Bayelsa for landmark-based delivery
   });
   const [selectedLandmark, setSelectedLandmark] = useState("");
+  const [manualLandmark, setManualLandmark] = useState("");
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [deliveryCharge, setDeliveryCharge] = useState(0);
   const [calculatingDelivery, setCalculatingDelivery] = useState(false);
@@ -97,6 +100,8 @@ export default function PaymentPage() {
   const [estimatedDeliveryTime, setEstimatedDeliveryTime] = useState("");
   const [isPaymentLocked, setIsPaymentLocked] = useState(false);
   const [landmarkError, setLandmarkError] = useState("");
+  const resolvedNearestLandmark = (selectedLandmark || manualLandmark).trim();
+
   const router = useRouter();
   const [checkoutMode, setCheckoutMode] = useState<"loading" | "authenticated" | "guest">("loading");
   const [guestCustomerName, setGuestCustomerName] = useState("");
@@ -335,6 +340,16 @@ export default function PaymentPage() {
         subtotal: 0,
       };
     }
+    if (!acc[vendorId].vendor && item.vendors && typeof item.vendors === "object") {
+      const fallbackPhone = typeof item.vendors.phone_number === "string" ? item.vendors.phone_number : undefined;
+      acc[vendorId].vendor = {
+        id: typeof item.vendors.id === "string" ? item.vendors.id : vendorId,
+        name: typeof item.vendors.name === "string" ? item.vendors.name : "Vendor",
+        image_url: typeof item.vendors.image_url === "string" ? item.vendors.image_url : undefined,
+        location: typeof item.vendors.location === "string" ? item.vendors.location : undefined,
+        phone_number: fallbackPhone,
+      };
+    }
     acc[vendorId].items.push(item);
     const price = isDirectOrder 
       ? ((item as DirectOrderItem).total_price ?? 0)
@@ -362,7 +377,7 @@ export default function PaymentPage() {
         setDeliveryCharge(0);
         setDeliveryZone("");
         setEstimatedDeliveryTime("");
-        setLandmarkError("Please select the closest landmark to you.");
+        setLandmarkError("");
         return;
       }
 
@@ -402,7 +417,7 @@ export default function PaymentPage() {
   // Service charge (flat fee for regular orders)
   const serviceCharge = subtotal > 0 ? PLATFORM_SERVICE_CHARGE_NGN : 0;
 
-  const commissionAmount = subtotal * PLATFORM_FOOD_COMMISSION_RATE;
+  const commissionAmount = calculatePlatformFoodCommission(subtotal);
 
   // Calculate total (subtotal + delivery charge + tax + service charge)
   // Note: Commission is deducted from vendor payout, not added to user total
@@ -462,28 +477,21 @@ export default function PaymentPage() {
     }
 
     // Validate delivery details
-    if (!deliveryDetails.address || !deliveryDetails.phone || !deliveryDetails.city || !deliveryDetails.state) {
+    if (!deliveryDetails.phone || !deliveryDetails.city || !deliveryDetails.state) {
       console.error("❌ Missing delivery details:", {
-        address: !!deliveryDetails.address,
         phone: !!deliveryDetails.phone,
         city: !!deliveryDetails.city,
         state: !!deliveryDetails.state,
       });
-      alert("Please fill in all required delivery details (address, city, state, and phone number) before proceeding with payment.");
+      alert("Please fill in all required delivery details (city, state, and phone number) before proceeding with payment.");
       return;
     }
 
-    // Validate landmark selection (required for delivery fee calculation)
-    if (!selectedLandmark) {
-      console.error("❌ Landmark not selected");
-      alert("Please select the closest landmark to you.");
-      return;
-    }
-
-    // Ensure delivery charge is calculated
-    if (deliveryCharge === 0) {
-      console.error("❌ Delivery charge not calculated");
-      alert("Please select the closest landmark to you.");
+    const hasStreetAddress = deliveryDetails.address.trim().length > 0;
+    const hasNearestLandmark = resolvedNearestLandmark.length > 0;
+    if (!hasStreetAddress && !hasNearestLandmark) {
+      console.error("❌ Neither street address nor nearest landmark provided");
+      alert("Please provide at least one location detail: street address or nearest landmark.");
       return;
     }
 
@@ -688,10 +696,12 @@ export default function PaymentPage() {
 
       const deliveryPayload = {
         ...deliveryDetails,
-        delivery_zone: deliveryZone,
+        delivery_zone: deliveryZone || resolvedNearestLandmark || null,
         delivery_charge: deliveryCharge,
         service_charge: serviceCharge,
-        landmark: deliveryDetails.state === "Bayelsa" ? selectedLandmark : null,
+        landmark: deliveryDetails.state === "Bayelsa" ? resolvedNearestLandmark || null : null,
+        nearest_landmark: resolvedNearestLandmark || null,
+        street_address: deliveryDetails.address.trim() || null,
         customer_name: !isLoggedIn ? guestCustomerName.trim() : undefined,
         customer_phone: deliveryDetails.phone.trim(),
       };
@@ -886,7 +896,7 @@ export default function PaymentPage() {
 
                     <div>
                       <Label htmlFor="deliveryAddress" className="text-sm font-medium text-gray-700">
-                        Street Address <span className="text-red-500">*</span>
+                        Street Address
                       </Label>
                       <Input
                         id="deliveryAddress"
@@ -903,10 +913,9 @@ export default function PaymentPage() {
                         disabled={isPaymentLocked}
                         placeholder="Enter street address"
                         className="mt-1 bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11 disabled:opacity-50 disabled:cursor-not-allowed"
-                        required
                       />
                       <p className="text-xs text-gray-500 mt-1">
-                        Street address, building number, apartment number
+                        Street address, building number, apartment number. Optional if nearest landmark is provided.
                       </p>
                       <CheckoutAddressPlacesAssist
                         addressInputId="deliveryAddress"
@@ -976,7 +985,7 @@ export default function PaymentPage() {
                     {/* Landmark Selection - Always shown since only Bayelsa is available */}
                     <div>
                       <Label htmlFor="deliveryLandmark" className="text-sm font-medium text-gray-700">
-                        Choose Closest Landmark <span className="text-red-500">*</span>
+                        Choose Closest Landmark (Optional)
                       </Label>
                         <Select
                           value={selectedLandmark}
@@ -984,7 +993,6 @@ export default function PaymentPage() {
                             !isPaymentLocked && setSelectedLandmark(value)
                           }
                           disabled={isPaymentLocked}
-                          required
                         >
                           <SelectTrigger className="mt-1 bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11 w-full disabled:opacity-50 disabled:cursor-not-allowed">
                             <SelectValue placeholder="Select closest landmark" />
@@ -1000,6 +1008,26 @@ export default function PaymentPage() {
                       {landmarkError && (
                         <p className="text-xs text-red-600 mt-1">{landmarkError}</p>
                       )}
+                      <p className="text-xs text-gray-500 mt-1">
+                        Street address is optional if landmark is provided.
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="manualLandmark" className="text-sm font-medium text-gray-700">
+                        Manual Nearest Landmark (Fallback)
+                      </Label>
+                      <Input
+                        id="manualLandmark"
+                        value={manualLandmark}
+                        onChange={(e) => !isPaymentLocked && setManualLandmark(e.target.value)}
+                        disabled={isPaymentLocked}
+                        placeholder="e.g., Opposite Tombia Roundabout"
+                        className="mt-1 bg-hospineil-light-bg border-gray-300 focus:ring-2 focus:ring-hospineil-primary focus:border-hospineil-primary transition-all h-11 disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Use this if Google Maps autocomplete is unavailable or no suggestion matches your address.
+                      </p>
                     </div>
 
                     <div>
@@ -1040,10 +1068,10 @@ export default function PaymentPage() {
                       </div>
                     )}
 
-                    {!selectedLandmark && !calculatingDelivery && (
+                    {!selectedLandmark && !manualLandmark.trim() && !deliveryDetails.address.trim() && !calculatingDelivery && (
                       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                         <p className="text-sm text-yellow-800">
-                          Please select the closest landmark to you.
+                          Provide either a street address or a nearest landmark to continue checkout.
                         </p>
                       </div>
                     )}
@@ -1087,7 +1115,7 @@ export default function PaymentPage() {
                         <div className="flex-1">
                           <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                             <Store className="h-4 w-4 text-indigo-600" />
-                            {group.vendor?.name || "Unknown Vendor"}
+                            {group.vendor?.name || group.vendor?.business_name || "Unknown Vendor"}
                           </h3>
                           {group.vendor?.location && (
                             <p className="text-sm text-gray-600">

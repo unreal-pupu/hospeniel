@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { VendorPremiumToolsSection } from "@/components/vendor-premium-tools-section";
 import { uploadImageViaApi, IMAGE_FILE_INPUT_ACCEPT } from "@/lib/uploads/clientUpload";
+import { PLATFORM_COMMISSION_PERCENT_LABEL } from "@/lib/platformPricing";
 
 interface VendorProfile {
   id: string;
@@ -749,7 +750,7 @@ export default function CookChefDashboard({
               Please create your Paystack subaccount with accurate details from the Settings page. This is required to receive payouts for all orders.
             </p>
             <p className="text-amber-800 font-body text-sm leading-relaxed mt-2">
-              Platform commission: <span className="font-semibold">2% per order</span> (deducted automatically).
+              Platform commission: <span className="font-semibold">{PLATFORM_COMMISSION_PERCENT_LABEL} per order</span> (deducted automatically).
             </p>
           </div>
         </div>

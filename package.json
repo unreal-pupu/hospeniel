@@ -8,7 +8,10 @@
     "build": "npm run clean && next build",
     "start": "next start",
     "lint": "eslint .",
-    "check-env": "node scripts/check-env.js"
+    "check-env": "node scripts/check-env.js",
+    "test:commission": "node scripts/test-commission-config.js",
+    "test:financial-separation": "node scripts/test-financial-separation.js",
+    "test:multi-vendor-payouts": "node scripts/test-multi-vendor-payouts.js"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.7",

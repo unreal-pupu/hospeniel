@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { loadGoogleMapsScript } from "@/lib/googleMaps/loadGoogleMapsScript";
+import { importGoogleMapsLibraries } from "@/lib/googleMaps/loadGoogleMapsScript";
 import { cn } from "@/lib/utils";
 
 /** Default map center (Yenagoa, Bayelsa) — visual only; not used for pricing. */
@@ -20,7 +20,7 @@ interface CheckoutMapPreviewProps {
 export function CheckoutMapPreview({ selected, className }: CheckoutMapPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
-  const markerRef = useRef<google.maps.Marker | null>(null);
+  const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
 
@@ -32,10 +32,10 @@ export function CheckoutMapPreview({ selected, className }: CheckoutMapPreviewPr
 
     (async () => {
       try {
-        await loadGoogleMapsScript();
+        const { maps, marker } = await importGoogleMapsLibraries();
         if (cancelled || !containerRef.current) return;
 
-        const map = new google.maps.Map(containerRef.current, {
+        const map = new maps.Map(containerRef.current, {
           center: CHECKOUT_MAP_DEFAULT_CENTER,
           zoom: 14,
           disableDefaultUI: true,
@@ -43,20 +43,21 @@ export function CheckoutMapPreview({ selected, className }: CheckoutMapPreviewPr
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: false,
+          mapId: "DEMO_MAP_ID",
         });
         mapRef.current = map;
 
-        const marker = new google.maps.Marker({
+        const markerInstance = new marker.AdvancedMarkerElement({
           map,
-          visible: false,
         });
-        markerRef.current = marker;
+        markerInstance.map = null;
+        markerRef.current = markerInstance;
 
         const initial = selectedRef.current;
         if (initial) {
           map.setCenter(initial);
-          marker.setPosition(initial);
-          marker.setVisible(true);
+          markerInstance.position = initial;
+          markerInstance.map = map;
         }
       } catch (err) {
         console.error("[checkout] Map preview failed:", err);
@@ -77,11 +78,11 @@ export function CheckoutMapPreview({ selected, className }: CheckoutMapPreviewPr
 
     if (selected) {
       map.setCenter(selected);
-      marker.setPosition(selected);
-      marker.setVisible(true);
+      marker.position = selected;
+      marker.map = map;
     } else {
       map.setCenter(CHECKOUT_MAP_DEFAULT_CENTER);
-      marker.setVisible(false);
+      marker.map = null;
     }
   }, [selected]);
 

@@ -358,6 +358,7 @@ interface CompletedOrder {
   user_id: string;
   vendor_id: string;
   total_price: number;
+  food_subtotal?: number;
   status: string;
   payment_reference: string | null;
   created_at: string;
@@ -441,7 +442,8 @@ function CompletedOrdersList() {
   return (
     <div className="space-y-4">
       {orders.map((order) => {
-        const commission = order.total_price * COMMISSION_RATE;
+        const foodSubtotal = order.food_subtotal || order.total_price || 0;
+        const commission = foodSubtotal * COMMISSION_RATE;
         return (
           <div
             key={order.id}
@@ -459,7 +461,7 @@ function CompletedOrdersList() {
                 </p>
               </div>
               <div className="text-right">
-                <p className="font-semibold text-sm">₦{order.total_price.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</p>
+                <p className="font-semibold text-sm">₦{foodSubtotal.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</p>
                 <p className="text-xs text-green-600">Commission: ₦{commission.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</p>
               </div>
             </div>

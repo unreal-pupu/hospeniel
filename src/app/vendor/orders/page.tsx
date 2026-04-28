@@ -29,7 +29,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PLATFORM_FOOD_COMMISSION_RATE } from "@/lib/platformPricing";
+import {
+  PLATFORM_COMMISSION_PERCENT_LABEL,
+  PLATFORM_FOOD_COMMISSION_RATE,
+} from "@/lib/platformPricing";
 
 dayjs.extend(relativeTime);
 
@@ -53,6 +56,7 @@ interface Order {
   product_id: string;
   quantity: number;
   total_price: number;
+  food_subtotal?: number;
   status: "Pending" | "Accepted" | "Confirmed" | "Rejected" | "Completed" | "Cancelled" | "Paid";
   created_at: string;
   updated_at: string;
@@ -129,6 +133,7 @@ export default function OrdersPage() {
           product_id,
           quantity,
           total_price,
+          food_subtotal,
           status,
           created_at,
           updated_at,
@@ -272,6 +277,7 @@ interface DeliveryTaskRow {
           product_id: order.product_id as string,
           quantity: order.quantity as number,
           total_price: order.total_price as number,
+          food_subtotal: order.food_subtotal as number | undefined,
           status: order.status as Order["status"],
           created_at: order.created_at as string,
           updated_at: order.updated_at as string,
@@ -684,13 +690,13 @@ interface DeliveryTaskRow {
               <div className="bg-hospineil-base-bg rounded-lg p-4 border border-gray-200">
                 <p className="text-sm text-gray-600 font-body mb-1">Total Sales</p>
                 <p className="text-xl font-bold text-hospineil-primary font-header">
-                  ₦{orders.reduce((sum, o) => sum + (o.total_price || 0), 0).toLocaleString("en-NG", { minimumFractionDigits: 2 })}
+                  ₦{orders.reduce((sum, o) => sum + (o.food_subtotal || o.total_price || 0), 0).toLocaleString("en-NG", { minimumFractionDigits: 2 })}
                 </p>
               </div>
               <div className="bg-hospineil-base-bg rounded-lg p-4 border border-gray-200">
                 <p className="text-sm text-gray-600 font-body mb-1">Net Earnings</p>
                 <p className="text-xl font-bold text-green-600 font-header">
-                  ₦{calculateNetEarnings(orders.reduce((sum, o) => sum + (o.total_price || 0), 0)).toLocaleString("en-NG", { minimumFractionDigits: 2 })}
+                  ₦{calculateNetEarnings(orders.reduce((sum, o) => sum + (o.food_subtotal || o.total_price || 0), 0)).toLocaleString("en-NG", { minimumFractionDigits: 2 })}
                 </p>
               </div>
             </div>
@@ -834,12 +840,12 @@ interface DeliveryTaskRow {
                     )}
 
                     {/* Commission Breakdown */}
-                    {order.total_price > 0 && (
+                    {(order.food_subtotal || order.total_price) > 0 && (
                       <div className="bg-hospineil-base-bg rounded-lg p-3 border border-gray-200 mt-3">
                         <p className="text-xs text-gray-600 font-body leading-relaxed">
-                          <span className="font-semibold">₦{order.total_price.toLocaleString("en-NG", { minimumFractionDigits: 2 })}</span> total —{" "}
-                          <span className="font-semibold text-hospineil-accent">₦{calculateCommission(order.total_price).toLocaleString("en-NG", { minimumFractionDigits: 2 })} (2% Hospineil fee)</span> deducted.{" "}
-                          <span className="font-semibold text-green-600">₦{calculateNetEarnings(order.total_price).toLocaleString("en-NG", { minimumFractionDigits: 2 })}</span> credited to your wallet.
+                          <span className="font-semibold">₦{(order.food_subtotal || order.total_price).toLocaleString("en-NG", { minimumFractionDigits: 2 })}</span> food subtotal —{" "}
+                          <span className="font-semibold text-hospineil-accent">₦{calculateCommission(order.food_subtotal || order.total_price).toLocaleString("en-NG", { minimumFractionDigits: 2 })} ({PLATFORM_COMMISSION_PERCENT_LABEL} Hospineil fee)</span> deducted.{" "}
+                          <span className="font-semibold text-green-600">₦{calculateNetEarnings(order.food_subtotal || order.total_price).toLocaleString("en-NG", { minimumFractionDigits: 2 })}</span> vendor earnings.
                         </p>
                       </div>
                     )}

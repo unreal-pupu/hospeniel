@@ -1,24 +1,31 @@
--- Align vendor payout trigger with 2% platform commission (vendor receives 98% of order line total).
+-- Align vendor payout trigger with 5% platform commission (vendor receives 95% of order line total).
 
 begin;
 
 create or replace function public.create_vendor_payouts()
 returns trigger as $$
 declare
-    order_record record;
+    vendor_rollup record;
     vendor_payout_amount numeric(10, 2);
 begin
   if new.status = 'success' and (old.status is null or old.status != 'success') then
 
-    for order_record in
-      select id, vendor_id, total_price, quantity
+    for vendor_rollup in
+      select
+        vendor_id,
+        sum(coalesce(food_subtotal, 0))::numeric(10, 2) as vendor_food_subtotal,
+        array_agg(id) as order_ids
       from public.orders
       where payment_reference = new.payment_reference
         and vendor_id is not null
+      group by vendor_id
     loop
-      -- Vendor share of order line total after 2% platform commission on the order amount model.
-      vendor_payout_amount := order_record.total_price * 0.98;
-      vendor_payout_amount := round(vendor_payout_amount, 2);
+      -- Vendor share is based strictly on food-only subtotal.
+      vendor_payout_amount := round(coalesce(vendor_rollup.vendor_food_subtotal, 0) * 0.95, 2);
+
+      if vendor_payout_amount <= 0 then
+        continue;
+      end if;
 
       insert into public.vendor_payouts (
         vendor_id,
@@ -28,13 +35,19 @@ begin
         status
       )
       values (
-        order_record.vendor_id,
+        vendor_rollup.vendor_id,
         new.id,
-        order_record.id,
+        null,
         vendor_payout_amount,
         'pending'
       )
-      on conflict do nothing;
+      on conflict (payment_id, vendor_id)
+      do update
+      set
+        payout_amount = excluded.payout_amount,
+        status = 'pending',
+        order_id = null,
+        updated_at = timezone('utc'::text, now());
 
       insert into public.notifications (
         vendor_id,
@@ -43,20 +56,21 @@ begin
         metadata
       )
       values (
-        order_record.vendor_id,
+        vendor_rollup.vendor_id,
         'You have a new paid order. ₦' || vendor_payout_amount::text || ' will be processed soon.',
         'payment',
         jsonb_build_object(
           'type', 'payout',
           'payment_id', new.id,
-          'order_id', order_record.id,
+          'order_ids', vendor_rollup.order_ids,
+          'vendor_food_subtotal', vendor_rollup.vendor_food_subtotal,
           'payout_amount', vendor_payout_amount
         )
       )
       on conflict do nothing;
 
       raise notice 'Created payout for vendor %: ₦% (order: %)',
-        order_record.vendor_id, vendor_payout_amount, order_record.id;
+        vendor_rollup.vendor_id, vendor_payout_amount, vendor_rollup.order_ids;
     end loop;
   end if;
 

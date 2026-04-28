@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { processPremiumToolPayment } from "@/lib/vendor-feature-entitlements";
+import { logPaystackAuthorizationDebug } from "@/lib/server/paystackRequestDebug";
 
 const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY;
 
@@ -11,7 +12,11 @@ export async function POST(req: Request) {
     if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
-    if (!paystackSecretKey?.trim()) {
+    const trimmedPaystackKey = logPaystackAuthorizationDebug(
+      "cron/reconcile-vendor-tool-payments:verify-request",
+      paystackSecretKey
+    );
+    if (!trimmedPaystackKey) {
       return NextResponse.json(
         { success: false, error: "PAYSTACK_SECRET_KEY not configured" },
         { status: 500 }
@@ -40,7 +45,7 @@ export async function POST(req: Request) {
         {
           method: "GET",
           headers: {
-            Authorization: `Bearer ${paystackSecretKey.trim()}`,
+            Authorization: `Bearer ${trimmedPaystackKey}`,
             "Content-Type": "application/json",
           },
         }

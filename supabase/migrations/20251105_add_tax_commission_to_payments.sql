@@ -27,7 +27,7 @@ alter table if exists public.payments
 -- Add comment explaining the columns
 comment on column public.payments.subtotal is 'Subtotal before tax and commission';
 comment on column public.payments.tax_amount is 'VAT amount (7.5% of subtotal)';
-comment on column public.payments.commission_amount is 'Platform commission (10% of subtotal)';
+comment on column public.payments.commission_amount is 'Platform commission (5% of subtotal)';
 comment on column public.payments.total_amount is 'Total amount paid by user (subtotal + tax)';
 
 commit;

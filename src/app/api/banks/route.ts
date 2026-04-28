@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logPaystackAuthorizationDebug } from "@/lib/server/paystackRequestDebug";
 
 // Paystack Bank List API endpoint
 const PAYSTACK_BANKS_URL = "https://api.paystack.co/bank?country=nigeria";
@@ -53,23 +54,12 @@ export async function GET() {
   try {
     // Get Paystack secret key from environment variables
     // Use server-side environment variable (not NEXT_PUBLIC_*)
-    const secretKeyRaw = process.env.PAYSTACK_SECRET_KEY;
-    
-    // Debug logging
-    console.log("🔍 [BANKS API] PAYSTACK_SECRET_KEY check:");
-    console.log("🔍 [BANKS API] Key exists:", !!secretKeyRaw);
-    console.log("🔍 [BANKS API] Key type:", typeof secretKeyRaw);
-    console.log("🔍 [BANKS API] Key length:", secretKeyRaw?.length || 0);
-    if (secretKeyRaw) {
-      console.log("🔍 [BANKS API] Key value (raw, JSON):", JSON.stringify(secretKeyRaw));
-      console.log("🔍 [BANKS API] First 20 chars:", JSON.stringify(secretKeyRaw.substring(0, Math.min(20, secretKeyRaw.length))));
-      console.log("🔍 [BANKS API] Char codes (first 10):", secretKeyRaw.substring(0, Math.min(10, secretKeyRaw.length)).split('').map(c => c.charCodeAt(0)));
-    }
-    
-    // Trim whitespace and validate
-    const secretKey = secretKeyRaw ? secretKeyRaw.trim() : null;
+    const secretKey = logPaystackAuthorizationDebug(
+      "banks:get-banks",
+      process.env.PAYSTACK_SECRET_KEY
+    );
 
-    if (!secretKey || secretKey === '') {
+    if (!secretKey) {
       console.warn("⚠️ PAYSTACK_SECRET_KEY is not set. Using fallback bank list.");
       // Return fallback banks if key is not set
       return NextResponse.json(
@@ -83,13 +73,12 @@ export async function GET() {
     }
 
     // Validate that the key starts with 'sk_test_' or 'sk_live_'
-    const trimmedKey = secretKey.trim();
-    const startsWithSkTest = trimmedKey.startsWith('sk_test_');
-    const startsWithSkLive = trimmedKey.startsWith('sk_live_');
+    const startsWithSkTest = secretKey.startsWith('sk_test_');
+    const startsWithSkLive = secretKey.startsWith('sk_live_');
     
     if (!startsWithSkTest && !startsWithSkLive) {
       console.warn("⚠️ PAYSTACK_SECRET_KEY format may be invalid.");
-      console.warn("🔍 [BANKS API] Key prefix:", JSON.stringify(trimmedKey.substring(0, Math.min(10, trimmedKey.length))));
+      console.warn("🔍 [BANKS API] Key prefix:", JSON.stringify(secretKey.substring(0, Math.min(10, secretKey.length))));
       console.warn("🔍 [BANKS API] Starts with 'sk_test_':", startsWithSkTest);
       console.warn("🔍 [BANKS API] Starts with 'sk_live_':", startsWithSkLive);
       console.warn("⚠️ Using fallback bank list.");
@@ -107,7 +96,7 @@ export async function GET() {
     // Try to fetch banks from Paystack API
     try {
       // Clean the key (remove any hidden characters)
-      const cleanedKey = trimmedKey.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
+      const cleanedKey = secretKey;
       
       console.log("🔄 Fetching banks from Paystack API with key (length:", cleanedKey.length + ", prefix:", cleanedKey.substring(0, 10) + ")");
       

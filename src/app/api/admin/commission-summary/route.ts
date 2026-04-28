@@ -46,7 +46,7 @@ export async function GET(req: Request) {
 
     const { data: orders, error: ordersError } = await supabaseAdmin
       .from("orders")
-      .select("total_price, status")
+      .select("total_price, food_subtotal, status")
       .in("status", ["Completed", "Paid"]);
 
     if (ordersError) {
@@ -55,7 +55,7 @@ export async function GET(req: Request) {
     }
 
     const totalRevenue = (orders || []).reduce(
-      (sum, order) => sum + (Number(order.total_price) || 0),
+      (sum, order) => sum + (Number(order.food_subtotal) || Number(order.total_price) || 0),
       0
     );
     const totalCommission = totalRevenue * COMMISSION_RATE;

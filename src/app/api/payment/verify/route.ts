@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
-import { PLATFORM_FOOD_COMMISSION_RATE } from "@/lib/platformPricing";
+import {
+  calculatePlatformFoodCommission,
+  calculateVendorFoodPayout,
+  toCurrencyAmount,
+} from "@/lib/platformPricing";
 import { logValidationFailure, zodErrorToUserMessage } from "@/lib/validation/http";
 import { paymentVerifySchema } from "@/lib/validation/schemas";
 import { checkRateLimit, RateLimitConfigs } from "@/lib/rateLimiter";
+import { logPaystackEnvDebug } from "@/lib/server/paystackEnvDebug";
+import { logPaystackAuthorizationDebug } from "@/lib/server/paystackRequestDebug";
 
-const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY!;
+const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY;
 
 interface PaymentAuditLogInput {
   paystack_reference: string;
@@ -18,6 +24,9 @@ interface PaymentAuditLogInput {
 
 interface DeliveryDetailsPayload {
   address?: string;
+  street_address?: string;
+  landmark?: string;
+  nearest_landmark?: string;
   delivery_address_line_1?: string;
   city?: string;
   delivery_city?: string;
@@ -33,6 +42,62 @@ interface DeliveryDetailsPayload {
   special_instructions?: string;
   customer_name?: string;
   customer_phone?: string;
+}
+
+async function upsertVendorPayoutsForPayment(
+  supabaseAdmin: ReturnType<typeof getSupabaseAdminClient>,
+  paymentId: string,
+  paymentReference: string
+): Promise<Array<{ vendor_id: string; vendor_food_subtotal: number; payout_amount: number }>> {
+  const { data: orders, error: ordersError } = await supabaseAdmin
+    .from("orders")
+    .select("vendor_id, food_subtotal")
+    .eq("payment_reference", paymentReference)
+    .not("vendor_id", "is", null);
+
+  if (ordersError) {
+    throw new Error(`Failed to load orders for payout: ${ordersError.message}`);
+  }
+
+  const grouped = new Map<string, number>();
+  for (const order of orders || []) {
+    const vendorId = typeof order.vendor_id === "string" ? order.vendor_id : null;
+    if (!vendorId) continue;
+    const foodSubtotal = Number(order.food_subtotal || 0);
+    grouped.set(vendorId, (grouped.get(vendorId) || 0) + Math.max(foodSubtotal, 0));
+  }
+
+  const breakdown: Array<{ vendor_id: string; vendor_food_subtotal: number; payout_amount: number }> = [];
+  for (const [vendorId, subtotal] of grouped.entries()) {
+    const vendorFoodSubtotal = toCurrencyAmount(subtotal);
+    const payoutAmount = calculateVendorFoodPayout(vendorFoodSubtotal);
+    if (payoutAmount <= 0) continue;
+
+    const { error: payoutError } = await supabaseAdmin
+      .from("vendor_payouts")
+      .upsert(
+        {
+          vendor_id: vendorId,
+          payment_id: paymentId,
+          order_id: null,
+          payout_amount: payoutAmount,
+          status: "pending",
+        },
+        { onConflict: "payment_id,vendor_id" }
+      );
+
+    if (payoutError) {
+      throw new Error(`Failed to upsert vendor payout for ${vendorId}: ${payoutError.message}`);
+    }
+
+    breakdown.push({
+      vendor_id: vendorId,
+      vendor_food_subtotal: vendorFoodSubtotal,
+      payout_amount: payoutAmount,
+    });
+  }
+
+  return breakdown;
 }
 
 async function logPaymentAuditEntry(
@@ -60,6 +125,7 @@ async function logPaymentAuditEntry(
 }
 
 export async function POST(req: Request) {
+  logPaystackEnvDebug("payment/verify:entry");
   const endpointPath = new URL(req.url).pathname;
   const rateLimitResult = checkRateLimit(
     endpointPath,
@@ -123,10 +189,19 @@ export async function POST(req: Request) {
     const deliveryDetails = typeof resolvedDeliveryDetails === "object" && resolvedDeliveryDetails !== null
       ? (resolvedDeliveryDetails as DeliveryDetailsPayload)
       : undefined;
-    const deliveryAddress = deliveryDetails?.address || deliveryDetails?.delivery_address_line_1 || "";
+    const deliveryAddress =
+      deliveryDetails?.street_address ||
+      deliveryDetails?.address ||
+      deliveryDetails?.delivery_address_line_1 ||
+      "";
     const deliveryCity = deliveryDetails?.city || deliveryDetails?.delivery_city || "";
     const deliveryState = deliveryDetails?.state || deliveryDetails?.delivery_state || "";
-    const deliveryZone = deliveryDetails?.delivery_zone || deliveryDetails?.zone || "";
+    const deliveryZone =
+      deliveryDetails?.delivery_zone ||
+      deliveryDetails?.landmark ||
+      deliveryDetails?.nearest_landmark ||
+      deliveryDetails?.zone ||
+      "";
     const deliveryPostalCode = deliveryDetails?.postal_code || deliveryDetails?.delivery_postal_code || "";
     const deliveryPhone = deliveryDetails?.phone || deliveryDetails?.delivery_phone_number || "";
     const deliveryCharge = deliveryDetails?.delivery_charge || 0;
@@ -157,7 +232,20 @@ export async function POST(req: Request) {
     );
 
     // Verify payment with Paystack
-    const trimmedKey = paystackSecretKey.trim();
+    const trimmedKey = logPaystackAuthorizationDebug(
+      "payment/verify:transaction-verify",
+      paystackSecretKey
+    );
+    if (!trimmedKey) {
+      logPaystackEnvDebug("payment/verify:missing-secret");
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Payment verification service is not configured.",
+        },
+        { status: 500 }
+      );
+    }
     const verifyResponse = await fetch(
       `https://api.paystack.co/transaction/verify/${reference}`,
       {
@@ -215,11 +303,12 @@ export async function POST(req: Request) {
     const deliveryFee = Number(transactionData?.metadata?.delivery_fee || 0);
     const vatAmount = Number(transactionData?.metadata?.vat_amount || 0);
     const serviceCharge = Number(transactionData?.metadata?.service_charge || 0);
-    const expectedVendorPayout = foodAmount * (1 - PLATFORM_FOOD_COMMISSION_RATE);
-    const expectedPlatformShare =
-      foodAmount * PLATFORM_FOOD_COMMISSION_RATE + deliveryFee + vatAmount + serviceCharge;
-    const expectedPlatformPayout = expectedPlatformShare - paystackFeeKobo / 100;
-    const expectedGrossTotal = foodAmount + deliveryFee + vatAmount + serviceCharge;
+    const expectedVendorPayout = calculateVendorFoodPayout(foodAmount);
+    const expectedPlatformShare = toCurrencyAmount(
+      calculatePlatformFoodCommission(foodAmount) + deliveryFee + vatAmount + serviceCharge
+    );
+    const expectedPlatformPayout = toCurrencyAmount(expectedPlatformShare - paystackFeeKobo / 100);
+    const expectedGrossTotal = toCurrencyAmount(foodAmount + deliveryFee + vatAmount + serviceCharge);
     const hasMismatch = Math.abs(expectedGrossTotal - grossAmount) > 0.01;
 
     await logPaymentAuditEntry(
@@ -287,6 +376,7 @@ export async function POST(req: Request) {
       product_id: string;
       quantity: number;
       total_price: number;
+      food_subtotal?: number;
       [key: string]: unknown;
     }
     let createdOrders: CreatedOrder[] = [];
@@ -444,6 +534,7 @@ export async function POST(req: Request) {
             product_id: string;
             quantity: number;
             total_price: number;
+            food_subtotal?: number;
             vat_amount?: number;
             delivery_address?: string;
             delivery_city?: string;
@@ -463,6 +554,7 @@ export async function POST(req: Request) {
             product_id: order.product_id,
             quantity: order.quantity || 1,
             total_price: orderTotalPrice,
+            food_subtotal: orderTotalPrice,
             payment_reference: reference,
             status: "Pending",
           };
@@ -536,7 +628,7 @@ export async function POST(req: Request) {
           // Fetch existing orders to create notifications (select all fields required by CreatedOrder)
           const { data: existingOrdersFull } = await supabaseAdmin
             .from("orders")
-            .select("id, vendor_id, user_id, guest_id, customer_name, product_id, quantity, total_price")
+            .select("id, vendor_id, user_id, guest_id, customer_name, product_id, quantity, total_price, food_subtotal")
             .eq("payment_reference", reference);
           
           if (existingOrdersFull) {
@@ -550,6 +642,7 @@ export async function POST(req: Request) {
               product_id: order.product_id,
               quantity: order.quantity || 1,
               total_price: order.total_price || 0,
+              food_subtotal: order.food_subtotal || 0,
             }));
           }
         } else {
@@ -573,7 +666,7 @@ export async function POST(req: Request) {
               console.warn("⚠️ Duplicate orders detected for this payment. Using existing orders.");
               const { data: existingOrdersFull } = await supabaseAdmin
                 .from("orders")
-                .select("id, vendor_id, user_id, guest_id, customer_name, product_id, quantity, total_price")
+                .select("id, vendor_id, user_id, guest_id, customer_name, product_id, quantity, total_price, food_subtotal")
                 .eq("payment_reference", reference);
               if (existingOrdersFull) {
                 createdOrders = existingOrdersFull.map((order) => ({
@@ -585,6 +678,7 @@ export async function POST(req: Request) {
                   product_id: order.product_id,
                   quantity: order.quantity || 1,
                   total_price: order.total_price || 0,
+                  food_subtotal: order.food_subtotal || 0,
                 }));
                 createdOrdersCount = createdOrders.length;
               }
@@ -617,7 +711,7 @@ export async function POST(req: Request) {
                   console.warn("⚠️ Duplicate orders detected on retry. Using existing orders.");
                   const { data: existingOrdersFull } = await supabaseAdmin
                     .from("orders")
-                    .select("id, vendor_id, user_id, guest_id, customer_name, product_id, quantity, total_price")
+                  .select("id, vendor_id, user_id, guest_id, customer_name, product_id, quantity, total_price, food_subtotal")
                     .eq("payment_reference", reference);
                   if (existingOrdersFull) {
                     createdOrders = existingOrdersFull.map((order) => ({
@@ -629,6 +723,7 @@ export async function POST(req: Request) {
                       product_id: order.product_id,
                       quantity: order.quantity || 1,
                       total_price: order.total_price || 0,
+                      food_subtotal: order.food_subtotal || 0,
                     }));
                     createdOrdersCount = createdOrders.length;
                   }
@@ -689,10 +784,41 @@ export async function POST(req: Request) {
     if (!vendorsNotified) {
       const { data: paidOrders } = await supabaseAdmin
         .from("orders")
-        .select("id, vendor_id, user_id, guest_id, customer_name, product_id, quantity, total_price")
+        .select("id, vendor_id, user_id, guest_id, customer_name, product_id, quantity, total_price, food_subtotal")
         .eq("payment_reference", reference);
 
       await notifyVendorsForOrders((paidOrders as CreatedOrder[]) || []);
+    }
+
+    const effectivePaymentId =
+      typeof paymentRecord?.id === "string"
+        ? paymentRecord.id
+        : typeof transactionData?.metadata?.payment_id === "string"
+          ? transactionData.metadata.payment_id
+          : null;
+    if (effectivePaymentId) {
+      try {
+        const payoutBreakdown = await upsertVendorPayoutsForPayment(
+          supabaseAdmin,
+          effectivePaymentId,
+          reference
+        );
+        await logPaymentAuditEntry(
+          {
+            paystack_reference: reference,
+            service_request_id: service_request_id ?? null,
+            verification_status: "vendor_payout_breakdown",
+            paystack_response: {
+              is_multi_vendor: payoutBreakdown.length > 1,
+              payout_count: payoutBreakdown.length,
+              payout_breakdown: payoutBreakdown,
+            },
+          },
+          supabaseAdmin
+        );
+      } catch (payoutSyncError) {
+        console.error("❌ Vendor payout synchronization failed:", payoutSyncError);
+      }
     }
 
     const amountPaid = transactionData.amount / 100; // Convert from kobo to Naira
@@ -856,6 +982,7 @@ export async function POST(req: Request) {
                 product_id: null,
                 quantity: 1,
                 total_price: amountPaid,
+                food_subtotal: 0,
                 status: "Paid",
                 payment_reference: reference,
                 order_type: "service",
@@ -957,8 +1084,8 @@ export async function POST(req: Request) {
     const commission = transactionData.metadata?.transaction_charge
       ? transactionData.metadata.transaction_charge / 100
       : metaFoodForCommission > 0
-        ? metaFoodForCommission * PLATFORM_FOOD_COMMISSION_RATE
-        : amountPaid * PLATFORM_FOOD_COMMISSION_RATE;
+        ? calculatePlatformFoodCommission(metaFoodForCommission)
+        : calculatePlatformFoodCommission(amountPaid);
 
     return NextResponse.json({
       success: true,

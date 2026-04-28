@@ -35,11 +35,18 @@ interface Payment {
     product_id: string;
     quantity: number;
     total_price: number;
+    food_subtotal?: number;
     status: string;
     vendor_name?: string;
     menu_items?: {
       title: string;
     };
+  }>;
+  payout_breakdown?: Array<{
+    vendor_id: string;
+    vendor_name: string;
+    payout_amount: number;
+    status: string;
   }>;
 }
 
@@ -341,7 +348,11 @@ export default function AdminPaymentsPage() {
                   {filteredPayments.map((payment) => {
                     const COMMISSION_RATE = PLATFORM_FOOD_COMMISSION_RATE;
                     const orderTotal = payment.orders && payment.orders.length > 0
-                      ? payment.orders.reduce((sum, order) => sum + (Number(order.total_price) || 0), 0)
+                      ? payment.orders.reduce(
+                          (sum, order) =>
+                            sum + (Number(order.food_subtotal) || Number(order.total_price) || 0),
+                          0
+                        )
                       : Number(payment.total_amount || 0);
                     const commission = orderTotal * COMMISSION_RATE;
                     const vendorName = payment.orders && payment.orders.length > 0
@@ -365,6 +376,19 @@ export default function AdminPaymentsPage() {
                           <div className="font-medium text-gray-800 font-body">
                             {vendorName}
                           </div>
+                          {payment.payout_breakdown && payment.payout_breakdown.length > 1 && (
+                            <div className="mt-1 space-y-1">
+                              {payment.payout_breakdown.map((payout) => (
+                                <p key={`${payment.id}-${payout.vendor_id}`} className="text-xs text-gray-500 font-body">
+                                  {payout.vendor_name}: ₦
+                                  {Number(payout.payout_amount).toLocaleString("en-NG", {
+                                    minimumFractionDigits: 2,
+                                  })}{" "}
+                                  ({payout.status})
+                                </p>
+                              ))}
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-2">

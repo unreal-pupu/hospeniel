@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { processPremiumToolPayment } from "@/lib/vendor-feature-entitlements";
 import { ensureAuthenticatedRequest } from "@/lib/api/ensureAuthenticatedRequest";
+import { logPaystackAuthorizationDebug } from "@/lib/server/paystackRequestDebug";
 
 const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY;
 
@@ -21,7 +22,11 @@ export async function POST(req: Request) {
     const authCheck = await ensureAuthenticatedRequest(req);
     if (!authCheck.ok) return authCheck.response;
 
-    if (!paystackSecretKey?.trim()) {
+    const trimmedPaystackKey = logPaystackAuthorizationDebug(
+      "vendor-tools/activate:verify-request",
+      paystackSecretKey
+    );
+    if (!trimmedPaystackKey) {
       console.error("vendor-tools/activate: PAYSTACK_SECRET_KEY missing");
       return NextResponse.json(
         { success: false, error: "Payment verification is not configured" },
@@ -51,7 +56,7 @@ export async function POST(req: Request) {
       {
         method: "GET",
         headers: {
-          Authorization: `Bearer ${paystackSecretKey.trim()}`,
+          Authorization: `Bearer ${trimmedPaystackKey}`,
           "Content-Type": "application/json",
         },
       }

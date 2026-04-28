@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { loadGoogleMapsScript } from "@/lib/googleMaps/loadGoogleMapsScript";
+import { importGoogleMapsLibraries } from "@/lib/googleMaps/loadGoogleMapsScript";
 
 export interface CheckoutPlaceSelection {
   formatted_address: string;
@@ -31,31 +31,44 @@ export function useCheckoutPlacesAutocomplete({
     if (!enabled) return;
 
     let cancelled = false;
-    let listener: google.maps.MapsEventListener | undefined;
+    let autocompleteElement: google.maps.places.PlaceAutocompleteElement | null = null;
+    let listener: ((event: Event) => void) | null = null;
 
     (async () => {
       try {
-        await loadGoogleMapsScript();
+        const { places } = await importGoogleMapsLibraries();
         if (cancelled) return;
 
         const input = document.getElementById(inputId) as HTMLInputElement | null;
         if (!input) return;
 
-        const autocomplete = new google.maps.places.Autocomplete(input, {
-          fields: ["formatted_address", "geometry"],
-        });
+        const host = document.createElement("div");
+        host.style.display = "none";
+        input.parentElement?.appendChild(host);
 
-        listener = autocomplete.addListener("place_changed", () => {
-          const place = autocomplete.getPlace();
-          const loc = place.geometry?.location;
-          const formatted = place.formatted_address;
-          if (!formatted || !loc) return;
+        autocompleteElement = new places.PlaceAutocompleteElement();
+        host.appendChild(autocompleteElement);
+
+        listener = async (event: Event) => {
+          const placeEvent = event as CustomEvent<{ placePrediction?: { toPlace?: () => google.maps.places.Place } }>;
+          const prediction = placeEvent.detail?.placePrediction;
+          if (!prediction?.toPlace) return;
+          const place = prediction.toPlace();
+          await place.fetchFields({
+            fields: ["formattedAddress", "location"],
+          });
+          const formatted = place.formattedAddress;
+          const lat = place.location?.lat();
+          const lng = place.location?.lng();
+          if (!formatted || lat == null || lng == null) return;
+          input.value = formatted;
           onPlaceSelectedRef.current({
             formatted_address: formatted,
-            lat: loc.lat(),
-            lng: loc.lng(),
+            lat,
+            lng,
           });
-        });
+        };
+        autocompleteElement.addEventListener("gmp-select", listener);
       } catch (err) {
         console.error("[checkout] Places autocomplete failed:", err);
       }
@@ -63,8 +76,11 @@ export function useCheckoutPlacesAutocomplete({
 
     return () => {
       cancelled = true;
-      if (listener) {
-        google.maps.event.removeListener(listener);
+      if (autocompleteElement && listener) {
+        autocompleteElement.removeEventListener("gmp-select", listener);
+      }
+      if (autocompleteElement?.parentElement) {
+        autocompleteElement.parentElement.remove();
       }
     };
   }, [enabled, inputId]);

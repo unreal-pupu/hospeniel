@@ -3,7 +3,10 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 serve(async (req) => {
   try {
-    const secretKey = Deno.env.get("PAYSTACK_SECRET_KEY");
+    const rawSecretKey = Deno.env.get("PAYSTACK_SECRET_KEY");
+    const secretKey = rawSecretKey
+      ? rawSecretKey.trim().replace(/[\u200B-\u200D\uFEFF]/g, "")
+      : "";
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -11,12 +14,29 @@ serve(async (req) => {
       throw new Error("Missing environment variables");
     }
 
+    const authHeader = `Bearer ${secretKey}`;
+    console.log("[paystack-auth-debug] supabase/functions/verify-payment", {
+      keyExists: typeof rawSecretKey === "string",
+      keyIsEmptyAfterTrim: secretKey.length === 0,
+      keyLength: secretKey.length,
+      maskedKeyPreview:
+        secretKey.length > 10
+          ? `${secretKey.slice(0, 6)}...${secretKey.slice(-4)}`
+          : `${secretKey.slice(0, 2)}***${secretKey.slice(-2)}`,
+      keyPrefix: secretKey.startsWith("sk_test_")
+        ? "sk_test"
+        : secretKey.startsWith("sk_live_")
+          ? "sk_live"
+          : "unknown",
+      authHeaderHasBearerPrefix: authHeader.startsWith("Bearer "),
+    });
+
     const { reference } = await req.json();
 
     // 1️⃣ Verify payment with Paystack API
     const res = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
       headers: {
-        Authorization: `Bearer ${secretKey}`,
+        Authorization: authHeader,
       },
     });
     const verifyData = await res.json();

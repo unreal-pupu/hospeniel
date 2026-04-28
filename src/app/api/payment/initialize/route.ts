@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
-import { PLATFORM_FOOD_COMMISSION_RATE } from "@/lib/platformPricing";
+import {
+  calculatePlatformFoodCommission,
+  toCurrencyAmount,
+} from "@/lib/platformPricing";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { parseJsonBody } from "@/lib/validation/http";
 import { paymentInitializeSchema } from "@/lib/validation/schemas";
+import { logPaystackEnvDebug } from "@/lib/server/paystackEnvDebug";
+import { logPaystackAuthorizationDebug } from "@/lib/server/paystackRequestDebug";
 
 export async function POST(req: Request) {
   try {
+    logPaystackEnvDebug("payment/initialize:entry");
     const supabaseAdmin = getSupabaseAdminClient();
     const parsed = await parseJsonBody(req, paymentInitializeSchema, "POST /api/payment/initialize");
     if (!parsed.ok) return parsed.response;
@@ -29,6 +35,7 @@ export async function POST(req: Request) {
     const secretKey = process.env.PAYSTACK_SECRET_KEY;
     if (!secretKey) {
       console.error("PAYSTACK_SECRET_KEY is not set in environment variables");
+      logPaystackEnvDebug("payment/initialize:missing-secret");
       return NextResponse.json(
         { error: "Payment service is not configured. Please contact support." },
         { status: 500 }
@@ -36,41 +43,17 @@ export async function POST(req: Request) {
     }
 
     // Validate key format (should start with sk_test_ or sk_live_)
-    const trimmedKey = secretKey.trim();
+    const trimmedKey = logPaystackAuthorizationDebug(
+      "payment/initialize:transaction-initialize",
+      secretKey
+    );
     const isValidKey = trimmedKey.startsWith("sk_test_") || trimmedKey.startsWith("sk_live_");
     if (!isValidKey) {
       console.error("Invalid PAYSTACK_SECRET_KEY format");
+      logPaystackEnvDebug("payment/initialize:invalid-secret-format");
       return NextResponse.json(
         { error: "Payment service configuration error. Please contact support." },
         { status: 500 }
-      );
-    }
-
-    // Fetch vendor's subaccount_code from profiles table
-    const { data: vendorProfile, error: vendorError } = await supabaseAdmin
-      .from("profiles")
-      .select("id, name, subaccount_code")
-      .eq("id", vendor_id)
-      .eq("role", "vendor")
-      .single();
-
-    if (vendorError || !vendorProfile) {
-      console.error("Error fetching vendor profile:", vendorError);
-      return NextResponse.json(
-        { error: "Vendor not found or invalid vendor ID" },
-        { status: 404 }
-      );
-    }
-
-    if (!vendorProfile.subaccount_code) {
-      console.error("Vendor does not have a subaccount_code:", vendor_id);
-      return NextResponse.json(
-        { 
-          error: "Vendor payment account is not set up. Please contact the vendor or support.",
-          vendor_id,
-          vendor_name: vendorProfile.name,
-        },
-        { status: 400 }
       );
     }
 
@@ -97,8 +80,57 @@ export async function POST(req: Request) {
         ? vat_amount
         : Math.max(amount - resolvedFoodAmount - (resolvedDeliveryFee || 0) - resolvedServiceCharge, 0);
 
-    const commissionAmount = resolvedFoodAmount * PLATFORM_FOOD_COMMISSION_RATE;
-    const platformShareAmount = commissionAmount + (resolvedDeliveryFee || 0) + resolvedVatAmount + resolvedServiceCharge;
+    const commissionAmount = calculatePlatformFoodCommission(resolvedFoodAmount);
+    const platformShareAmount = toCurrencyAmount(
+      commissionAmount + (resolvedDeliveryFee || 0) + resolvedVatAmount + resolvedServiceCharge
+    );
+    const pendingOrderVendorIds = Array.isArray(pending_orders)
+      ? [
+          ...new Set(
+            pending_orders
+              .map((order) =>
+                typeof (order as { vendor_id?: unknown }).vendor_id === "string"
+                  ? (order as { vendor_id: string }).vendor_id
+                  : null
+              )
+              .filter((id): id is string => Boolean(id))
+          ),
+        ]
+      : [];
+    const isMultiVendor = pendingOrderVendorIds.length > 1;
+    const isSingleVendorSplit = !isMultiVendor;
+
+    let vendorProfile: { id: string; name: string | null; subaccount_code: string | null } | null = null;
+    if (isSingleVendorSplit) {
+      const { data: fetchedVendorProfile, error: vendorError } = await supabaseAdmin
+        .from("profiles")
+        .select("id, name, subaccount_code")
+        .eq("id", vendor_id)
+        .eq("role", "vendor")
+        .single();
+
+      if (vendorError || !fetchedVendorProfile) {
+        console.error("Error fetching vendor profile:", vendorError);
+        return NextResponse.json(
+          { error: "Vendor not found or invalid vendor ID" },
+          { status: 404 }
+        );
+      }
+
+      if (!fetchedVendorProfile.subaccount_code) {
+        console.error("Vendor does not have a subaccount_code:", vendor_id);
+        return NextResponse.json(
+          {
+            error: "Vendor payment account is not set up. Please contact the vendor or support.",
+            vendor_id,
+            vendor_name: fetchedVendorProfile.name,
+          },
+          { status: 400 }
+        );
+      }
+
+      vendorProfile = fetchedVendorProfile;
+    }
     
     // Convert amount to kobo (Paystack uses kobo as the smallest currency unit)
     const amountInKobo = Math.round(amount * 100);
@@ -134,14 +166,11 @@ export async function POST(req: Request) {
       amount: amountInKobo,
       currency: "NGN",
       reference: paymentReference,
-      subaccount: vendorProfile.subaccount_code,
-      transaction_charge: transactionChargeInKobo,
-      bearer: "account", // Platform absorbs Paystack fees; vendor gets remainder after split
       callback_url: callbackUrl, // Redirect URL after payment
       metadata: {
         order_id: order_id || null,
         vendor_id,
-        vendor_name: vendorProfile.name,
+        vendor_name: vendorProfile?.name || (isMultiVendor ? "multi-vendor-checkout" : null),
         payment_id: payment_id || null,
         description: "Order payment for Hospineil",
         food_amount: resolvedFoodAmount,
@@ -151,14 +180,26 @@ export async function POST(req: Request) {
         commission_amount: commissionAmount,
         platform_share_amount: platformShareAmount,
         transaction_charge_kobo: transactionChargeInKobo, // Platform share in kobo
+        is_single_vendor_split: isSingleVendorSplit,
+        is_multi_vendor: isMultiVendor,
+        vendor_count: pendingOrderVendorIds.length,
         ...metadata,
       },
     };
 
+    if (isSingleVendorSplit && vendorProfile?.subaccount_code) {
+      // Split only food subtotal + platform-owned charges for single-vendor checkout.
+      paystackPayload.subaccount = vendorProfile.subaccount_code;
+      paystackPayload.transaction_charge = transactionChargeInKobo;
+      paystackPayload.bearer = "account";
+    }
+
     console.log("🔄 Initializing Paystack transaction with subaccount:", {
       vendor_id,
-      vendor_name: vendorProfile.name,
-      subaccount_code: vendorProfile.subaccount_code,
+      vendor_name: vendorProfile?.name || null,
+      subaccount_code: vendorProfile?.subaccount_code || null,
+      is_multi_vendor: isMultiVendor,
+      is_single_vendor_split: isSingleVendorSplit,
       amount: amount,
       commission: commissionAmount,
       reference: paymentReference,
@@ -230,7 +271,7 @@ export async function POST(req: Request) {
       reference: paystackData.data.reference,
       amount: amount,
       commission: commissionAmount,
-      vendor_subaccount: vendorProfile.subaccount_code,
+      vendor_subaccount: vendorProfile?.subaccount_code || null,
     });
   } catch (error) {
     console.error("Error initializing payment:", error);

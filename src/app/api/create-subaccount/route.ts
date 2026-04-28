@@ -2,12 +2,15 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { PAYSTACK_VENDOR_SUBACCOUNT_PERCENTAGE_CHARGE } from "@/lib/platformPricing";
 import { ensureAuthenticatedRequest } from "@/lib/api/ensureAuthenticatedRequest";
+import { logPaystackEnvDebug } from "@/lib/server/paystackEnvDebug";
+import { logPaystackAuthorizationDebug } from "@/lib/server/paystackRequestDebug";
 
 // Paystack Subaccount API endpoint
 const PAYSTACK_SUBACCOUNT_URL = "https://api.paystack.co/subaccount";
 
 export async function POST(req: Request) {
   try {
+    logPaystackEnvDebug("create-subaccount:entry");
     const authCheck = await ensureAuthenticatedRequest(req);
     if (!authCheck.ok) return authCheck.response;
     const { userId: authenticatedUserId, isAdmin } = authCheck.context;
@@ -16,17 +19,15 @@ export async function POST(req: Request) {
     // Get Paystack secret key from environment variables
     // Use server-side environment variable (not NEXT_PUBLIC_*)
     const paystackSecretKeyRaw = process.env.PAYSTACK_SECRET_KEY;
-    
-    // Trim whitespace and remove any hidden characters
-    const paystackSecretKey = paystackSecretKeyRaw 
-      ? paystackSecretKeyRaw.trim().replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width spaces and BOM
-      : null;
+    const paystackSecretKey = logPaystackAuthorizationDebug(
+      "create-subaccount:subaccount-create",
+      paystackSecretKeyRaw
+    );
     
     // Validate environment variables
-    if (!paystackSecretKey || paystackSecretKey === '') {
+    if (!paystackSecretKey) {
       console.error("❌ PAYSTACK_SECRET_KEY is not set or empty after trimming");
-      console.log("🔍 Raw value type:", typeof paystackSecretKeyRaw);
-      console.log("🔍 Raw value length:", paystackSecretKeyRaw?.length);
+      logPaystackEnvDebug("create-subaccount:missing-secret");
       return NextResponse.json(
         { 
           success: false, 
@@ -35,7 +36,7 @@ export async function POST(req: Request) {
             keyExists: !!paystackSecretKeyRaw,
             keyLength: paystackSecretKeyRaw?.length,
             keyType: typeof paystackSecretKeyRaw,
-            firstChars: paystackSecretKeyRaw?.substring(0, 10),
+            firstChars: "(masked - see server logs)",
           } : undefined
         },
         { status: 500 }
@@ -50,12 +51,7 @@ export async function POST(req: Request) {
     
     if (!isValidTestKey && !isValidLiveKey) {
       console.error("❌ PAYSTACK_SECRET_KEY format is invalid");
-      console.error("🔍 Key prefix (first 8 chars):", JSON.stringify(keyPrefix));
-      console.error("🔍 Key prefix (first 10 chars):", JSON.stringify(paystackSecretKey.substring(0, 10)));
-      console.error("🔍 Key length:", paystackSecretKey.length);
-      console.error("🔍 Starts with 'sk_test_':", isValidTestKey);
-      console.error("🔍 Starts with 'sk_live_':", isValidLiveKey);
-      console.error("🔍 Char codes of first 10 chars:", paystackSecretKey.substring(0, 10).split('').map(c => c.charCodeAt(0)));
+      logPaystackEnvDebug("create-subaccount:invalid-secret-format");
       
       return NextResponse.json(
         { 
@@ -64,8 +60,7 @@ export async function POST(req: Request) {
           debug: process.env.NODE_ENV === 'development' ? {
             keyLength: paystackSecretKey.length,
             keyPrefix: keyPrefix,
-            first10Chars: paystackSecretKey.substring(0, 10),
-            charCodes: paystackSecretKey.substring(0, 10).split('').map(c => c.charCodeAt(0)),
+            first10Chars: "(masked - see server logs)",
             startsWithSkTest: isValidTestKey,
             startsWithSkLive: isValidLiveKey,
           } : undefined
@@ -188,7 +183,7 @@ export async function POST(req: Request) {
     });
 
     // Use the validated and cleaned key
-    const cleanedKey = paystackSecretKey.trim();
+    const cleanedKey = paystackSecretKey;
     console.log("🔄 Making Paystack API call with cleaned key (length:", cleanedKey.length + ")");
 
     const paystackResponse = await fetch(PAYSTACK_SUBACCOUNT_URL, {

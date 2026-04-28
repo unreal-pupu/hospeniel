@@ -26,10 +26,17 @@ interface PaymentWithDetails {
     product_id: string | null;
     quantity: number;
     total_price: number;
+    food_subtotal?: number;
     status: string;
     menu_items?: {
       title: string;
     };
+  }>;
+  payout_breakdown?: Array<{
+    vendor_id: string;
+    vendor_name: string;
+    payout_amount: number;
+    status: string;
   }>;
 }
 
@@ -177,6 +184,9 @@ export async function GET(req: Request) {
     const paymentReferences = allPayments
       .map((p: PaymentWithDetails) => p.payment_reference)
       .filter(Boolean) as string[];
+    const paymentIds = productPayments
+      .map((p) => p.id)
+      .filter((id): id is string => typeof id === "string");
 
     const ordersByPayment: Map<string, Array<{
       id: string;
@@ -184,6 +194,7 @@ export async function GET(req: Request) {
       product_id: string | null;
       quantity: number;
       total_price: number;
+      food_subtotal?: number;
       status: string;
       payment_reference: string | null;
       menu_items?: { title: string };
@@ -197,6 +208,7 @@ export async function GET(req: Request) {
           product_id,
           quantity,
           total_price,
+          food_subtotal,
           status,
           payment_reference,
           menu_items (
@@ -216,6 +228,7 @@ export async function GET(req: Request) {
             product_id: order.product_id,
             quantity: order.quantity,
             total_price: order.total_price,
+            food_subtotal: order.food_subtotal || 0,
             status: order.status,
             payment_reference: order.payment_reference,
             menu_items: Array.isArray(order.menu_items) && order.menu_items.length > 0
@@ -263,6 +276,31 @@ export async function GET(req: Request) {
       });
     }
 
+    const payoutBreakdownByPayment = new Map<
+      string,
+      Array<{ vendor_id: string; vendor_name: string; payout_amount: number; status: string }>
+    >();
+    if (paymentIds.length > 0) {
+      const { data: payoutRows } = await supabaseAdmin
+        .from("vendor_payouts")
+        .select("payment_id, vendor_id, payout_amount, status")
+        .in("payment_id", paymentIds);
+
+      for (const payout of payoutRows || []) {
+        const paymentId = String(payout.payment_id);
+        const vendorId = String(payout.vendor_id);
+        const existing = payoutBreakdownByPayment.get(paymentId) || [];
+        const vendorInfo = vendorMap.get(vendorId);
+        existing.push({
+          vendor_id: vendorId,
+          vendor_name: vendorInfo?.name || "Unknown Vendor",
+          payout_amount: Number(payout.payout_amount) || 0,
+          status: String(payout.status || "pending"),
+        });
+        payoutBreakdownByPayment.set(paymentId, existing);
+      }
+    }
+
     // Combine payments with user information, orders, and vendor details
     const paymentsWithDetails: PaymentWithDetails[] = allPayments.map((payment: PaymentWithDetails) => {
       const userProfile = userProfileMap.get(payment.user_id);
@@ -287,6 +325,7 @@ export async function GET(req: Request) {
           product_id: null,
           quantity: 1,
           total_price: payment.total_amount,
+          food_subtotal: 0,
           status: "Paid",
           payment_reference: payment.payment_reference ?? null,
           vendor_name: vendorInfo?.name || "Unknown Vendor",
@@ -298,6 +337,7 @@ export async function GET(req: Request) {
         ...payment,
         profiles: userProfile || { id: payment.user_id, name: "Unknown User", email: "N/A" },
         orders: ordersWithVendors,
+        payout_breakdown: payment.payment_type === "product" ? (payoutBreakdownByPayment.get(payment.id) || []) : [],
       };
     });
 
@@ -333,7 +373,7 @@ export async function GET(req: Request) {
     for (const payment of successfulPayments) {
       if (payment.orders && payment.orders.length > 0) {
         const orderTotal = payment.orders.reduce(
-          (sum, order) => sum + (Number(order.total_price) || 0),
+          (sum, order) => sum + (Number(order.food_subtotal) || Number(order.total_price) || 0),
           0
         );
         totalCommission += orderTotal * COMMISSION_RATE;

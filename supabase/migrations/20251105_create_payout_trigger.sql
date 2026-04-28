@@ -7,34 +7,31 @@ begin;
 create or replace function create_vendor_payouts()
 returns trigger as $$
 declare
-  order_record record;
+  vendor_rollup record;
   vendor_payout_amount numeric(10, 2);
-  subtotal_val numeric(10, 2);
-  commission_val numeric(10, 2);
 begin
   -- Only process if payment status changed to 'success'
   if new.status = 'success' and (old.status is null or old.status != 'success') then
-    
-    -- Get subtotal and commission from payment
-    subtotal_val := coalesce(new.subtotal, new.total_amount);
-    commission_val := coalesce(new.commission_amount, 0);
-    
-    -- Find all orders for this payment
-    for order_record in 
-      select id, vendor_id, total_price, quantity
+    -- Aggregate by vendor for multi-vendor safety (one payout per vendor per payment).
+    for vendor_rollup in
+      select
+        vendor_id,
+        sum(coalesce(food_subtotal, 0))::numeric(10, 2) as vendor_food_subtotal,
+        array_agg(id) as order_ids
       from public.orders
       where payment_reference = new.payment_reference
         and vendor_id is not null
+      group by vendor_id
     loop
-      -- Calculate vendor payout for this order
-      -- Commission is 10% of subtotal, so vendor gets 90% of their order amount
-      -- Payout = order amount * 0.9 (90% after 10% commission)
-      vendor_payout_amount := order_record.total_price * 0.9;
+      -- Vendor payout must be based on food-only subtotal, excluding VAT/delivery/service fees.
+      vendor_payout_amount := round(coalesce(vendor_rollup.vendor_food_subtotal, 0) * 0.95, 2);
       
-      -- Round to 2 decimal places
-      vendor_payout_amount := round(vendor_payout_amount, 2);
+      -- Skip payout rows when an order has no food component.
+      if vendor_payout_amount <= 0 then
+        continue;
+      end if;
       
-      -- Create payout record
+      -- Create or refresh payout record (idempotent per vendor/payment).
       insert into public.vendor_payouts (
         vendor_id,
         payment_id,
@@ -43,13 +40,19 @@ begin
         status
       )
       values (
-        order_record.vendor_id,
+        vendor_rollup.vendor_id,
         new.id,
-        order_record.id,
+        null,
         vendor_payout_amount,
         'pending'
       )
-      on conflict do nothing; -- Prevent duplicates
+      on conflict (payment_id, vendor_id)
+      do update
+      set
+        payout_amount = excluded.payout_amount,
+        status = 'pending',
+        order_id = null,
+        updated_at = timezone('utc'::text, now());
       
       -- Create notification for vendor
       insert into public.notifications (
@@ -59,20 +62,21 @@ begin
         metadata
       )
       values (
-        order_record.vendor_id,
+        vendor_rollup.vendor_id,
         'You have a new paid order. ₦' || vendor_payout_amount::text || ' will be processed soon.',
         'payment',
         jsonb_build_object(
           'type', 'payout',
           'payment_id', new.id,
-          'order_id', order_record.id,
+          'order_ids', vendor_rollup.order_ids,
+          'vendor_food_subtotal', vendor_rollup.vendor_food_subtotal,
           'payout_amount', vendor_payout_amount
         )
       )
       on conflict do nothing;
       
       raise notice 'Created payout for vendor %: ₦% (order: %)', 
-        order_record.vendor_id, vendor_payout_amount, order_record.id;
+        vendor_rollup.vendor_id, vendor_payout_amount, vendor_rollup.order_ids;
     end loop;
   end if;
   

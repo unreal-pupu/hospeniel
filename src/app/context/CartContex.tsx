@@ -24,6 +24,7 @@ export type CartItem = {
   vendors?: {
     id: string;
     name: string;
+    business_name?: string;
     image_url: string;
     location?: string;
     phone_number?: string | null;
@@ -116,6 +117,116 @@ const showCartToast = (message: string) => {
   }, 3500);
 };
 
+interface VendorData {
+  id: string;
+  name: string | null;
+  business_name?: string | null;
+  image_url: string | null;
+  location: string | null;
+  profile_id: string;
+  phone_number?: string | null;
+}
+
+interface ProfileRow {
+  id: string;
+  name: string | null;
+  location: string | null;
+  phone_number: string | null;
+}
+
+interface CartDataItem {
+  id: string;
+  user_id?: string;
+  vendor_id: string;
+  product_id: string;
+  quantity: number;
+  price: number;
+  created_at?: string;
+  updated_at?: string;
+  menu_items?: {
+    id: string;
+    title: string;
+    image_url: string;
+    price: number;
+  };
+  [key: string]: unknown;
+}
+
+async function enrichCartItemsWithVendorData(cartData: CartDataItem[]): Promise<CartItem[]> {
+  if (!cartData || cartData.length === 0) return [];
+
+  const vendorIds = [...new Set(cartData.map((item) => item.vendor_id))];
+  const [vendorsResult, profilesResult] = await Promise.all([
+    supabase
+      .from("vendors")
+      .select("id, name, business_name, image_url, location, profile_id, phone_number")
+      .in("profile_id", vendorIds),
+    supabase.from("profiles").select("id, name, location, phone_number").in("id", vendorIds),
+  ]);
+
+  const { data: vendorsData, error: vendorsError } = vendorsResult;
+  if (vendorsError) {
+    console.error("Error fetching vendors:", vendorsError);
+  }
+
+  const profilesMap = new Map<string, ProfileRow>();
+  if (profilesResult.data) {
+    profilesResult.data.forEach((row: ProfileRow) => profilesMap.set(row.id, row));
+  }
+
+  const vendorsMap = new Map<string, VendorData>();
+  if (vendorsData) {
+    vendorsData.forEach((vendor: VendorData) => {
+      vendorsMap.set(vendor.profile_id, vendor);
+    });
+  }
+
+  return cartData.map((item: CartDataItem) => {
+    const vendor = vendorsMap.get(item.vendor_id);
+    const profileRow = profilesMap.get(item.vendor_id);
+    const resolvedPhone =
+      vendor?.phone_number?.trim() || profileRow?.phone_number?.trim() || "";
+    const resolvedName =
+      vendor?.business_name?.trim() ||
+      vendor?.name?.trim() ||
+      profileRow?.name?.trim() ||
+      "Vendor";
+
+    const vendorsPayload =
+      vendor
+        ? {
+            id: vendor.id,
+            name: resolvedName,
+            business_name: vendor.business_name || undefined,
+            image_url: vendor.image_url || "",
+            location: vendor.location || profileRow?.location || undefined,
+            phone_number: resolvedPhone || undefined,
+          }
+        : profileRow
+          ? {
+              id: item.vendor_id,
+              name: profileRow.name || "Vendor",
+              image_url: "",
+              location: profileRow.location || undefined,
+              phone_number: resolvedPhone || undefined,
+            }
+          : undefined;
+
+    return {
+      id: item.id,
+      user_id: item.user_id,
+      vendor_id: item.vendor_id,
+      product_id: item.product_id,
+      quantity: item.quantity,
+      price: item.price,
+      created_at: item.created_at,
+      updated_at: item.updated_at,
+      menu_items: item.menu_items,
+      vendors: vendorsPayload,
+    };
+  });
+}
+
 export function CartProvider({ children }: { children: ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -157,7 +268,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
             markReminderShown();
           }
         }
-        setCartItems(localCart);
+        const enrichedLocalCart = await enrichCartItemsWithVendorData(localCart as CartDataItem[]);
+        setCartItems(enrichedLocalCart);
         setLoading(false);
         return;
       }
@@ -225,108 +337,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Get unique vendor IDs
-      interface CartDataItem {
-        id: string;
-        user_id?: string;
-        vendor_id: string;
-        product_id: string;
-        quantity: number;
-        price: number;
-        created_at?: string;
-        updated_at?: string;
-        menu_items?: {
-          id: string;
-          title: string;
-          image_url: string;
-          price: number;
-        };
-        [key: string]: unknown;
-      }
-      interface VendorData {
-        id: string;
-        name: string;
-        image_url: string | null;
-        location: string | null;
-        profile_id: string;
-        phone_number?: string | null;
-      }
-
-      interface ProfileRow {
-        id: string;
-        name: string | null;
-        location: string | null;
-        phone_number: string | null;
-      }
-
-      const vendorIds = [...new Set(cartData.map((item: CartDataItem) => item.vendor_id))];
-
-      const [vendorsResult, profilesResult] = await Promise.all([
-        supabase
-          .from("vendors")
-          .select("id, name, image_url, location, profile_id, phone_number")
-          .in("profile_id", vendorIds),
-        supabase.from("profiles").select("id, name, location, phone_number").in("id", vendorIds),
-      ]);
-
-      const { data: vendorsData, error: vendorsError } = vendorsResult;
-      if (vendorsError) {
-        console.error("Error fetching vendors:", vendorsError);
-      }
-
-      const profilesMap = new Map<string, ProfileRow>();
-      if (profilesResult.data) {
-        profilesResult.data.forEach((row: ProfileRow) => profilesMap.set(row.id, row));
-      }
-
-      // Create a map of vendor_id (auth.users id) to vendor data
-      const vendorsMap = new Map<string, VendorData>();
-      if (vendorsData) {
-        vendorsData.forEach((vendor: VendorData) => {
-          vendorsMap.set(vendor.profile_id, vendor);
-        });
-      }
-
-      // Combine cart items with vendor information
-      const cartItemsWithVendors: CartItem[] = cartData.map((item: CartDataItem) => {
-        const vendor = vendorsMap.get(item.vendor_id);
-        const profileRow = profilesMap.get(item.vendor_id);
-        const resolvedPhone =
-          vendor?.phone_number?.trim() || profileRow?.phone_number?.trim() || "";
-
-        const vendorsPayload =
-          vendor
-            ? {
-                id: vendor.id,
-                name: vendor.name,
-                image_url: vendor.image_url || "",
-                location: vendor.location || undefined,
-                phone_number: resolvedPhone || undefined,
-              }
-            : profileRow
-              ? {
-                  id: item.vendor_id,
-                  name: profileRow.name || "Vendor",
-                  image_url: "",
-                  location: profileRow.location || undefined,
-                  phone_number: resolvedPhone || undefined,
-                }
-              : undefined;
-
-        return {
-          id: item.id,
-          user_id: item.user_id,
-          vendor_id: item.vendor_id,
-          product_id: item.product_id,
-          quantity: item.quantity,
-          price: item.price,
-          created_at: item.created_at,
-          updated_at: item.updated_at,
-          menu_items: item.menu_items,
-          vendors: vendorsPayload,
-        };
-      });
-
+      const cartItemsWithVendors = await enrichCartItemsWithVendorData(cartData as CartDataItem[]);
       setCartItems(cartItemsWithVendors);
       
       // Sync localStorage cart to database if user just logged in
@@ -340,7 +351,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
       // Fallback to localStorage if database fetch fails
       if (!isAuthenticated) {
         const localCart = getLocalStorageCart();
-        setCartItems(localCart);
+        const enrichedLocalCart = await enrichCartItemsWithVendorData(localCart as CartDataItem[]);
+        setCartItems(enrichedLocalCart);
       } else {
         setCartItems([]);
       }

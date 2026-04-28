@@ -5,6 +5,7 @@ import { validatePassword } from "@/lib/passwordValidation";
 import { parseJsonBody } from "@/lib/validation/http";
 import { registerRequestSchema } from "@/lib/validation/schemas";
 import { PAYSTACK_VENDOR_SUBACCOUNT_PERCENTAGE_CHARGE } from "@/lib/platformPricing";
+import { logPaystackAuthorizationDebug } from "@/lib/server/paystackRequestDebug";
 
 export async function POST(req: Request) {
   const supabaseAdmin = getSupabaseAdminClient();
@@ -239,10 +240,10 @@ export async function POST(req: Request) {
       if (bank_code && account_number) {
         try {
           // Get Paystack secret key from environment variables
-          const paystackSecretKeyRaw = process.env.PAYSTACK_SECRET_KEY;
-          const paystackSecretKey = paystackSecretKeyRaw 
-            ? paystackSecretKeyRaw.trim().replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width spaces and BOM
-            : null;
+          const paystackSecretKey = logPaystackAuthorizationDebug(
+            "register:create-subaccount",
+            process.env.PAYSTACK_SECRET_KEY
+          );
           
           if (!paystackSecretKey) {
             console.warn("⚠️ Paystack secret key not configured. Skipping subaccount creation.");
