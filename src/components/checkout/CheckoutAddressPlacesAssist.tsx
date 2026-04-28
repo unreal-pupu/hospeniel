@@ -7,20 +7,14 @@ import {
   hasGoogleMapsApiKey,
 } from "@/lib/googleMaps/loadGoogleMapsScript";
 
+interface PlaceAutocompleteCtor {
+  new (): google.maps.places.PlaceAutocompleteElement;
+}
+
 /** Minimal typings for Maps JS API (avoids adding @types/google.maps). */
 interface MapsLatLngLiteral {
   lat: number;
   lng: number;
-}
-
-interface MapInstance {
-  setCenter: (c: MapsLatLngLiteral) => void;
-  setZoom: (z: number) => void;
-}
-
-interface MarkerInstance {
-  map?: MapInstance | null;
-  setPosition: (p: MapsLatLngLiteral) => void;
 }
 
 export interface CheckoutAddressPlacesAssistProps {
@@ -48,8 +42,8 @@ export function CheckoutAddressPlacesAssist({
 }: CheckoutAddressPlacesAssistProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const autocompleteContainerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<MapInstance | null>(null);
-  const markerRef = useRef<MarkerInstance | null>(null);
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
   const autocompleteRef = useRef<google.maps.places.PlaceAutocompleteElement | null>(null);
   const autocompleteListenerRef = useRef<((event: Event) => void) | null>(null);
   const onPlaceResolvedRef = useRef(onPlaceResolved);
@@ -80,14 +74,23 @@ export function CheckoutAddressPlacesAssist({
       });
     }
 
-    function attachAutocomplete(places: google.maps.PlacesLibrary) {
+    function attachAutocomplete() {
       const container = autocompleteContainerRef.current;
       const input = document.getElementById(addressInputId);
       if (!container || !input || !(input instanceof HTMLInputElement)) return;
 
       container.innerHTML = "";
 
-      const autocomplete = new places.PlaceAutocompleteElement();
+      const placesNamespace = (window.google.maps.places as unknown as {
+        PlaceAutocompleteElement?: PlaceAutocompleteCtor;
+      });
+      const AutocompleteElement = placesNamespace.PlaceAutocompleteElement;
+      if (!AutocompleteElement) {
+        console.error("[CheckoutAddressPlacesAssist] PlaceAutocompleteElement is unavailable.");
+        return;
+      }
+
+      const autocomplete = new AutocompleteElement();
       autocompleteRef.current = autocomplete;
       autocomplete.setAttribute("requested-language", "en");
       autocomplete.setAttribute("included-region-codes", "ng");
@@ -115,7 +118,7 @@ export function CheckoutAddressPlacesAssist({
           const pos = { lat, lng };
           map.setCenter(pos);
           map.setZoom(16);
-          marker.setPosition(pos);
+          marker.position = pos;
         }
       };
 
@@ -127,19 +130,12 @@ export function CheckoutAddressPlacesAssist({
     (async () => {
       try {
         console.log("[CheckoutAddressPlacesAssist] Requesting Google Maps script…");
-        const { maps, marker, places } = await importGoogleMapsLibraries();
+        const { maps, marker } = await importGoogleMapsLibraries();
         if (cancelled) return;
-
-        if (!places?.PlaceAutocompleteElement) {
-          console.error(
-            "[CheckoutAddressPlacesAssist] Script reported ready but PlaceAutocompleteElement is missing.",
-          );
-          return;
-        }
 
         console.log("[CheckoutAddressPlacesAssist] Initializing map preview and Places Autocomplete");
         initMap(maps, marker);
-        attachAutocomplete(places);
+        attachAutocomplete();
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(

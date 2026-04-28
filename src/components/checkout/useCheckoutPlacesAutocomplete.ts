@@ -3,6 +3,10 @@
 import { useEffect, useRef } from "react";
 import { importGoogleMapsLibraries } from "@/lib/googleMaps/loadGoogleMapsScript";
 
+interface PlaceAutocompleteCtor {
+  new (): google.maps.places.PlaceAutocompleteElement;
+}
+
 export interface CheckoutPlaceSelection {
   formatted_address: string;
   lat: number;
@@ -36,7 +40,7 @@ export function useCheckoutPlacesAutocomplete({
 
     (async () => {
       try {
-        const { places } = await importGoogleMapsLibraries();
+        await importGoogleMapsLibraries();
         if (cancelled) return;
 
         const input = document.getElementById(inputId) as HTMLInputElement | null;
@@ -46,7 +50,13 @@ export function useCheckoutPlacesAutocomplete({
         host.style.display = "none";
         input.parentElement?.appendChild(host);
 
-        autocompleteElement = new places.PlaceAutocompleteElement();
+        const placesNamespace = (window.google.maps.places as unknown as {
+          PlaceAutocompleteElement?: PlaceAutocompleteCtor;
+        });
+        const AutocompleteElement = placesNamespace.PlaceAutocompleteElement;
+        if (!AutocompleteElement) return;
+
+        autocompleteElement = new AutocompleteElement();
         host.appendChild(autocompleteElement);
 
         listener = async (event: Event) => {
