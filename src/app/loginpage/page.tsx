@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useSupabase } from "@/providers/SupabaseProvider";
 import {
   getSessionWithTimeout,
   getUserWithTimeout,
@@ -31,7 +31,22 @@ import { Eye, EyeOff, Mail, Lock } from "lucide-react";
 import { loginCredentialsSchema } from "@/lib/validation/schemas";
 
 export default function LoginPage() {
-  const router = useRouter();
+  const supabaseContext = useSupabase();
+  const authLoading = supabaseContext?.loading ?? true;
+  const authInitialized = supabaseContext?.initialized ?? false;
+
+  function buildOAuthRedirectUrl() {
+    const callbackUrl = new URL(`${window.location.origin}/auth/callback`);
+    const urlParams = new URLSearchParams(window.location.search);
+    const redirectParam = urlParams.get("redirect");
+
+    if (redirectParam) {
+      callbackUrl.searchParams.set("redirect", redirectParam);
+    }
+
+    return callbackUrl.toString();
+  }
+
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -48,6 +63,10 @@ export default function LoginPage() {
     let redirectExecuted = false; // Prevent multiple redirects
 
     const verifySession = async () => {
+      if (!authInitialized || authLoading) {
+        return;
+      }
+
       // Prevent infinite "Checking authentication..." if auth/network hangs on slow mobile networks
       const verificationTimeoutId = window.setTimeout(() => {
         if (isMounted) {
@@ -321,44 +340,13 @@ export default function LoginPage() {
         console.log("✅ Vendor is approved - allowing access");
       }
         
-        // ✅ STEP 8: Determine redirect path based on role (using centralized logic)
-        // Check sessionStorage for returnUrl first (set when user tries to checkout)
-        let redirectPathFromStorage: string | null = null;
-        if (typeof window !== "undefined") {
-          redirectPathFromStorage = sessionStorage.getItem("returnUrl");
-          if (redirectPathFromStorage) {
-            sessionStorage.removeItem("returnUrl");
-          }
-        }
-        
-        // Check for redirect parameter in URL (reuse urlParams from line 46)
-        const redirectParam = urlParams.get('redirect') || redirectPathFromStorage;
-        
-        // Use centralized role-based routing
-        const { getRoleBasedRedirect } = await import("@/lib/roleRouting");
-        const redirectResult = getRoleBasedRedirect(role, redirectParam);
-        const redirectPath = redirectResult.path;
-        
-        console.log("✅", redirectResult.reason);
-
-        // ✅ STEP 9: Final check - all validations passed, safe to redirect
-        // BUT - only redirect if we're absolutely sure
-        if (redirectExecuted) {
-          console.log("⚠️ Redirect already executed, skipping");
-          return;
-        }
-        
+        // Keep login page passive on mount.
+        // Post-login routing is centralized in /auth/callback only.
+        if (redirectExecuted) return;
         redirectExecuted = true;
-        console.log("✅✅✅ ALL VALIDATIONS PASSED - Redirecting to:", redirectPath);
-        console.log("✅ Session is valid, user is authenticated, profile exists");
-
-        // Small delay to ensure everything is set
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        if (!isMounted) return;
-
-        // Redirect based on user type
-        router.replace(redirectPath);
+        console.log("✅ Session/profile verified on login page; skipping automatic mount redirect", { role });
+        if (isMounted) setCheckingSession(false);
+        return;
       } catch (err) {
         console.error("❌ Session check error:", err);
         // On any error, show login form (don't redirect)
@@ -383,7 +371,7 @@ export default function LoginPage() {
       isMounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Empty dependency array - only run once on mount
+  }, [authInitialized, authLoading]); // Wait for provider auth hydration before evaluating session
 
 
   // ✅ Handle Login - with comprehensive logging and error handling
@@ -554,7 +542,7 @@ export default function LoginPage() {
         console.log("✅ Vendor is approved - allowing login");
       }
 
-      // Step 4: Determine redirect path based on role (using centralized logic)
+      // Step 4: Build callback redirect target.
       // Check sessionStorage for returnUrl first (set when user tries to checkout)
       let redirectPathFromStorage: string | null = null;
       if (typeof window !== "undefined") {
@@ -567,15 +555,13 @@ export default function LoginPage() {
       // Check for redirect parameter in URL (e.g., from protected pages)
       const urlParams = new URLSearchParams(window.location.search);
       const redirectParam = urlParams.get('redirect') || redirectPathFromStorage;
-      
-      // Use centralized role-based routing
-      const { getRoleBasedRedirect } = await import("@/lib/roleRouting");
-      const redirectResult = getRoleBasedRedirect(role, redirectParam);
-      const redirectPath = redirectResult.path;
-      
-      console.log("✅", redirectResult.reason);
 
-      console.log("✅ Login successful! Redirecting to:", redirectPath);
+      const callbackUrl = new URL("/auth/callback", window.location.origin);
+      if (redirectParam && redirectParam !== "/") {
+        callbackUrl.searchParams.set("redirect", redirectParam);
+      }
+
+      console.log("✅ Login successful! Finalizing via callback:", callbackUrl.pathname + callbackUrl.search);
 
       // Step 5: Session was already verified + profile loaded; do not use short getSession
       // races here — on mobile they often false-fail while the real session is still loading.
@@ -584,17 +570,8 @@ export default function LoginPage() {
       // Set flag to prevent session check from interfering
       setIsLoggingIn(false);
 
-      // Use window.location.href for immediate, guaranteed redirect
-      // This is the most reliable method for post-login redirects
-      console.log("🔵 Executing redirect to:", redirectPath);
-      
-      // For vendor or admin login, ensure we do a full page reload to clear any cached state
-      if (role === "vendor" || role === "admin") {
-        console.log(`🔵 ${role === "admin" ? "Admin" : "Vendor"} login - doing full page reload`);
-        window.location.replace(redirectPath);
-      } else {
-        window.location.href = redirectPath;
-      }
+      // Centralize post-login routing in /auth/callback.
+      window.location.replace(`${callbackUrl.pathname}${callbackUrl.search}`);
 
     } catch (err) {
       console.error("❌ Unexpected login error:", err);
@@ -714,8 +691,21 @@ export default function LoginPage() {
             variant="outline"
             className="w-full"
             onClick={async () => {
+              if (typeof window !== "undefined") {
+                const urlParams = new URLSearchParams(window.location.search);
+                const redirectParam = urlParams.get("redirect");
+                sessionStorage.setItem("oauth-in-progress", "1");
+                if (redirectParam) {
+                  sessionStorage.setItem("oauth-redirect", redirectParam);
+                } else {
+                  sessionStorage.removeItem("oauth-redirect");
+                }
+              }
               const { error } = await supabase.auth.signInWithOAuth({
                 provider: "google",
+                options: {
+                  redirectTo: buildOAuthRedirectUrl(),
+                },
               });
               if (error) alert(error.message);
             }}

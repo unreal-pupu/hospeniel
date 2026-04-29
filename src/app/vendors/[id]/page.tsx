@@ -83,7 +83,6 @@ export default function VendorProfile() {
 
       if (userError || !user) {
         alert("Please log in to continue with payment.");
-        router.push("/loginpage");
         return;
       }
 
@@ -91,7 +90,6 @@ export default function VendorProfile() {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       if (sessionError || !session) {
         alert("Your session has expired. Please log in again.");
-        router.push("/loginpage");
         return;
       }
 

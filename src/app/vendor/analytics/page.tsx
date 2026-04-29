@@ -41,7 +41,11 @@ export default function VendorAnalyticsPage() {
         const { data: auth } = await supabase.auth.getUser();
         const userId = auth.user?.id;
         if (!userId) {
-          router.replace("/loginpage");
+          if (isMounted) {
+            setTools([]);
+            setError("Authentication required to load analytics.");
+            setLoading(false);
+          }
           return;
         }
 

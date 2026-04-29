@@ -205,7 +205,6 @@ export default function VendorSettingsPage() {
       if (userError || !user) {
         console.error("Auth error:", userError);
         setMessage({ type: "error", text: "Please log in to access settings" });
-        setTimeout(() => router.push("/loginpage"), 2000);
         setLoading(false);
         return;
       }

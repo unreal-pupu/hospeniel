@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Bell } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { Badge } from "@/components/ui/badge";
+import { useSupabase } from "@/providers/SupabaseProvider";
 
 interface Notification {
   id: string;
@@ -25,17 +26,24 @@ export default function NotificationBell({ userType, notificationsPageUrl }: Not
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const supabaseContext = useSupabase();
+  const authInitialized = supabaseContext?.initialized ?? false;
+  const user = supabaseContext?.user ?? null;
+  const userId = user?.id ?? null;
 
   // Fetch notifications
   const fetchNotifications = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!userId) {
+        setNotifications([]);
+        setUnreadCount(0);
+        return;
+      }
 
       const { data, error } = await supabase
         .from("notifications")
         .select("*")
-        .eq(userType === "user" ? "user_id" : "vendor_id", user.id)
+        .eq(userType === "user" ? "user_id" : "vendor_id", userId)
         .order("created_at", { ascending: false })
         .limit(5);
 
@@ -52,7 +60,7 @@ export default function NotificationBell({ userType, notificationsPageUrl }: Not
     } finally {
       setLoading(false);
     }
-  }, [userType]);
+  }, [userId, userType]);
 
   // Subscribe to real-time notifications
   useEffect(() => {
@@ -60,12 +68,9 @@ export default function NotificationBell({ userType, notificationsPageUrl }: Not
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     const setupNotifications = async () => {
-      if (isMounted) {
-        await fetchNotifications();
-      }
+      if (!authInitialized || !userId || !isMounted) return;
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || !isMounted) return;
+      await fetchNotifications();
 
       channel = supabase
         .channel("notifications")
@@ -75,7 +80,7 @@ export default function NotificationBell({ userType, notificationsPageUrl }: Not
             event: "*",
             schema: "public",
             table: "notifications",
-            filter: `${userType === "user" ? "user_id" : "vendor_id"}=eq.${user.id}`,
+            filter: `${userType === "user" ? "user_id" : "vendor_id"}=eq.${userId}`,
           },
           () => {
             if (isMounted) {
@@ -94,7 +99,16 @@ export default function NotificationBell({ userType, notificationsPageUrl }: Not
         supabase.removeChannel(channel);
       }
     };
-  }, [userType, fetchNotifications]);
+  }, [authInitialized, userType, fetchNotifications, userId]);
+
+  // When auth is done but there is no user, stop showing the loading spinner.
+  useEffect(() => {
+    if (!authInitialized) return;
+    if (userId) return;
+    setLoading(false);
+    setNotifications([]);
+    setUnreadCount(0);
+  }, [authInitialized, userId]);
 
   // Close dropdown when clicking outside
   useEffect(() => {

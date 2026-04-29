@@ -60,7 +60,12 @@ export default function VendorBannersPage() {
         } = await supabase.auth.getUser();
 
         if (!user?.id) {
-          router.replace("/loginpage");
+          if (isMounted) {
+            setTools([]);
+            setBanners([]);
+            setError("Authentication required to manage banners.");
+            setLoading(false);
+          }
           return;
         }
 
@@ -195,7 +200,7 @@ export default function VendorBannersPage() {
       } = await supabase.auth.getUser();
 
       if (!user?.id) {
-        router.replace("/loginpage");
+        setError("Authentication required to save banners.");
         return;
       }
 
@@ -271,7 +276,7 @@ export default function VendorBannersPage() {
       } = await supabase.auth.getUser();
 
       if (!user?.id) {
-        router.replace("/loginpage");
+        setError("Authentication required to delete banners.");
         return;
       }
 
@@ -314,7 +319,7 @@ export default function VendorBannersPage() {
       } = await supabase.auth.getUser();
 
       if (!user?.id) {
-        router.replace("/loginpage");
+        setError("Authentication required to update banner status.");
         return;
       }
 

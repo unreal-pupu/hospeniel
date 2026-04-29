@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
-import { getSessionUserAfterNavigation } from "@/lib/auth-timeouts";
+import { useSupabase } from "@/providers/SupabaseProvider";
 import {
   LayoutDashboard,
   Users,
@@ -34,6 +34,9 @@ interface AdminLayoutProps {
 export default function AdminLayout({ children }: AdminLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const supabaseContext = useSupabase();
+  const authLoading = supabaseContext?.loading ?? true;
+  const sessionUser = supabaseContext?.user ?? null;
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -43,11 +46,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   // Check admin access with optional secret key verification
   useEffect(() => {
     const checkAdminAccess = async () => {
+      if (authLoading) return;
+
       try {
-        const user = await getSessionUserAfterNavigation(supabase);
-        
+        const user = sessionUser;
+
         if (!user) {
-          router.push("/loginpage?redirect=/admin");
+          setLoading(false);
           return;
         }
 
@@ -100,7 +105,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               const userKey = prompt("Admin Secret Key Required:");
               if (!userKey) {
                 alert("Secret key is required. Access denied.");
-                router.push("/");
                 setLoading(false);
                 return;
               }
@@ -116,7 +120,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               
               if (!verifyResult.valid) {
                 alert("Invalid admin secret key. Access denied.");
-                router.push("/");
                 setLoading(false);
                 return;
               }
@@ -144,7 +147,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             
             if (!result.valid) {
               alert("Invalid admin secret key. Access denied.");
-              router.push("/");
               setLoading(false);
               return;
             }
@@ -168,7 +170,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     };
 
     checkAdminAccess();
-  }, [router]);
+  }, [authLoading, router, sessionUser]);
 
   // Fetch unread notifications count
   useEffect(() => {

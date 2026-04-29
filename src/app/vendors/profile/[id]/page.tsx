@@ -404,7 +404,6 @@ export default function VendorProfilePage() {
           const errorMessage = error instanceof Error ? error.message : "";
           if (errorMessage.includes("log in")) {
             alert("Please log in to add items to cart.");
-            router.push("/loginpage");
           } else {
             const errMsg =
               error instanceof Error
@@ -491,7 +490,6 @@ export default function VendorProfilePage() {
             const { data: { session }, error: sessionError } = await supabase.auth.getSession();
             if (sessionError || !session) {
               alert("Session expired. Please log in again.");
-              router.push("/loginpage");
               setPlacingOrder(false);
               return;
             }

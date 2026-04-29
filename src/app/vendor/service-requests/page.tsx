@@ -214,7 +214,8 @@ export default function ServiceRequestsPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
-          router.replace("/loginpage");
+          setLoading(false);
+          setServiceRequests([]);
           return;
         }
 

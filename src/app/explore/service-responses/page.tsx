@@ -205,7 +205,8 @@ export default function ServiceResponsesPage() {
     const checkAuth = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        router.replace("/loginpage");
+        setIsAuthenticated(false);
+        setLoading(false);
         return;
       }
       setIsAuthenticated(true);

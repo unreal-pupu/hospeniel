@@ -621,7 +621,6 @@ export default function PaymentPage() {
           alert("Your session has expired. Please log in again.");
           setLoading(false);
           setIsPaymentLocked(false);
-          router.push("/loginpage");
           return;
         }
 

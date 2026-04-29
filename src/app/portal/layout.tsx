@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { getSessionUserAfterNavigation } from "@/lib/auth-timeouts";
+import { useSupabase } from "@/providers/SupabaseProvider";
 import {
   LayoutDashboard,
   Package,
@@ -24,6 +24,9 @@ interface RiderLayoutProps {
 export default function RiderLayout({ children }: RiderLayoutProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const supabaseContext = useSupabase();
+  const authLoading = supabaseContext?.loading ?? true;
+  const sessionUser = supabaseContext?.user ?? null;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [accessVerified, setAccessVerified] = useState(false);
@@ -33,8 +36,11 @@ export default function RiderLayout({ children }: RiderLayoutProps) {
   } | null>(null);
   const checkExecutedRef = useRef(false);
   const errorShownRef = useRef(false);
-
   const checkRiderAccess = useCallback(async () => {
+    if (authLoading) {
+      return;
+    }
+
     // Prevent multiple simultaneous checks
     if (accessVerified) {
       setLoading(false);
@@ -42,12 +48,11 @@ export default function RiderLayout({ children }: RiderLayoutProps) {
     }
 
     try {
-      const user = await getSessionUserAfterNavigation(supabase);
+      const user = sessionUser;
       
       if (!user) {
         console.error("Error getting user: no session after navigation wait");
         setLoading(false);
-        router.replace("/loginpage?redirect=/portal");
         return;
       }
 
@@ -69,7 +74,6 @@ export default function RiderLayout({ children }: RiderLayoutProps) {
             errorShownRef.current = true;
             alert("Profile not found. Please contact support.");
           }
-          router.replace("/loginpage?redirect=/portal");
           return;
         }
         // For other errors, show specific message only once
@@ -89,7 +93,6 @@ export default function RiderLayout({ children }: RiderLayoutProps) {
           errorShownRef.current = true;
           alert("Profile not found. Please contact support.");
         }
-        router.replace("/loginpage?redirect=/portal");
         return;
       }
 
@@ -100,7 +103,6 @@ export default function RiderLayout({ children }: RiderLayoutProps) {
           errorShownRef.current = true;
           alert("Access denied. This portal is only for riders.");
         }
-        router.replace("/");
         return;
       }
 
@@ -118,7 +120,6 @@ export default function RiderLayout({ children }: RiderLayoutProps) {
             alert("Your rider account status is not verified. Please contact support.");
           }
         }
-        router.replace("/");
         return;
       }
 
@@ -158,7 +159,7 @@ export default function RiderLayout({ children }: RiderLayoutProps) {
     } finally {
       setLoading(false);
     }
-  }, [accessVerified, router]);
+  }, [accessVerified, authLoading, router, sessionUser]);
 
   useEffect(() => {
     // Only run check once per mount
@@ -186,12 +187,24 @@ export default function RiderLayout({ children }: RiderLayoutProps) {
     { href: "/portal/support", label: "Support", icon: HelpCircle },
   ];
 
-  // Show loading state while checking access or if access not verified
-  if (loading || !accessVerified) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-hospineil-base-bg">
         <div className="text-center">
           <p className="text-gray-600 font-body">Loading rider portal...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!accessVerified) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-hospineil-base-bg">
+        <div className="text-center max-w-md mx-auto p-8">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2 font-header">Access Denied</h1>
+          <p className="text-gray-600 font-body">
+            Your account does not currently have permission to access the rider portal.
+          </p>
         </div>
       </div>
     );

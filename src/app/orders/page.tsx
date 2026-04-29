@@ -138,8 +138,9 @@ export default function OrdersPage() {
       } = await supabase.auth.getUser();
 
       if (userError || !user) {
-        alert("Please log in to view your orders.");
-        router.push("/loginpage");
+        setOrders([]);
+        setServiceRequests([]);
+        setLoading(false);
         return;
       }
 

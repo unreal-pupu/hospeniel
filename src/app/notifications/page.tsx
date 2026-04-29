@@ -29,7 +29,10 @@ export default function NotificationsPage() {
     const setupNotifications = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        router.replace("/loginpage");
+        if (isMounted) {
+          setNotifications([]);
+          setLoading(false);
+        }
         return;
       }
 

@@ -116,7 +116,7 @@ export default function SubscriptionPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        router.replace("/loginpage");
+        setLoading(false);
         return;
       }
 

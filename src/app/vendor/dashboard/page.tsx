@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { getSessionUserAfterNavigation } from "@/lib/auth-timeouts";
+import { useSupabase } from "@/providers/SupabaseProvider";
 import { RefreshCw, Loader2, Info } from "lucide-react";
 import type {
   User,
@@ -13,7 +13,6 @@ import type {
   RealtimePostgresChangesPayload,
   REALTIME_SUBSCRIBE_STATES,
 } from "@supabase/supabase-js";
-import { getRoleBasedRedirect } from "@/lib/roleRouting";
 import dynamic from "next/dynamic";
 import { VendorPremiumToolsSection } from "@/components/vendor-premium-tools-section";
 import {
@@ -78,6 +77,9 @@ function isValidUuid(value: string | null | undefined): boolean {
 
 const VendorDashboard: React.FC = () => {
   const router = useRouter();
+  const supabaseContext = useSupabase();
+  const authLoading = supabaseContext?.loading ?? true;
+  const sessionUser = supabaseContext?.user ?? null;
 
   const [loading, setLoading] = useState(true);
   const [vendor, setVendor] = useState<VendorProfile | null>(null);
@@ -115,6 +117,10 @@ const VendorDashboard: React.FC = () => {
     let timeoutId: NodeJS.Timeout;
 
     const loadDashboard = async () => {
+      if (authLoading) {
+        return;
+      }
+
       let currentUser: User | null = null;
       try {
         console.log("🔵 Vendor Dashboard: Starting to load...");
@@ -140,7 +146,7 @@ const VendorDashboard: React.FC = () => {
         // Step 1: Check authentication — after full-page redirect from login, mobile can
         // briefly return null from getUser(); poll until session is hydrated.
         console.log("🔵 Vendor Dashboard: Checking authentication...");
-        const user = await getSessionUserAfterNavigation(supabase);
+        const user = sessionUser;
         currentUser = user;
 
         console.log("🔵 Vendor Dashboard: Auth check result:", {
@@ -152,7 +158,8 @@ const VendorDashboard: React.FC = () => {
           console.error("❌ Vendor Dashboard: No authenticated user after session wait");
           clearTimeout(timeoutId);
           if (isMounted) {
-            router.replace("/loginpage");
+            setVendor(null);
+            setLoading(false);
           }
           return;
         }
@@ -241,29 +248,18 @@ const VendorDashboard: React.FC = () => {
           return;
         }
 
-        // Step 3: ✅ CRITICAL - Check role from profiles.role FIRST
-        // Priority: admin → vendor → rider → user
+        // Step 3: Validate role for local rendering only.
+        // Post-login routing is centralized in /auth/callback.
         if (profile) {
           const role = profile.role?.toLowerCase().trim();
-          
-          // Admin role → redirect to admin dashboard
-          if (role === "admin") {
-            console.log("❌ Vendor Dashboard: User has admin role - redirecting to admin dashboard");
-            clearTimeout(timeoutId);
-            if (isMounted) {
-              router.replace("/admin");
-            }
-            return;
-          }
-          
-          // Non-vendor role → redirect to appropriate area
+
+          // Non-vendor role -> block dashboard render, no automatic redirect on mount.
           if (role !== "vendor") {
             console.log("❌ Vendor Dashboard: User is not a vendor, role:", profile.role);
             clearTimeout(timeoutId);
             if (isMounted) {
-              // Use centralized routing logic
-              const redirectResult = getRoleBasedRedirect(profile.role, null);
-              router.replace(redirectResult.path);
+              setVendor(null);
+              setLoading(false);
             }
             return;
           }
@@ -557,7 +553,7 @@ const VendorDashboard: React.FC = () => {
       const windowWithVendorDashboard = window as WindowWithVendorDashboard;
       delete windowWithVendorDashboard.__vendorDashboardFetchOrders;
     };
-  }, [router, vendor]); // Include router and vendor in dependencies
+  }, [authLoading, router, sessionUser, vendor]); // Wait for provider auth hydration before evaluating access
 
   // Refresh orders when page gains focus (user switches back to tab)
   useEffect(() => {

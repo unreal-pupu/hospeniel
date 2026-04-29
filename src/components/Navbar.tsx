@@ -6,34 +6,29 @@ import { Button } from "@/components/ui/button";
 import { FiShoppingCart, FiUser } from "react-icons/fi";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { getUserWithTimeout } from "@/lib/auth-timeouts";
 import NotificationBell from "./NotificationBell";
 import CartIcon from "./CartIcon";
 import Image from "next/image";
+import { useSupabase } from "@/providers/SupabaseProvider";
 
 export default function Navbar() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeSection, setActiveSection] = useState("home");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const pathname = usePathname();
+  const supabaseContext = useSupabase();
+  const authInitialized = supabaseContext?.initialized ?? false;
+  const user = supabaseContext?.user ?? null;
+  const isLoggedIn = authInitialized && !!user;
 
-  // ✅ Detect logged-in user
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { user } } = await getUserWithTimeout(supabase);
-      setIsLoggedIn(!!user);
-    };
-
-    checkAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      checkAuth();
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      localStorage.removeItem("hospineil-auth");
+      window.location.href = "/";
+    } catch (err) {
+      console.error("Logout error:", err);
+    }
+  };
 
   const isLandingPage = pathname === "/";
   const isExplorePage = pathname === "/explore";
@@ -175,16 +170,39 @@ export default function Navbar() {
 
             {/* Auth Buttons and Cart Icon */}
             <div className="hidden md:flex items-center gap-6">
-              <Link
-                href="/loginpage"
-                className="p-2 text-gray-800 hover:text-hospineil-primary transition-colors rounded-full hover:bg-gray-100"
-                aria-label="Login"
-              >
-                <FiUser className="w-5 h-5" />
-              </Link>
-              <Link href="/register">
-                <Button className="rounded-full px-5 py-2 bg-hospineil-accent text-hospineil-light-bg hover:bg-hospineil-accent-hover focus:ring-2 focus:ring-hospineil-primary focus:ring-offset-2 transition-all duration-200 border-2 border-hospineil-accent">Sign up</Button>
-              </Link>
+              {authInitialized ? (
+                isLoggedIn ? (
+                  <>
+                    <Link
+                      href="/explore"
+                      className="p-2 text-gray-800 hover:text-hospineil-primary transition-colors rounded-full hover:bg-gray-100"
+                      aria-label="Go to Explore"
+                    >
+                      <FiUser className="w-5 h-5" />
+                    </Link>
+                    <Button
+                      type="button"
+                      onClick={handleLogout}
+                      className="rounded-full px-5 py-2 bg-hospineil-accent text-hospineil-light-bg hover:bg-hospineil-accent-hover focus:ring-2 focus:ring-hospineil-primary focus:ring-offset-2 transition-all duration-200 border-2 border-hospineil-accent"
+                    >
+                      Logout
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Link
+                      href="/loginpage"
+                      className="p-2 text-gray-800 hover:text-hospineil-primary transition-colors rounded-full hover:bg-gray-100"
+                      aria-label="Login"
+                    >
+                      <FiUser className="w-5 h-5" />
+                    </Link>
+                    <Link href="/register">
+                      <Button className="rounded-full px-5 py-2 bg-hospineil-accent text-hospineil-light-bg hover:bg-hospineil-accent-hover focus:ring-2 focus:ring-hospineil-primary focus:ring-offset-2 transition-all duration-200 border-2 border-hospineil-accent">Sign up</Button>
+                    </Link>
+                  </>
+                )
+              ) : null}
               {/* Cart Icon - visible to all users, placed after Signup button */}
               <CartIcon size={24} />
             </div>
@@ -196,20 +214,42 @@ export default function Navbar() {
           <div className="flex items-center gap-6 ml-auto">
             {/* Show Login link only on Register page */}
             {isRegisterPage && (
-              <Link
-                href="/loginpage"
-                className="p-2 text-gray-800 hover:text-hospineil-primary transition-colors rounded-full hover:bg-gray-100"
-                aria-label="Login"
-              >
-                <FiUser className="w-5 h-5" />
-              </Link>
+              authInitialized ? (
+                isLoggedIn ? (
+                  <Link
+                    href="/explore"
+                    className="p-2 text-gray-800 hover:text-hospineil-primary transition-colors rounded-full hover:bg-gray-100"
+                    aria-label="Go to Explore"
+                  >
+                    <FiUser className="w-5 h-5" />
+                  </Link>
+                ) : (
+                  <Link
+                    href="/loginpage"
+                    className="p-2 text-gray-800 hover:text-hospineil-primary transition-colors rounded-full hover:bg-gray-100"
+                    aria-label="Login"
+                  >
+                    <FiUser className="w-5 h-5" />
+                  </Link>
+                )
+              ) : null
             )}
             
             {/* Show Sign Up button only on Login page */}
             {isLoginPage && (
-              <Link href="/register">
-                <Button className="rounded-full px-4 sm:px-5 py-2 bg-hospineil-accent text-hospineil-light-bg hover:bg-hospineil-accent-hover focus:ring-2 focus:ring-hospineil-primary focus:ring-offset-2 transition-all duration-200 border-2 border-hospineil-accent text-sm sm:text-base">Sign up</Button>
-              </Link>
+              authInitialized ? (
+                isLoggedIn ? (
+                  <Link href="/explore">
+                    <Button className="rounded-full px-4 sm:px-5 py-2 bg-hospineil-accent text-hospineil-light-bg hover:bg-hospineil-accent-hover focus:ring-2 focus:ring-hospineil-primary focus:ring-offset-2 transition-all duration-200 border-2 border-hospineil-accent text-sm sm:text-base">
+                      Explore
+                    </Button>
+                  </Link>
+                ) : (
+                  <Link href="/register">
+                    <Button className="rounded-full px-4 sm:px-5 py-2 bg-hospineil-accent text-hospineil-light-bg hover:bg-hospineil-accent-hover focus:ring-2 focus:ring-hospineil-primary focus:ring-offset-2 transition-all duration-200 border-2 border-hospineil-accent text-sm sm:text-base">Sign up</Button>
+                  </Link>
+                )
+              ) : null
             )}
             
             {/* Cart Icon - visible to all users on login/register pages */}
@@ -260,21 +300,36 @@ export default function Navbar() {
               </button>
             ))}
             <div className="pt-4 border-t border-gray-200 space-y-2">
-              <Link
-                href="/loginpage"
-                className="flex items-center justify-center w-full px-4 py-2 text-gray-800 hover:bg-gray-50 hover:text-hospineil-primary rounded-full transition-colors"
-                onClick={() => setMobileMenuOpen(false)}
-                aria-label="Login"
-              >
-                <FiUser className="w-5 h-5" />
-              </Link>
-              <Link
-                href="/register"
-                className="block w-full"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                <Button className="w-full rounded-full px-4 py-2 bg-hospineil-accent text-hospineil-light-bg hover:bg-hospineil-accent-hover focus:ring-2 focus:ring-hospineil-primary focus:ring-offset-2 transition-all duration-200 border-2 border-hospineil-accent text-sm">Sign up</Button>
-              </Link>
+              {authInitialized ? (
+                isLoggedIn ? (
+                  <Link
+                    href="/explore"
+                    className="flex items-center justify-center w-full px-4 py-2 text-gray-800 hover:bg-gray-50 hover:text-hospineil-primary rounded-full transition-colors"
+                    onClick={() => setMobileMenuOpen(false)}
+                    aria-label="Go to Explore"
+                  >
+                    <FiUser className="w-5 h-5" />
+                  </Link>
+                ) : (
+                  <>
+                    <Link
+                      href="/loginpage"
+                      className="flex items-center justify-center w-full px-4 py-2 text-gray-800 hover:bg-gray-50 hover:text-hospineil-primary rounded-full transition-colors"
+                      onClick={() => setMobileMenuOpen(false)}
+                      aria-label="Login"
+                    >
+                      <FiUser className="w-5 h-5" />
+                    </Link>
+                    <Link
+                      href="/register"
+                      className="block w-full"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <Button className="w-full rounded-full px-4 py-2 bg-hospineil-accent text-hospineil-light-bg hover:bg-hospineil-accent-hover focus:ring-2 focus:ring-hospineil-primary focus:ring-offset-2 transition-all duration-200 border-2 border-hospineil-accent text-sm">Sign up</Button>
+                    </Link>
+                  </>
+                )
+              ) : null}
               {/* Cart Icon in Mobile Menu - placed after Signup button */}
               <Link
                 href="/cart"

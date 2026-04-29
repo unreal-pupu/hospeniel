@@ -87,7 +87,7 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
               if (profile && profile.role?.toLowerCase().trim() === "admin") {
                 console.log("⚠️ Vendor Layout: User has admin role - redirecting to admin dashboard");
                 if (isMounted) {
-                  window.location.replace("/admin");
+                  setIsAuthenticated(false);
                 }
                 return;
               }
@@ -97,8 +97,7 @@ export default function VendorLayout({ children }: { children: ReactNode }) {
                 await supabase.auth.signOut();
                 localStorage.removeItem('hospineil-auth');
                 if (isMounted) {
-                  const approvalParam = profile.approval_status === "rejected" ? "rejected" : "pending";
-                  window.location.replace(`/loginpage?approval=${approvalParam}`);
+                  setIsAuthenticated(false);
                 }
                 return;
               }
