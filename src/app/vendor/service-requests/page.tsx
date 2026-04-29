@@ -215,7 +215,7 @@ export default function ServiceRequestsPage() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
           setLoading(false);
-          setServiceRequests([]);
+          setRequests([]);
           return;
         }
 
