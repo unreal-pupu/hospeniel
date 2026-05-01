@@ -27,14 +27,15 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (authResult.user === null) {
+    const createdUser = authResult.data?.user ?? null;
+    if (!createdUser) {
       return NextResponse.json(
-        { error: "Failed to create user" },
+        { error: authResult.error?.message ?? "Failed to create user" },
         { status: 500 }
       );
     }
 
-    const userId = authResult.user.id;
+    const userId = createdUser.id;
 
     // Insert extra user details into the users table
     const { error: insertError } = await supabaseAdmin

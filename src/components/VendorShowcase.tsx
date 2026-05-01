@@ -8,6 +8,7 @@ import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { MapPin } from "lucide-react";
 import VerifiedBadge from "@/components/VerifiedBadge";
 import Link from "next/link";
+import { qualifiesForHomepageFeaturedSection } from "@/lib/homepage-featured-eligibility";
 
 interface Vendor {
   id: string;
@@ -19,6 +20,8 @@ interface Vendor {
   location?: string | null;
   specialties?: string[];
   verified?: boolean;
+  is_featured_by_admin?: boolean;
+  has_homepage_featured_placement?: boolean;
 }
 
 export default function VendorShowcase() {
@@ -64,9 +67,6 @@ export default function VendorShowcase() {
           throw new Error("Failed to fetch featured vendors");
         }
 
-        const { vendors: data } = await response.json();
-
-        // Transform data to match Vendor interface
         interface VendorData {
           id: string;
           name?: string | null;
@@ -76,9 +76,26 @@ export default function VendorShowcase() {
           location?: string | null;
           specialties?: string[];
           verified?: boolean | null;
+          is_featured_by_admin?: boolean;
+          has_homepage_featured_placement?: boolean;
           [key: string]: unknown;
         }
-        const featuredVendors: Vendor[] = (data || []).map((vendor: VendorData) => ({
+
+        const json = (await response.json()) as {
+          vendors?: VendorData[];
+          eligibility_debug?: unknown;
+        };
+
+        if (json.eligibility_debug) {
+          console.warn(
+            "[VendorShowcase][PROOF] eligibility_debug (from API) — copy for investigation:",
+            JSON.stringify(json.eligibility_debug, null, 2)
+          );
+        }
+
+        const data = json.vendors;
+
+        const mapped: Vendor[] = (data || []).map((vendor: VendorData) => ({
           id: vendor.id,
           name: vendor.name || "Unknown Vendor",
           image: vendor.featured_image || null,
@@ -88,7 +105,16 @@ export default function VendorShowcase() {
           location: vendor.location || null,
           specialties: vendor.specialties || [],
           verified: Boolean(vendor.verified),
+          is_featured_by_admin: Boolean(vendor.is_featured_by_admin),
+          has_homepage_featured_placement: Boolean(vendor.has_homepage_featured_placement),
         }));
+
+        const featuredVendors = mapped.filter((v) =>
+          qualifiesForHomepageFeaturedSection(
+            Boolean(v.is_featured_by_admin),
+            Boolean(v.has_homepage_featured_placement)
+          )
+        );
 
         console.log("[VendorShowcase] Featured vendors verified flags:", 
           featuredVendors.map((vendor) => ({ id: vendor.id, verified: vendor.verified }))

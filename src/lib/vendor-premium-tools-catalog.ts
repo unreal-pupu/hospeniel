@@ -3,13 +3,16 @@
  * Keep titles in sync with PREMIUM_TOOLS in vendor/subscription/page.tsx.
  */
 
+/** Only this tool grants placement in the landing page "Featured Vendors" section (plus admin `profiles.is_featured`). */
+export const VENDOR_PREMIUM_TOOL_HOMEPAGE_FEATURED_PLACEMENT = "Featured Placement" as const;
+
 export interface VendorPremiumToolDefinition {
   toolName: string;
   monthlyPriceNgn: number;
 }
 
 export const VENDOR_PREMIUM_TOOLS: VendorPremiumToolDefinition[] = [
-  { toolName: "Featured Placement", monthlyPriceNgn: 10 },
+  { toolName: VENDOR_PREMIUM_TOOL_HOMEPAGE_FEATURED_PLACEMENT, monthlyPriceNgn: 10 },
   { toolName: "Priority Location Boost", monthlyPriceNgn: 5000 },
   { toolName: "Sponsored Banners", monthlyPriceNgn: 7000 },
   { toolName: "Brand Promotion", monthlyPriceNgn: 25000 },

@@ -2,6 +2,7 @@ import { getSupabaseAdminClient } from "@/lib/supabase";
 import {
   computeToolExpiryDate,
   getExpectedToolPriceKobo,
+  VENDOR_PREMIUM_TOOL_HOMEPAGE_FEATURED_PLACEMENT,
   type VendorToolBilling,
 } from "@/lib/vendor-premium-tools-catalog";
 
@@ -14,7 +15,7 @@ interface PaystackTransactionData {
 }
 
 const TOOL_TO_FEATURE: Record<string, string> = {
-  "Featured Placement": "featured_placement",
+  [VENDOR_PREMIUM_TOOL_HOMEPAGE_FEATURED_PLACEMENT]: "featured_placement",
   "Priority Location Boost": "priority_location_boost",
   "Sponsored Banners": "sponsored_banners",
   "Brand Promotion": "brand_promotion",

@@ -83,26 +83,10 @@ export default function SupabaseProvider({ children }: { children: ReactNode }) 
     };
   }, []);
 
-  useEffect(() => {
-    if (!initialized || !session?.user) return;
-    if (typeof window === "undefined") return;
-
-    const oauthInProgress = sessionStorage.getItem("oauth-in-progress");
-    if (oauthInProgress !== "1") return;
-
-    const redirectParam = sessionStorage.getItem("oauth-redirect");
-    sessionStorage.removeItem("oauth-in-progress");
-    sessionStorage.removeItem("oauth-redirect");
-
-    const callbackUrl = new URL("/auth/callback", window.location.origin);
-    if (redirectParam && redirectParam !== "/") {
-      callbackUrl.searchParams.set("redirect", redirectParam);
-    }
-
-    if (window.location.pathname !== "/auth/callback") {
-      window.location.replace(`${callbackUrl.pathname}${callbackUrl.search}`);
-    }
-  }, [initialized, session]);
+  // Do NOT redirect to OAuth callback routes from here. Google uses redirectTo=/auth/oauth/callback
+  // and returns with ?code=… on that URL directly. Forcing callback when session appears while
+  // oauth-in-progress was set (e.g. user clicked Google then logged in with email/password) sent
+  // non-OAuth sessions to the OAuth UI without code/state.
 
   const value = useMemo<SupabaseContextValue>(
     () => ({
@@ -115,18 +99,9 @@ export default function SupabaseProvider({ children }: { children: ReactNode }) 
     [initialized, loading, session]
   );
 
-  if (!initialized || loading) {
-    return (
-      <SupabaseContext.Provider value={value}>
-        <div className="flex min-h-screen items-center justify-center bg-hospineil-base-bg">
-          <div className="text-center">
-            <p className="text-gray-600 font-body">Initializing authentication...</p>
-          </div>
-        </div>
-      </SupabaseContext.Provider>
-    );
-  }
-
+  // Always render children. A full-screen "initializing" gate caused a visible flash on every
+  // load (including the public homepage). Consumers use `initialized` / `loading` (Navbar,
+  // login, admin/portal/vendor layouts) to avoid acting on session until hydration is done.
   return (
     <SupabaseContext.Provider value={value}>
       {children}

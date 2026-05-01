@@ -249,7 +249,7 @@ const VendorDashboard: React.FC = () => {
         }
 
         // Step 3: Validate role for local rendering only.
-        // Post-login routing is centralized in /auth/callback.
+        // Post-login routing for OAuth is centralized in /auth/oauth/callback.
         if (profile) {
           const role = profile.role?.toLowerCase().trim();
 

@@ -29,6 +29,20 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Eye, EyeOff, Mail, Lock } from "lucide-react";
 import { loginCredentialsSchema } from "@/lib/validation/schemas";
+import {
+  getRoleBasedRedirect,
+  OAUTH_PKCE_CALLBACK_PATH,
+  pathStartsWithOAuthInfrastructure,
+  sanitizeUserPostLoginRedirect,
+} from "@/lib/roleRouting";
+import {
+  beginPasswordLoginNavigation,
+  clearTrackedAuthMethod,
+  endPasswordLoginNavigation,
+  markOAuthGoogleFlowStarting,
+  navigateAfterPasswordLogin,
+} from "@/lib/password-login-navigation";
+import { clearPkceVerifierFromClient } from "@/lib/clear-pkce-verifier";
 
 export default function LoginPage() {
   const supabaseContext = useSupabase();
@@ -36,7 +50,7 @@ export default function LoginPage() {
   const authInitialized = supabaseContext?.initialized ?? false;
 
   function buildOAuthRedirectUrl() {
-    const callbackUrl = new URL(`${window.location.origin}/auth/callback`);
+    const callbackUrl = new URL(`${window.location.origin}${OAUTH_PKCE_CALLBACK_PATH}`);
     const urlParams = new URLSearchParams(window.location.search);
     const redirectParam = urlParams.get("redirect");
 
@@ -55,6 +69,10 @@ export default function LoginPage() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false); // Track if login is in progress
   const [approvalMessage, setApprovalMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    clearTrackedAuthMethod();
+  }, []);
 
   // ✅ Check if user is already logged in - VERY STRICT validation to prevent false redirects
   // Only redirect if we're 100% certain there's a valid, authenticated session
@@ -340,8 +358,7 @@ export default function LoginPage() {
         console.log("✅ Vendor is approved - allowing access");
       }
         
-        // Keep login page passive on mount.
-        // Post-login routing is centralized in /auth/callback only.
+        // Keep login page passive on mount (existing session: stay on login unless user navigates).
         if (redirectExecuted) return;
         redirectExecuted = true;
         console.log("✅ Session/profile verified on login page; skipping automatic mount redirect", { role });
@@ -378,6 +395,15 @@ export default function LoginPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log("🔵 Login attempt started");
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("oauth-in-progress");
+      sessionStorage.removeItem("oauth-redirect");
+      console.log(
+        "[login][email/password] Cleared oauth-in-progress / oauth-redirect so Supabase session will not be treated as OAuth return"
+      );
+    }
+    await clearPkceVerifierFromClient(supabase);
+    beginPasswordLoginNavigation();
     setLoading(true);
     setIsLoggingIn(true); // Prevent session check from interfering
 
@@ -542,8 +568,8 @@ export default function LoginPage() {
         console.log("✅ Vendor is approved - allowing login");
       }
 
-      // Step 4: Build callback redirect target.
-      // Check sessionStorage for returnUrl first (set when user tries to checkout)
+      // Email/password: go straight to the role destination. Do NOT send users through
+      // OAuth returns only on /auth/oauth/callback — never use that for email/password.
       let redirectPathFromStorage: string | null = null;
       if (typeof window !== "undefined") {
         redirectPathFromStorage = sessionStorage.getItem("returnUrl");
@@ -551,34 +577,54 @@ export default function LoginPage() {
           sessionStorage.removeItem("returnUrl");
         }
       }
-      
-      // Check for redirect parameter in URL (e.g., from protected pages)
+
       const urlParams = new URLSearchParams(window.location.search);
-      const redirectParam = urlParams.get('redirect') || redirectPathFromStorage;
-
-      const callbackUrl = new URL("/auth/callback", window.location.origin);
-      if (redirectParam && redirectParam !== "/") {
-        callbackUrl.searchParams.set("redirect", redirectParam);
+      const rawRedirect =
+        urlParams.get("redirect") || redirectPathFromStorage || null;
+      const candidate =
+        rawRedirect && rawRedirect !== "/" ? rawRedirect : null;
+      const safeRedirectParam = sanitizeUserPostLoginRedirect(candidate);
+      if (candidate && !safeRedirectParam && candidate.toLowerCase().includes("auth")) {
+        console.warn(
+          "[login][email/password] Rejected unsafe post-login redirect (e.g. OAuth callback paths):",
+          candidate
+        );
       }
+      const redirectResult = getRoleBasedRedirect(role, safeRedirectParam);
 
-      console.log("✅ Login successful! Finalizing via callback:", callbackUrl.pathname + callbackUrl.search);
+      const fromUrl = typeof window !== "undefined" ? window.location.href : "";
+      console.log("[login][email/password] NAVIGATION CHAIN", {
+        step: "after successful signInWithPassword + profile OK",
+        fromUrl,
+        toPath: redirectResult.path,
+        reason: redirectResult.reason,
+        mustNeverHitAuthCallback: true,
+      });
 
-      // Step 5: Session was already verified + profile loaded; do not use short getSession
-      // races here — on mobile they often false-fail while the real session is still loading.
-      console.log("✅ Session and profile ready for redirect");
-
-      // Set flag to prevent session check from interfering
       setIsLoggingIn(false);
-
-      // Centralize post-login routing in /auth/callback.
-      window.location.replace(`${callbackUrl.pathname}${callbackUrl.search}`);
-
+      setLoading(false);
+      if (pathStartsWithOAuthInfrastructure(redirectResult.path)) {
+        console.error("[login] BLOCKED invalid redirect to OAuth infrastructure for password login", {
+          stack: new Error().stack,
+          redirectResult,
+        });
+        navigateAfterPasswordLogin("/explore", {
+          reason: "blocked OAuth callback path — forced explore",
+        });
+        return;
+      }
+      navigateAfterPasswordLogin(redirectResult.path, {
+        reason: redirectResult.reason,
+      });
     } catch (err) {
       console.error("❌ Unexpected login error:", err);
       setLoading(false);
       setIsLoggingIn(false);
       const errorMessage = err instanceof Error ? err.message : "Please try again.";
       alert(`An unexpected error occurred: ${errorMessage}`);
+    } finally {
+      endPasswordLoginNavigation();
+      clearTrackedAuthMethod();
     }
   };
 
@@ -692,6 +738,7 @@ export default function LoginPage() {
             className="w-full"
             onClick={async () => {
               if (typeof window !== "undefined") {
+                markOAuthGoogleFlowStarting();
                 const urlParams = new URLSearchParams(window.location.search);
                 const redirectParam = urlParams.get("redirect");
                 sessionStorage.setItem("oauth-in-progress", "1");

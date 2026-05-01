@@ -18,6 +18,9 @@ export function getSupabaseBrowserClient() {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
+      // @supabase/ssr createBrowserClient forces detectSessionInUrl in the browser. That runs PKCE
+      // URL detection when both ?code= and a stored code-verifier exist — clear the verifier on
+      // email/password login (see clearPkceVerifierFromClient) so password flow is never treated as OAuth.
       detectSessionInUrl: true,
       storageKey: "hospineil-auth",
     },
