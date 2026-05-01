@@ -30,9 +30,10 @@ import Link from "next/link";
 import { Eye, EyeOff, Mail, Lock } from "lucide-react";
 import { loginCredentialsSchema } from "@/lib/validation/schemas";
 import {
-  getRoleBasedRedirect,
+  getPostLoginRoleRedirect,
   OAUTH_PKCE_CALLBACK_PATH,
   pathStartsWithOAuthInfrastructure,
+  resolveEffectiveRoleForPostLogin,
   sanitizeUserPostLoginRedirect,
 } from "@/lib/roleRouting";
 import {
@@ -314,12 +315,15 @@ export default function LoginPage() {
 
         if (!isMounted || redirectExecuted) return;
 
-        // ✅ STEP 7: Read role ONLY from profiles.role column
-        const role = profile.role;
-        console.log("🔵 User profile - role from profiles.role:", role);
-        
+        const effectiveRole = resolveEffectiveRoleForPostLogin(profile);
+        console.log("🔵 User profile (session check)", {
+          profileRole: profile.role,
+          is_admin: profile.is_admin,
+          effectiveRole,
+        });
+
         // ✅ STEP 7.5: Check rider approval status before redirecting
-        if (role === "rider") {
+        if (effectiveRole === "rider") {
           const approvalStatus = profile.rider_approval_status;
           console.log("🔵 Rider approval status:", approvalStatus);
           
@@ -341,7 +345,7 @@ export default function LoginPage() {
           console.log("✅ Rider is approved - allowing access to portal");
         }
 
-      if (role === "vendor") {
+      if (effectiveRole === "vendor") {
         const approvalStatus = profile.approval_status;
         console.log("🔵 Vendor approval status:", approvalStatus);
 
@@ -361,7 +365,9 @@ export default function LoginPage() {
         // Keep login page passive on mount (existing session: stay on login unless user navigates).
         if (redirectExecuted) return;
         redirectExecuted = true;
-        console.log("✅ Session/profile verified on login page; skipping automatic mount redirect", { role });
+        console.log("✅ Session/profile verified on login page; skipping automatic mount redirect", {
+          effectiveRole,
+        });
         if (isMounted) setCheckingSession(false);
         return;
       } catch (err) {
@@ -525,12 +531,25 @@ export default function LoginPage() {
         return;
       }
 
-      // ✅ CRITICAL: Read role ONLY from profiles.role column
-      const role = profile.role;
-      console.log("✅ Profile loaded, role from profiles.role:", role);
+      const effectiveRole = resolveEffectiveRoleForPostLogin(profile);
+      console.log("✅ Profile loaded for redirect", {
+        profileRole: profile.role,
+        is_admin: profile.is_admin,
+        effectiveRole,
+      });
+
+      if (effectiveRole == null) {
+        console.error("❌ Profile has no routable role yet (empty role and not is_admin)");
+        setLoading(false);
+        setIsLoggingIn(false);
+        alert(
+          "Your account profile is still being set up. Please wait a few seconds and try signing in again."
+        );
+        return;
+      }
 
       // ✅ CRITICAL: Check rider approval status before redirecting
-      if (role === "rider") {
+      if (effectiveRole === "rider") {
         const approvalStatus = profile.rider_approval_status;
         console.log("🔵 Rider approval status:", approvalStatus);
         
@@ -552,7 +571,7 @@ export default function LoginPage() {
         console.log("✅ Rider is approved - allowing login");
       }
 
-      if (role === "vendor") {
+      if (effectiveRole === "vendor") {
         const approvalStatus = profile.approval_status;
         console.log("🔵 Vendor approval status:", approvalStatus);
 
@@ -590,12 +609,29 @@ export default function LoginPage() {
           candidate
         );
       }
-      const redirectResult = getRoleBasedRedirect(role, safeRedirectParam);
+      const redirectResult = getPostLoginRoleRedirect(profile, safeRedirectParam);
+
+      console.log("[login][email/password] role resolution + redirect", {
+        userId: canonicalUser.id,
+        profile: {
+          role: profile.role,
+          is_admin: profile.is_admin,
+          approval_status: profile.approval_status,
+          rider_approval_status: profile.rider_approval_status,
+        },
+        is_admin: profile.is_admin,
+        profileRole: profile.role,
+        effectiveRole,
+        safeRedirectParam,
+        finalPath: redirectResult.path,
+        reason: redirectResult.reason,
+      });
 
       const fromUrl = typeof window !== "undefined" ? window.location.href : "";
       console.log("[login][email/password] NAVIGATION CHAIN", {
         step: "after successful signInWithPassword + profile OK",
         fromUrl,
+        effectiveRole,
         toPath: redirectResult.path,
         reason: redirectResult.reason,
         mustNeverHitAuthCallback: true,
@@ -608,13 +644,16 @@ export default function LoginPage() {
           stack: new Error().stack,
           redirectResult,
         });
-        navigateAfterPasswordLogin("/explore", {
-          reason: "blocked OAuth callback path — forced explore",
+        const recovered = getPostLoginRoleRedirect(profile, null);
+        navigateAfterPasswordLogin(recovered.path, {
+          reason: "blocked OAuth callback path — using role-based destination",
+          roleHint: effectiveRole,
         });
         return;
       }
       navigateAfterPasswordLogin(redirectResult.path, {
         reason: redirectResult.reason,
+        roleHint: effectiveRole,
       });
     } catch (err) {
       console.error("❌ Unexpected login error:", err);

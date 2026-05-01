@@ -3,7 +3,7 @@
  * Guards + helpers to log the stack if anything attempts that during an active password login.
  */
 
-import { coerceNeverAuthCallbackPostLoginPath } from "./roleRouting";
+import { coerceNeverAuthCallbackPostLoginPath, type UserRole } from "./roleRouting";
 
 export const PASSWORD_LOGIN_NAV_GUARD_KEY = "__hospineil_pwd_login_nav" as const;
 export const AUTH_METHOD_STORAGE_KEY = "__hospineil_auth_method" as const;
@@ -66,12 +66,16 @@ export function endPasswordLoginNavigation(): void {
 }
 
 /** Single exit for email/password success navigation (full page load; avoids Next router OAuth paths). */
-export function navigateAfterPasswordLogin(target: string, meta: { reason: string }): void {
+export function navigateAfterPasswordLogin(
+  target: string,
+  meta: { reason: string; roleHint?: UserRole | string | null }
+): void {
   clearTrackedAuthMethod();
   endPasswordLoginNavigation();
   const safe = coerceNeverAuthCallbackPostLoginPath(
     target,
-    `navigateAfterPasswordLogin: ${meta.reason}`
+    `navigateAfterPasswordLogin: ${meta.reason}`,
+    meta.roleHint
   );
   markPasswordLoginJustCompleted();
   console.log("[login][email/password] navigateAfterPasswordLogin", {

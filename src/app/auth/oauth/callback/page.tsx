@@ -29,6 +29,11 @@ export default function OAuthPkceCallbackPage({
     redirect("/loginpage");
   }
 
+  console.log("[auth/oauth/callback][server] rendering PKCE client", {
+    codeLength: code.length,
+    redirectParam: redirectParam ?? redirect_to ?? null,
+  });
+
   return (
     <AuthCallbackClient
       initialCode={code}

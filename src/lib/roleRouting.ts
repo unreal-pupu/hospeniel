@@ -20,6 +20,46 @@ export interface RoleRedirectResult {
   reason: string;
 }
 
+/** Minimal profile fields for post-login routing (email/password + OAuth). */
+export interface PostLoginProfileLike {
+  role: string | null;
+  is_admin: boolean | null;
+}
+
+/**
+ * Resolves the role string used for redirects (email/password + OAuth).
+ *
+ * **Order matters:** `is_admin === true` wins over `profiles.role`. Many admin accounts keep
+ * `role = 'user'` in the database; checking role first incorrectly sent them to /explore.
+ * OAuth and first-login may still have `role` null briefly — `is_admin` covers that when set.
+ */
+export function resolveEffectiveRoleForPostLogin(profile: PostLoginProfileLike): string | null {
+  if (profile.is_admin === true) return "admin";
+  const r = profile.role?.toLowerCase().trim();
+  if (!r) return null;
+  return r;
+}
+
+/**
+ * Single entry for post-login redirects after `fetchProfileForLogin` — use for OAuth and email/password.
+ */
+export function getPostLoginRoleRedirect(
+  profile: PostLoginProfileLike,
+  redirectParam?: string | null
+): RoleRedirectResult {
+  const effective = resolveEffectiveRoleForPostLogin(profile);
+  if (effective == null) {
+    console.warn(
+      "[roleRouting] getPostLoginRoleRedirect: no role and not is_admin — avoiding /explore, sending to loginpage"
+    );
+    return {
+      path: "/loginpage",
+      reason: "Profile role not ready — try again or contact support",
+    };
+  }
+  return getRoleBasedRedirect(effective, redirectParam);
+}
+
 /**
  * Google OAuth PKCE return — the ONLY app route that should receive the provider `?code=`.
  * Add this exact URL to Supabase Dashboard → Auth → URL configuration → Redirect URLs.
@@ -61,15 +101,26 @@ export function pathStartsWithOAuthInfrastructure(path: string): boolean {
 
 /**
  * Last line of defense: never return OAuth callback paths from role-based routing.
+ * If the computed path is wrong, recover using `roleHint` (never a blind /explore for staff roles).
  */
-export function coerceNeverAuthCallbackPostLoginPath(path: string, context: string): string {
+export function coerceNeverAuthCallbackPostLoginPath(
+  path: string,
+  context: string,
+  roleHint?: string | null
+): string {
   if (pathStartsWithOAuthInfrastructure(path)) {
     console.error(`[roleRouting] coerced unsafe post-login path (must never be OAuth infrastructure)`, {
       path,
       context,
+      roleHint,
       stack: new Error().stack,
     });
-    return "/explore";
+    const r = roleHint?.toLowerCase().trim();
+    if (r === "admin") return "/admin";
+    if (r === "vendor") return "/vendor/dashboard";
+    if (r === "rider") return "/portal";
+    if (r === "user") return "/explore";
+    return "/loginpage";
   }
   return path;
 }
@@ -113,7 +164,7 @@ export function getRoleBasedRedirect(
   // Priority 1: Admin
   if (normalizedRole === "admin") {
     return {
-      path: coerceNeverAuthCallbackPostLoginPath("/admin", "admin branch"),
+      path: coerceNeverAuthCallbackPostLoginPath("/admin", "admin branch", "admin"),
       reason: "Admin role - redirecting to admin dashboard",
     };
   }
@@ -121,7 +172,7 @@ export function getRoleBasedRedirect(
   // Priority 2: Vendor
   if (normalizedRole === "vendor") {
     return {
-      path: coerceNeverAuthCallbackPostLoginPath("/vendor/dashboard", "vendor branch"),
+      path: coerceNeverAuthCallbackPostLoginPath("/vendor/dashboard", "vendor branch", "vendor"),
       reason: "Vendor role - redirecting to vendor dashboard",
     };
   }
@@ -129,35 +180,43 @@ export function getRoleBasedRedirect(
   // Priority 3: Rider
   if (normalizedRole === "rider") {
     return {
-      path: coerceNeverAuthCallbackPostLoginPath("/portal", "rider branch"),
+      path: coerceNeverAuthCallbackPostLoginPath("/portal", "rider branch", "rider"),
       reason: "Rider role - redirecting to rider portal",
     };
   }
 
-  // Priority 4: User (or default)
-  if (normalizedRole === "user" || !normalizedRole) {
+  // Explicit customer role only — never treat missing role as /explore (use getPostLoginRoleRedirect first).
+  if (normalizedRole === "user") {
     const safeRedirect = sanitizeUserPostLoginRedirect(redirectParam);
     if (safeRedirect) {
       return {
         path: coerceNeverAuthCallbackPostLoginPath(
           safeRedirect,
-          `user branch (sanitized redirect: ${safeRedirect})`
+          `user branch (sanitized redirect: ${safeRedirect})`,
+          "user"
         ),
         reason: `User role - using sanitized redirect parameter: ${safeRedirect}`,
       };
     }
 
     return {
-      path: coerceNeverAuthCallbackPostLoginPath("/explore", "user default explore"),
+      path: coerceNeverAuthCallbackPostLoginPath("/explore", "user default explore", "user"),
       reason: "User role - redirecting to explore page",
     };
   }
 
-  // Invalid role - default to explore
-  console.warn(`⚠️ Unknown role "${role}" - defaulting to explore page`);
+  if (!normalizedRole) {
+    console.warn("[roleRouting] getRoleBasedRedirect called with empty role — routing to loginpage, not /explore");
+    return {
+      path: "/loginpage",
+      reason: "Missing role for redirect",
+    };
+  }
+
+  console.warn(`[roleRouting] Unknown role "${role}" — routing to loginpage, not /explore`);
   return {
-    path: coerceNeverAuthCallbackPostLoginPath("/explore", "unknown role fallback"),
-    reason: `Unknown role "${role}" - defaulting to explore page`,
+    path: "/loginpage",
+    reason: `Unknown role "${role}"`,
   };
 }
 

@@ -10,7 +10,11 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { fetchProfileForLogin } from "@/lib/fetch-login-profile";
-import { getRoleBasedRedirect, sanitizeUserPostLoginRedirect } from "@/lib/roleRouting";
+import {
+  getPostLoginRoleRedirect,
+  resolveEffectiveRoleForPostLogin,
+  sanitizeUserPostLoginRedirect,
+} from "@/lib/roleRouting";
 import {
   LOGIN_SESSION_WAIT_MAX_MS,
   POST_LOGIN_AUTH_USER_WAIT_MS,
@@ -133,9 +137,9 @@ export function AuthCallbackClient({
           throw new Error("User profile not available after OAuth callback");
         }
 
-        const role = profile.role;
+        const effectiveRole = resolveEffectiveRoleForPostLogin(profile);
 
-        if (role === "vendor" && profile.approval_status !== "approved") {
+        if (effectiveRole === "vendor" && profile.approval_status !== "approved") {
           await supabase.auth.signOut();
           if (isMounted) {
             const approvalParam = profile.approval_status === "rejected" ? "rejected" : "pending";
@@ -145,7 +149,7 @@ export function AuthCallbackClient({
           return;
         }
 
-        if (role === "rider" && profile.rider_approval_status !== "approved") {
+        if (effectiveRole === "rider" && profile.rider_approval_status !== "approved") {
           if (isMounted) {
             const approvalParam = profile.rider_approval_status === "rejected" ? "rejected" : "pending";
             handled = true;
@@ -154,7 +158,23 @@ export function AuthCallbackClient({
           return;
         }
 
-        const redirectResult = getRoleBasedRedirect(role, safeRedirectParam);
+        const redirectResult = getPostLoginRoleRedirect(profile, safeRedirectParam);
+
+        console.log("[auth/oauth/callback] role resolution + redirect", {
+          userId: user.id,
+          profile: {
+            role: profile.role,
+            is_admin: profile.is_admin,
+            approval_status: profile.approval_status,
+            rider_approval_status: profile.rider_approval_status,
+          },
+          is_admin: profile.is_admin,
+          profileRole: profile.role,
+          effectiveRole,
+          safeRedirectParam,
+          finalPath: redirectResult.path,
+          reason: redirectResult.reason,
+        });
         if (isMounted) {
           handled = true;
           router.replace(redirectResult.path);

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { resolveEffectiveRoleForPostLogin } from "@/lib/roleRouting";
 
 export interface LoginProfileRow {
   role: string | null;
@@ -31,7 +32,11 @@ export async function fetchProfileForLogin(
       return { profile: null, error: res.error };
     }
     if (res.data) {
-      return { profile: res.data as LoginProfileRow, error: null };
+      const row = res.data as LoginProfileRow;
+      // Row can exist before `role` is populated (OAuth + ensure_my_profile race). Keep polling until routable.
+      if (resolveEffectiveRoleForPostLogin(row) != null) {
+        return { profile: row, error: null };
+      }
     }
 
     if (attempt === 0) {
