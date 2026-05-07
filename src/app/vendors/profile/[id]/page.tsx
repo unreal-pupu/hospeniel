@@ -85,6 +85,12 @@ function resolveVendorName(profile: ProfileRow | null, vendor: VendorRow | null)
   return "Vendor";
 }
 
+function normalizeImageUrl(value: string | null | undefined) {
+  if (!value || typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function toMenuItemWithVendor(item: MenuItemRow, vendor: VendorProfile): MenuItemWithVendor {
   return {
     id: String(item.id),
@@ -173,6 +179,11 @@ export default function VendorProfilePage() {
           .select("image_url")
           .eq("profile_id", vendorProfileId)
           .maybeSingle();
+        const { data: userSettingsData } = await supabase
+          .from("user_settings")
+          .select("avatar_url")
+          .eq("user_id", vendorProfileId)
+          .maybeSingle();
 
         const resolvedName = resolveVendorName(profileData as ProfileRow | null, vendorData as VendorRow | null);
         let resolvedVendorRecordId = vendorData?.id ? String(vendorData.id) : null;
@@ -193,7 +204,11 @@ export default function VendorProfilePage() {
           profileId: vendorProfileId,
           vendorRecordId: resolvedVendorRecordId,
           name: resolvedName,
-          imageUrl: vendorData?.image_url || serviceProfileData?.image_url || null,
+          imageUrl:
+            normalizeImageUrl(vendorData?.image_url) ||
+            normalizeImageUrl(serviceProfileData?.image_url) ||
+            normalizeImageUrl(userSettingsData?.avatar_url) ||
+            null,
           location: vendorData?.location || profileData?.location || null,
           description: vendorData?.description || null,
           category: profileData?.category || vendorData?.category || null,

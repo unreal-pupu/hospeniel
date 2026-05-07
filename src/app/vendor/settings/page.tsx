@@ -36,6 +36,7 @@ interface VendorSettings {
   description: string;
   image_url: string | null;
   is_open: boolean;
+  is_available: boolean;
   delivery_enabled: boolean;
   pickup_enabled: boolean;
   address: string;
@@ -51,6 +52,7 @@ interface VendorData {
   description?: string | null;
   image_url?: string | null;
   is_open?: boolean;
+  is_available?: boolean;
   delivery_enabled?: boolean;
   pickup_enabled?: boolean;
   address?: string | null;
@@ -101,6 +103,7 @@ export default function VendorSettingsPage() {
     description: "",
     image_url: null,
     is_open: true,
+    is_available: true,
     delivery_enabled: true,
     pickup_enabled: true,
     address: "",
@@ -147,9 +150,10 @@ export default function VendorSettingsPage() {
       category: normalizedVendorCategory,
       description: vendorData.description || "",
       image_url: vendorData.image_url || null,
-      is_open: vendorData.is_open !== undefined ? vendorData.is_open : true,
-      delivery_enabled: vendorData.delivery_enabled !== undefined ? vendorData.delivery_enabled : true,
-      pickup_enabled: vendorData.pickup_enabled !== undefined ? vendorData.pickup_enabled : true,
+      is_open: vendorData.is_open === false ? false : true,
+      is_available: vendorData.is_available === false ? false : true,
+      delivery_enabled: vendorData.delivery_enabled === false ? false : true,
+      pickup_enabled: vendorData.pickup_enabled === false ? false : true,
       address: vendorData.address || "",
     });
 
@@ -179,6 +183,7 @@ export default function VendorSettingsPage() {
             business_name: vendorName, // Use name as default business_name
             email: email,
             is_open: true,
+            is_available: true,
             delivery_enabled: true,
             pickup_enabled: true,
           },
@@ -266,6 +271,7 @@ export default function VendorSettingsPage() {
             description: "",
             image_url: null,
             is_open: true,
+            is_available: true,
             delivery_enabled: true,
             pickup_enabled: true,
           },
@@ -490,6 +496,7 @@ export default function VendorSettingsPage() {
         description?: string;
         image_url?: string | null;
         is_open?: boolean;
+        is_available?: boolean;
         delivery_enabled?: boolean;
         pickup_enabled?: boolean;
         address?: string;
@@ -525,15 +532,18 @@ export default function VendorSettingsPage() {
       
       // Boolean fields
       updateData.is_open = settings.is_open !== undefined ? settings.is_open : true;
+      updateData.is_available =
+        settings.is_available !== undefined ? settings.is_available : true;
       updateData.delivery_enabled = settings.delivery_enabled !== undefined ? settings.delivery_enabled : true;
       updateData.pickup_enabled = settings.pickup_enabled !== undefined ? settings.pickup_enabled : true;
 
       console.log("Updating vendor with data:", updateData);
 
-      const { error: updateError } = await supabase
+      const { data: updatedRows, error: updateError } = await supabase
         .from("vendors")
         .update(updateData)
-        .eq("profile_id", profileId);
+        .eq("profile_id", profileId)
+        .select("id");
 
       if (updateError) {
         console.error("Error updating vendor:", updateError);
@@ -550,6 +560,22 @@ export default function VendorSettingsPage() {
           setMessage({ type: "error", text: `Failed to update settings: ${updateError.message || "Unknown error"}` });
         }
         return;
+      }
+
+      // Backstop for rows that do not yet exist for this profile.
+      if (!updatedRows || updatedRows.length === 0) {
+        const { error: insertError } = await supabase.from("vendors").insert({
+          profile_id: profileId,
+          ...updateData,
+        });
+        if (insertError) {
+          console.error("Error creating missing vendor row during save:", insertError);
+          setMessage({
+            type: "error",
+            text: `Failed to persist vendor visibility settings: ${insertError.message || "Unknown error"}`,
+          });
+          return;
+        }
       }
 
       // Also update profile location/category to keep profiles as source of truth
@@ -1018,6 +1044,38 @@ export default function VendorSettingsPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg bg-hospineil-base-bg">
+                  <div>
+                    <Label htmlFor="is_available" className="text-base font-medium font-body text-gray-700">
+                      Availability (Visible on Explore)
+                    </Label>
+                    <p className="text-sm text-gray-500 font-body">
+                      Toggle whether your profile appears on the Explore page
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-xs font-semibold ${
+                        settings.is_available ? "text-green-600" : "text-red-600"
+                      }`}
+                    >
+                      {settings.is_available ? "Available" : "Unavailable"}
+                    </span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        id="is_available"
+                        checked={settings.is_available}
+                        onChange={(e) =>
+                          setSettings({ ...settings, is_available: e.target.checked })
+                        }
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-hospineil-primary/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-hospineil-primary"></div>
+                    </label>
+                  </div>
+                </div>
+
                 <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg bg-hospineil-base-bg">
                   <div>
                     <Label htmlFor="delivery_enabled" className="text-base font-medium font-body text-gray-700">

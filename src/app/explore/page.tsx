@@ -27,7 +27,7 @@ import SEOHead from "@/components/SEOHead";
 import { generateBreadcrumbSchema } from "@/lib/seo";
 import { getLocationsWithAll } from "@/lib/vendorLocations";
 import { getCategoriesWithAll, getCategoryLabel } from "@/lib/vendorCategories";
-import { isVendorExploreVisible } from "@/lib/vendorAvailability";
+import { isVendorVisible } from "@/lib/vendorAvailability";
 
 interface MenuItem {
   id: string;
@@ -41,6 +41,8 @@ interface MenuItem {
     id: string | null;
     name: string;
     image_url: string | null;
+    is_open?: boolean | null;
+    is_available?: boolean | null;
     location?: string | null;
     category?: string | null;
     description?: string | null;
@@ -55,6 +57,8 @@ interface VendorCardData {
   profile_id: string;
   name: string;
   image_url: string | null;
+  is_open?: boolean | null;
+  is_available?: boolean | null;
   location?: string | null;
   category?: string | null;
   description?: string | null;
@@ -62,6 +66,11 @@ interface VendorCardData {
   vendor_table_id?: string | null;
   is_premium?: boolean;
   subscription_plan?: string;
+}
+
+interface UserSettingsRow {
+  user_id: string;
+  avatar_url: string | null;
 }
 
 interface ProfileRow {
@@ -88,6 +97,7 @@ interface VendorRow {
   is_premium?: boolean | null;
   subscription_plan?: string | null;
   is_open?: boolean | null;
+  is_available?: boolean | null;
 }
 interface UserProfile {
   name: string;
@@ -112,6 +122,46 @@ interface ServiceProfileVendor {
 const LOCATIONS = getLocationsWithAll();
 const CATEGORIES = getCategoriesWithAll();
 
+function normalizeImageUrl(value: string | null | undefined): string | null {
+  if (!value || typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function resolveStorageBackedImageUrl(rawValue: string | null | undefined): string | null {
+  const normalized = normalizeImageUrl(rawValue);
+  if (!normalized) return null;
+
+  if (
+    normalized.startsWith("http://") ||
+    normalized.startsWith("https://") ||
+    normalized.startsWith("data:") ||
+    normalized.startsWith("blob:")
+  ) {
+    return normalized;
+  }
+
+  if (normalized.startsWith("/")) {
+    if (normalized.startsWith("/storage/v1/object/")) {
+      const supabaseBase = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+      return supabaseBase ? `${supabaseBase}${normalized}` : null;
+    }
+    return normalized;
+  }
+
+  const supabaseBase = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  if (!supabaseBase) return null;
+
+  const bucketPrefixes = ["vendor-images/", "avatars/", "menu-images/"];
+  const bucketPrefix = bucketPrefixes.find((prefix) => normalized.startsWith(prefix));
+  if (bucketPrefix) {
+    return `${supabaseBase}/storage/v1/object/public/${normalized}`;
+  }
+
+  // Legacy rows may store only a raw key/filename; treat as vendor profile image key.
+  return `${supabaseBase}/storage/v1/object/public/vendor-images/${normalized}`;
+}
+
 export default function ExplorePage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -125,6 +175,7 @@ export default function ExplorePage() {
   const [serviceProfileVendors, setServiceProfileVendors] = useState<ServiceProfileVendor[]>([]);
   const [loadingServiceProfiles, setLoadingServiceProfiles] = useState(false);
   const [vendorRatings, setVendorRatings] = useState<Record<string, { average: number; count: number }>>({});
+  const [failedVendorImages, setFailedVendorImages] = useState<Record<string, true>>({});
   const [serviceRequestDialog, setServiceRequestDialog] = useState<{
     open: boolean;
     vendorId: string;
@@ -257,7 +308,7 @@ export default function ExplorePage() {
       // Also fetch profiles to get location if vendors.location is not available
       const { data: vendorsData, error: vendorsError } = await supabase
         .from("vendors")
-        .select("id, name, business_name, image_url, location, profile_id, description, category, is_premium, subscription_plan, verified, is_open")
+        .select("id, name, business_name, image_url, location, profile_id, description, category, is_premium, subscription_plan, verified, is_open, is_available")
         .in("profile_id", vendorIds);
 
       const { data: serviceProfileImages, error: serviceProfileImagesError } = await supabase
@@ -265,13 +316,40 @@ export default function ExplorePage() {
         .select("profile_id, image_url")
         .in("profile_id", vendorIds);
 
+      const avatarResponse = await fetch("/api/vendor-avatar-fallbacks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ vendorIds }),
+      });
+      const avatarPayload = (await avatarResponse.json().catch(() => ({}))) as {
+        avatars?: UserSettingsRow[];
+        error?: string;
+        warning?: string;
+      };
+      const userSettingsRows = avatarPayload.avatars || [];
+
       if (serviceProfileImagesError) {
         console.warn("Explore: could not load service profile images (fallback only):", serviceProfileImagesError);
+      }
+      if (!avatarResponse.ok) {
+        console.warn("Explore: could not load user avatar fallback images:", {
+          status: avatarResponse.status,
+          error: avatarPayload.error || "unknown",
+        });
+      } else if (avatarPayload.warning) {
+        console.warn("Explore: avatar fallback API warning:", avatarPayload.warning);
       }
       const serviceProfileImageByProfileId = new Map<string, string | null>();
       (serviceProfileImages || []).forEach((row: { profile_id: string; image_url: string | null }) => {
         if (row.profile_id) {
           serviceProfileImageByProfileId.set(row.profile_id, row.image_url ?? null);
+        }
+      });
+      const avatarByProfileId = new Map<string, string | null>();
+      userSettingsRows.forEach((row: UserSettingsRow) => {
+        if (row.user_id) {
+          avatarByProfileId.set(row.user_id, row.avatar_url ?? null);
         }
       });
 
@@ -299,6 +377,16 @@ export default function ExplorePage() {
       }
 
       console.log(`Found ${vendorsData?.length || 0} vendors:`, vendorsData);
+      console.log(
+        "Explore debug [raw vendors image_url sample]:",
+        (vendorsData || []).slice(0, 12).map((v: VendorRow) => ({
+          profile_id: v.profile_id,
+          vendor_id: v.id,
+          image_url: v.image_url || null,
+          image_url_type: typeof v.image_url,
+          has_image_url: Boolean(v.image_url),
+        }))
+      );
       console.log(`Found ${profilesData?.length || 0} profiles:`, profilesData);
 
       // Create a map of profile_id (auth.users.id) to vendor data
@@ -359,7 +447,7 @@ export default function ExplorePage() {
 
       // Combine menu items with vendor information
       // Filter out items that are not available (handle both boolean and text)
-      // Exclude vendors explicitly closed (is_open === false on vendors table)
+      // Enforce vendor visibility in one place via isVendorVisible(...)
       const itemsWithVendors = menuItems
         .filter((item: MenuItem) => {
           // Only show available items
@@ -371,8 +459,12 @@ export default function ExplorePage() {
         })
         .filter((item: MenuItem) => {
           const v = vendorMap.get(item.vendor_id);
-          if (v && !isVendorExploreVisible(v.is_open)) return false;
-          return true;
+          // Integrity gate (safe): if vendor row exists but points to the wrong profile, exclude it.
+          if (v?.profile_id && v.profile_id !== item.vendor_id) return false;
+
+          // Visibility gate: hide only when vendor row explicitly says unavailable/closed.
+          // If vendor row is missing (e.g. partial data/RLS edge case), do not hide by default.
+          return isVendorVisible(v);
         })
         .map((item: MenuItem) => {
           const vendor = vendorMap.get(item.vendor_id);
@@ -452,16 +544,24 @@ export default function ExplorePage() {
           
           // Always create vendors object, even if data is incomplete
           // This ensures vendor info is always available for display
-          const fromServiceProfile = serviceProfileImageByProfileId.get(item.vendor_id);
-          const tableImage = typeof vendor?.image_url === "string" ? vendor.image_url.trim() : "";
-          const spImage = typeof fromServiceProfile === "string" ? fromServiceProfile.trim() : "";
-          const resolvedImageUrl = tableImage || spImage || null;
+          const fromServiceProfile = resolveStorageBackedImageUrl(serviceProfileImageByProfileId.get(item.vendor_id));
+          const fromVendorTable = resolveStorageBackedImageUrl(vendor?.image_url);
+          const fromUserAvatar = resolveStorageBackedImageUrl(avatarByProfileId.get(item.vendor_id));
+          const fromMenuItemImage = resolveStorageBackedImageUrl(item.image_url);
+          const resolvedImageUrl =
+            fromVendorTable ||
+            fromServiceProfile ||
+            fromUserAvatar ||
+            fromMenuItemImage ||
+            null;
 
           const vendorInfo = {
             id: vendor?.id || profile?.id || null,
             // Use the resolved vendor name
             name: finalVendorName,
             image_url: resolvedImageUrl,
+            is_open: vendor?.is_open ?? null,
+            is_available: vendor?.is_available ?? null,
             location: vendorLocation || null,
             category: vendorCategory || null,
             description: vendor?.description || null,
@@ -472,6 +572,18 @@ export default function ExplorePage() {
           };
           
           console.log(`✅ Menu item ${item.id}: Vendor info - name: "${vendorInfo.name}", category: ${vendorInfo.category || 'none'}, location: ${vendorInfo.location || 'none'}`);
+          console.log("Explore debug [mapped vendor image_url]:", {
+            menu_item_id: item.id,
+            vendor_profile_id: item.vendor_id,
+            vendor_table_image_url_raw: vendor?.image_url || null,
+            service_profile_image_url_raw: serviceProfileImageByProfileId.get(item.vendor_id) || null,
+            avatar_url_raw: avatarByProfileId.get(item.vendor_id) || null,
+            image_from_vendor_table: fromVendorTable,
+            image_from_service_profile: fromServiceProfile,
+            image_from_avatar_fallback: fromUserAvatar,
+            image_from_menu_item: fromMenuItemImage,
+            resolved_image_url: resolvedImageUrl,
+          });
           
           return {
             ...item,
@@ -480,6 +592,18 @@ export default function ExplorePage() {
         });
 
       console.log(`Processed ${itemsWithVendors.length} menu items with vendor data`);
+      console.log(
+        "Explore visibility debug [final menu dataset before render]:",
+        itemsWithVendors.slice(0, 30).map((item) => ({
+          menu_item_id: item.id,
+          vendor_profile_id: item.vendor_id,
+          is_open: item.vendors?.is_open ?? null,
+          is_available: item.vendors?.is_available ?? null,
+          visible: Boolean(
+            item.vendors && isVendorVisible(item.vendors)
+          ),
+        }))
+      );
       setMenuItems(itemsWithVendors);
       // Initialize filtered menu items - will be filtered by location in useEffect
       setFilteredMenuItems(itemsWithVendors);
@@ -714,6 +838,8 @@ export default function ExplorePage() {
         profile_id: item.vendor_id,
         name: item.vendors?.name || "Vendor",
         image_url: item.vendors?.image_url || null,
+        is_open: item.vendors?.is_open ?? null,
+        is_available: item.vendors?.is_available ?? null,
         location: item.vendors?.location || null,
         category: item.vendors?.category || null,
         description: item.vendors?.description || null,
@@ -725,6 +851,20 @@ export default function ExplorePage() {
     });
     return Array.from(vendorMap.values());
   }, [filteredMenuItems]);
+
+  useEffect(() => {
+    console.log(
+      "Explore debug [filteredVendors image_url snapshot]:",
+      filteredVendors.slice(0, 20).map((vendor) => ({
+        profile_id: vendor.profile_id,
+        name: vendor.name,
+        image_url: vendor.image_url,
+        is_open: vendor.is_open ?? null,
+        is_available: vendor.is_available ?? null,
+        has_image_url: Boolean(vendor.image_url),
+      }))
+    );
+  }, [filteredVendors]);
 
   const [priorityBoostVendorIds, setPriorityBoostVendorIds] = useState<string[]>([]);
 
@@ -795,6 +935,34 @@ export default function ExplorePage() {
 
     return indexed.map((x) => x.v);
   }, [filteredVendors, priorityBoostVendorIds, selectedLocation]);
+
+  useEffect(() => {
+    console.log(
+      "Explore debug [displayedVendors final render src]:",
+      displayedVendors.slice(0, 20).map((vendor) => ({
+        profile_id: vendor.profile_id,
+        final_src: vendor.image_url,
+        is_open: vendor.is_open ?? null,
+        is_available: vendor.is_available ?? null,
+        failed_before: Boolean(failedVendorImages[vendor.profile_id]),
+      }))
+    );
+  }, [displayedVendors, failedVendorImages]);
+
+  useEffect(() => {
+    // Reset stale failed-image flags when fresh vendor image URLs are present.
+    setFailedVendorImages((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      displayedVendors.forEach((vendor) => {
+        if (vendor.image_url && next[vendor.profile_id]) {
+          delete next[vendor.profile_id];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [displayedVendors]);
 
   useEffect(() => {
     const fetchRatings = async () => {
@@ -1121,10 +1289,10 @@ export default function ExplorePage() {
                     return (
                     <div
                       key={vendor.id}
-                      className="relative z-0 bg-white rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:scale-[1.01] border border-gray-100"
+                      className="relative z-0 bg-white rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:scale-[1.01] border border-gray-100 h-full flex flex-col"
                     >
                       {/* Vendor Image */}
-                      <div className="relative w-full h-48 overflow-hidden bg-gray-200">
+                      <div className="relative w-full h-48 overflow-hidden bg-gray-200 shrink-0">
                         {vendor.image_url ? (
                           <Image
                             src={vendor.image_url}
@@ -1145,7 +1313,7 @@ export default function ExplorePage() {
                       </div>
 
                       {/* Vendor Info */}
-                      <div className="p-5 pt-4 flex flex-col h-full">
+                      <div className="p-5 pt-4 flex flex-col flex-1">
                         <div className="flex flex-wrap items-start justify-between gap-2 mb-2 min-w-0">
                         <h3 className="text-lg font-bold text-gray-800 font-header flex items-center gap-2 min-w-0 flex-1 break-words">
                           <span className="min-w-0">{vendor.name}</span>
@@ -1297,19 +1465,25 @@ export default function ExplorePage() {
                 <Link
                   key={vendor.profile_id}
                   href={`/vendors/profile/${vendor.profile_id}`}
-                      className="bg-white rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:scale-[1.01] border border-gray-100 hover:border-hospineil-accent/30 group flex flex-col"
+                      className="bg-white rounded-2xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:scale-[1.01] border border-gray-100 hover:border-hospineil-accent/30 group flex flex-col h-full"
                     >
-                  <div className="relative w-full h-48 sm:h-52 overflow-hidden bg-gray-100">
-                    {vendor.image_url ? (
+                  <div className="relative w-full h-48 sm:h-52 overflow-hidden bg-gray-100 shrink-0">
+                    {vendor.image_url && !failedVendorImages[vendor.profile_id] ? (
                           <Image
                         src={vendor.image_url}
                         alt={vendor.name}
                             fill
                             className="object-cover transition-transform duration-300 group-hover:scale-105"
                             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                          target.src = "/default-vendor.png";
+                            onError={() => {
+                              console.error("Explore image onError:", {
+                                profile_id: vendor.profile_id,
+                                attempted_src: vendor.image_url,
+                              });
+                              setFailedVendorImages((prev) => ({
+                                ...prev,
+                                [vendor.profile_id]: true,
+                              }));
                             }}
                             unoptimized
                           />

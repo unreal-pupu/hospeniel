@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase";
 import { checkRateLimit, RateLimitConfigs } from "@/lib/rateLimiter";
+import { isVendorVisible } from "@/lib/vendorAvailability";
 
 function hasCompletedServiceProfile(profile: {
   image_url: string | null;
@@ -77,13 +78,13 @@ export async function GET(req: Request) {
       return NextResponse.json({ vendors: [] });
     }
 
-    const { data: vendorOpenRows } = await supabase
+    const { data: vendorVisibilityRows } = await supabase
       .from("vendors")
-      .select("profile_id, is_open")
+      .select("profile_id, is_open, is_available")
       .in("profile_id", profileIds);
-    const closedChefProfileIds = new Set(
-      (vendorOpenRows || [])
-        .filter((r) => r.is_open === false)
+    const hiddenChefProfileIds = new Set(
+      (vendorVisibilityRows || [])
+        .filter((r) => !isVendorVisible(r))
         .map((r) => String(r.profile_id))
     );
 
@@ -114,7 +115,7 @@ export async function GET(req: Request) {
         const category = normalizeCategory(profile.category);
         if (category !== "chef" && category !== "home_cook") return null;
 
-        if (closedChefProfileIds.has(String(profile.id))) {
+        if (hiddenChefProfileIds.has(String(profile.id))) {
           return null;
         }
 

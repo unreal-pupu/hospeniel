@@ -12,12 +12,12 @@ export interface VendorPremiumToolDefinition {
 }
 
 export const VENDOR_PREMIUM_TOOLS: VendorPremiumToolDefinition[] = [
-  { toolName: VENDOR_PREMIUM_TOOL_HOMEPAGE_FEATURED_PLACEMENT, monthlyPriceNgn: 10 },
+  { toolName: VENDOR_PREMIUM_TOOL_HOMEPAGE_FEATURED_PLACEMENT, monthlyPriceNgn: 5000 },
   { toolName: "Priority Location Boost", monthlyPriceNgn: 5000 },
   { toolName: "Sponsored Banners", monthlyPriceNgn: 7000 },
   { toolName: "Brand Promotion", monthlyPriceNgn: 25000 },
   { toolName: "Marketing Tools", monthlyPriceNgn: 20000 },
-  { toolName: "Analytical Marketing", monthlyPriceNgn: 10 },
+  { toolName: "Analytical Marketing", monthlyPriceNgn: 5000 },
 ];
 
 export type VendorToolBilling = "monthly" | "yearly";
