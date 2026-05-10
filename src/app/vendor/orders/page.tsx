@@ -33,6 +33,11 @@ import {
   PLATFORM_COMMISSION_PERCENT_LABEL,
   PLATFORM_FOOD_COMMISSION_RATE,
 } from "@/lib/platformPricing";
+import {
+  VENDOR_ORDERS_LIST_SELECT_LEGACY,
+  VENDOR_ORDERS_LIST_SELECT_WITH_FOOD_SUBTOTAL,
+  isMissingFoodSubtotalColumnError,
+} from "@/lib/vendor-orders-select";
 
 dayjs.extend(relativeTime);
 
@@ -121,45 +126,37 @@ export default function OrdersPage() {
         return;
       }
 
-      // Fetch orders with related data
-      // Note: user_id references auth.users(id), so we need to join profiles and user_settings
-      // Explicitly select columns to avoid schema mismatch errors
-      const { data: ordersData, error: ordersError } = await supabase
+      // Fetch orders — prefer select including food_subtotal; retry if DB has not migrated yet.
+      let ordersQueryLabel = "orders.vendor list (with food_subtotal)";
+      const firstAttempt = await supabase
         .from("orders")
-        .select(`
-          id,
-          vendor_id,
-          user_id,
-          product_id,
-          quantity,
-          total_price,
-          food_subtotal,
-          status,
-          created_at,
-          updated_at,
-          delivery_address,
-          delivery_address_line_1,
-          delivery_city,
-          delivery_state,
-          delivery_zone,
-          delivery_postal_code,
-          delivery_phone,
-          delivery_phone_number,
-          delivery_charge,
-          special_instructions,
-          payment_reference,
-          guest_id,
-          customer_name,
-          customer_phone,
-          menu_items (
-            id,
-            title,
-            image_url,
-            price
-          )
-        `)
+        .select(VENDOR_ORDERS_LIST_SELECT_WITH_FOOD_SUBTOTAL)
         .eq("vendor_id", user.id)
         .order("created_at", { ascending: false });
+
+      let ordersData = firstAttempt.data ?? null;
+      let ordersError = firstAttempt.error ?? null;
+
+      if (ordersError && isMissingFoodSubtotalColumnError(ordersError)) {
+        console.warn(
+          "[vendor/orders] food_subtotal missing on orders table — retrying without column. Apply migration 20260428_add_food_subtotal_to_orders.sql",
+          {
+            code: ordersError.code,
+            message: ordersError.message,
+            details: ordersError.details,
+            hint: ordersError.hint,
+            failingQuery: ordersQueryLabel,
+          }
+        );
+        ordersQueryLabel = "orders.vendor list (legacy, no food_subtotal)";
+        const legacyAttempt = await supabase
+          .from("orders")
+          .select(VENDOR_ORDERS_LIST_SELECT_LEGACY)
+          .eq("vendor_id", user.id)
+          .order("created_at", { ascending: false });
+        ordersData = legacyAttempt.data ?? null;
+        ordersError = legacyAttempt.error ?? null;
+      }
 
       if (ordersError) {
         console.error("❌ Error fetching orders:", ordersError);
@@ -167,7 +164,9 @@ export default function OrdersPage() {
           message: ordersError.message,
           code: ordersError.code,
           details: ordersError.details,
-          hint: ordersError.hint
+          hint: ordersError.hint,
+          failingQuery: ordersQueryLabel,
+          vendor_id: user.id,
         });
         setError(`Failed to load orders: ${ordersError.message || "Unknown error"}`);
         setOrders([]);

@@ -19,6 +19,11 @@ import {
   PLATFORM_COMMISSION_PERCENT_LABEL,
   PLATFORM_FOOD_COMMISSION_RATE,
 } from "@/lib/platformPricing";
+import {
+  VENDOR_DASHBOARD_ORDERS_SELECT_LEGACY,
+  VENDOR_DASHBOARD_ORDERS_SELECT_WITH_FOOD_SUBTOTAL,
+  isMissingFoodSubtotalColumnError,
+} from "@/lib/vendor-orders-select";
 
 const CookChefDashboard = dynamic(() => import('@/components/CookChefDashboard'), {
   loading: () => (
@@ -430,14 +435,43 @@ const VendorDashboard: React.FC = () => {
 
           try {
             setOrdersError(null);
-            // Fetch all orders for this vendor (including Pending, Paid, Accepted, etc.)
-            // Use explicit column selection to avoid schema mismatch errors
-            const { data: ordersData, error: ordersError } = await supabase
+            let ordersQueryLabel =
+              "vendor dashboard orders (with food_subtotal)";
+            const firstOrdersAttempt = await supabase
               .from("orders")
-              .select("id, total_price, food_subtotal, status, created_at, payment_reference")
+              .select(VENDOR_DASHBOARD_ORDERS_SELECT_WITH_FOOD_SUBTOTAL)
               .eq("vendor_id", vendorIdRef.current)
               .order("created_at", { ascending: false })
-              .limit(100); // Add limit to prevent large queries
+              .limit(100);
+
+            let ordersData = firstOrdersAttempt.data;
+            let ordersError = firstOrdersAttempt.error;
+
+            if (
+              ordersError &&
+              isMissingFoodSubtotalColumnError(ordersError)
+            ) {
+              console.warn(
+                "[vendor/dashboard] food_subtotal missing on orders — retrying without column. Apply migration 20260428_add_food_subtotal_to_orders.sql",
+                {
+                  code: ordersError.code,
+                  message: ordersError.message,
+                  details: ordersError.details,
+                  hint: ordersError.hint,
+                  failingQuery: ordersQueryLabel,
+                }
+              );
+              ordersQueryLabel =
+                "vendor dashboard orders (legacy, no food_subtotal)";
+              const legacyOrdersAttempt = await supabase
+                .from("orders")
+                .select(VENDOR_DASHBOARD_ORDERS_SELECT_LEGACY)
+                .eq("vendor_id", vendorIdRef.current)
+                .order("created_at", { ascending: false })
+                .limit(100);
+              ordersData = legacyOrdersAttempt.data;
+              ordersError = legacyOrdersAttempt.error;
+            }
 
             if (ordersError) {
               console.error("❌ Vendor Dashboard: Error fetching orders:", ordersError);
@@ -445,7 +479,9 @@ const VendorDashboard: React.FC = () => {
                 message: ordersError.message,
                 code: ordersError.code,
                 details: ordersError.details,
-                hint: ordersError.hint
+                hint: ordersError.hint,
+                failingQuery: ordersQueryLabel,
+                vendor_id: vendorIdRef.current,
               });
               if (isMounted) {
                 setOrders([]);
